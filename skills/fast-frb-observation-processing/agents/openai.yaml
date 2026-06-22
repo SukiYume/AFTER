@@ -1,0 +1,4 @@
+interface:
+  display_name: "FAST FRB Processing"
+  short_description: "Process one FAST FRB observation."
+  default_prompt: "Use $fast-frb-observation-processing to process one FAST FRB observation with the data_processing scripts, including detection review and final analysis."
