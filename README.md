@@ -6,17 +6,33 @@
 
 ```text
 原始观测 FITS
+  + 用户提供 TOA 列表
   -> cut_burst_data.py
   -> 未定标 burst H5
   -> calibration.py
   -> 定标后 *_cal.h5
   -> burst_detect.py
+  -> 人工检查或修正自动标记
   -> attrs["bursts"] / detections.json
   -> burst_analysis.py
+  -> 能量/偏振/DM/RM 等结果
   -> burst_results.csv / 诊断图
 ```
 
 根目录脚本适合单源、单日期、手动或半自动处理。`batch_processing/` 适合批量读取表格并处理多个日期。
+
+## 起点选择
+
+完整流程是“切数据 -> 定标 -> 爆发探测 -> 能量/偏振分析 -> 出表”，但不要求每次都从切数据开始。根据已有数据，可以从以下入口开始：
+
+| 起点 | 需要已有内容 | 后续流程 |
+|---|---|---|
+| 原始 FAST FITS | 原始 FITS 目录、源名、日期、beam、DM、用户提供的 TOA 秒数列表 | 切数据、定标、爆发探测、人工检查标记、能量/偏振分析、出表 |
+| 未定标 H5 | `cut_burst_data.py` 输出的 `.h5` 和同日期 `_0001.fits` | 定标、爆发探测、人工检查标记、能量/偏振分析、出表 |
+| 定标后 H5 | `*_cal.h5`、`freq`、`gain`、`rfi_mask` 等定标产物 | 爆发探测、人工检查标记、能量/偏振分析、出表 |
+| 已有 burst 标记的定标 H5 | `*_cal.h5` 且 H5 attrs 中已有 `bursts` | 验证标记、能量/偏振分析、出表 |
+
+切数据阶段不能凭图或文件名猜 TOA；TOA 秒数列表必须由用户或上游搜索流程提供。爆发探测阶段的自动标记不是最终结果，进入分析前必须人工检查标记质量，必要时用半自动或手工模式修正。
 
 ## 文件职责
 
@@ -184,6 +200,8 @@ DATA_PATH = '/path/to/raw/fits/date/'
 SAVE_PATH = '/path/to/H5_Cut/FRB/date/'
 TOA_FILE = 'toa_list_fast.txt'
 ```
+
+`TOA_FILE` 中的秒数必须由用户或上游搜索流程提供，单位是相对观测开始的秒。agent 可以帮助整理、去重和检查范围，但不应自行猜测 TOA。
 
 运行：
 
@@ -379,7 +397,7 @@ python burst_detect.py `
 
 如果同一张图里有多个框，只想剔除其中一个重复或低 SNR 信号，不要把整页标为空；应当只删除或重画 `bursts` 列表中对应的那个 region。
 
-## 阶段 6：参数分析
+## 阶段 6：能量/偏振分析和出表
 
 `burst_analysis.py` 读取已经带 `bursts` 标记的 `*_cal.h5`，逐个 burst 计算：
 
@@ -393,6 +411,8 @@ python burst_detect.py `
 - RM
 - 线偏振、圆偏振、总偏振比例
 - PA 和 PAV
+
+主要表格输出是 `burst_results.csv`。诊断图用于检查 DM、RM、偏振和 burst 区域测量是否可信。
 
 示例：
 

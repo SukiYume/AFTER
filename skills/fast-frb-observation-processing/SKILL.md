@@ -1,6 +1,6 @@
 ---
 name: fast-frb-observation-processing
-description: "Use when processing FAST FRB burst observations with data_processing scripts: raw FAST FITS, cut H5, calibrated H5, burst_detect.py label review, detections.json resume behavior, H5 attrs['bursts'], DM/RM/flux/fluence/polarization analysis, or installing and validating this workflow on another machine."
+description: "Use when processing FAST FRB burst observations with data_processing scripts: raw FAST FITS, user-provided TOA lists, cut H5, calibrated H5, already detected H5 attrs['bursts'], burst_detect.py label review, detections.json resume behavior, energy/polarization/DM/RM analysis tables, or installing and validating this workflow on another machine."
 ---
 
 # FAST FRB Observation Processing
@@ -11,13 +11,16 @@ Normal chain:
 
 ```text
 raw FAST FITS
+  + user-provided TOA list
   -> cut_burst_data.py
   -> cut H5
   -> calibration.py
   -> *_cal.h5
   -> burst_detect.py
+  -> human review/correction of labels
   -> H5 attrs["bursts"] + detections.json
   -> burst_analysis.py
+  -> energy/polarization/DM/RM measurements
   -> burst_results.csv + diagnostic plots
 ```
 
@@ -65,10 +68,10 @@ Do not create extra files inside the skill folder during installation. The skill
 
 Determine where the user wants to start:
 
-- **Raw FITS**: run cut, calibration, detect, review, analysis.
-- **Cut H5**: skip cut; run calibration, detect, review, analysis.
-- **Calibrated H5**: skip cut/calibration; run detect, review, analysis.
-- **Already detected H5**: verify `attrs["bursts"]`; run analysis.
+- **Raw FITS**: require user-provided TOA seconds; run cut, calibration, detect, review, energy/polarization analysis, table export.
+- **Cut H5**: skip cut; run calibration, detect, review, energy/polarization analysis, table export.
+- **Calibrated H5**: skip cut/calibration; run detect, review, energy/polarization analysis, table export.
+- **Already detected H5**: verify `attrs["bursts"]`; run energy/polarization analysis and table export.
 
 Ask only for missing blocking inputs. Prefer discovering paths and file metadata locally with shell commands before asking.
 
@@ -76,10 +79,10 @@ Minimum inputs:
 
 | Stage | Required inputs |
 |---|---|
-| Raw FITS | `data_path`, output cut directory, FRB name, date, beam, DM, burst TOAs in seconds from observation start, segment length if overriding default, worker count |
+| Raw FITS | `data_path`, output cut directory, FRB name, date, beam, DM, user-provided burst TOAs in seconds from observation start, segment length if overriding default, worker count |
 | Cut H5 | cut H5 directory, calibration output directory, RA, DEC, `highcal_*.npz`, downsample policy, worker count |
 | Calibrated H5 | calibrated H5 directory, model path, model name, detection output directory |
-| Analysis | analysis output directory, DM search range/step, RM range and number of trial points, target downsample if any |
+| Energy/polarization analysis | output directory for `burst_results.csv` and plots, DM search range/step, RM range and number of trial points, target downsample if any |
 
 Confirm science choices when they matter:
 
@@ -95,10 +98,11 @@ Confirm science choices when they matter:
 - Treat `batch_processing/*.txt` as local, untracked observation catalogs. If batch wrappers are used, ask for explicit `--burst-txt`, `--dm-file`, `--catalog-dir`, or `--plan-txt` paths instead of assuming the repo contains those files.
 - Use the user's Python environment when given. Otherwise inspect available environments before GPU or plotting workloads.
 - Prefer importing functions or generating a one-off runner for cut/calibration, because the single-observation parameters still live in `if __name__ == "__main__"` blocks.
+- Do not infer TOAs from plots or filenames. The user or upstream search process must provide TOA seconds for raw-FITS cutting.
 - Run `burst_detect.py` and `burst_analysis.py` directly through their CLIs.
 - Preserve existing outputs unless the user asks to overwrite.
 - Keep a run log: inputs, commands, counts, output paths, skipped files, and warnings.
-- Start analysis only after detection quality is checked and the user accepts auto labels or confirms corrections are finished.
+- Start energy/polarization analysis only after detection quality is checked and the user accepts auto labels or confirms corrections are finished.
 
 ## Data Contracts
 
@@ -160,7 +164,7 @@ Before any stage:
 
 ## Stage 1: Cut Raw FITS
 
-Collect or create a TOA list in seconds from observation start. Validate that all TOAs fall within observation duration.
+Require a TOA list in seconds from observation start, supplied by the user or an upstream search product. Validate that all TOAs fall within observation duration. Codex may reformat, sort, deduplicate, or range-check TOAs, but must not invent them.
 
 Recommended implementation:
 
@@ -205,7 +209,7 @@ Verify:
 - One calibrated H5 has `data`, `freq`, `rfi_mask`, `rfi_channel`, `gain`, `gain_err`.
 - Check attrs `down_time`, `down_freq`, `time_reso_raw`, `time_reso`, `nchan_raw`, `nchan`.
 
-## Stage 3: Detection
+## Stage 3: Burst Detection and Label Review
 
 Run auto detection first unless the user asks for manual-only marking:
 
@@ -226,7 +230,7 @@ Important behavior:
 - Existing entries in `detections.json` are skipped on rerun, including zero-burst entries.
 - Detection-stage RFI is entropy by default; pass `--rfi-fft` only when FFT RFI is requested.
 
-After auto detection, inspect quality before analysis. Build a review manifest in the detection output directory, for example:
+After auto detection, inspect quality before analysis. Automatic boxes are provisional; the user must check whether labels are acceptable before analysis starts. Build a review manifest in the detection output directory, for example:
 
 ```text
 detection_review_manifest.txt
@@ -266,7 +270,7 @@ When handing control to the user, request a concrete completion signal:
 
 ```text
 Please relabel the files in detection_review_manifest.txt.
-When finished, tell me "labels are fixed" and I will verify the H5 attrs and run analysis.
+When finished, tell me "labels are fixed" and I will verify the H5 attrs, run energy/polarization analysis, and export burst_results.csv.
 ```
 
 After the user says labels are fixed:
@@ -276,11 +280,11 @@ After the user says labels are fixed:
 - Check reviewed files now have plausible non-empty or intentionally empty regions.
 - Check detection-stage `burst_rfi_mask`, `burst_rfi_channel`, and `burst_rfi_method` exist when labels were written by current `burst_detect.py`.
 - Keep or report the final `detections.json` path.
-- Run analysis unless verification fails.
+- Run energy/polarization analysis and export `burst_results.csv` unless verification fails.
 
 Preserve user-corrected labels. If changing output directories, remember that H5 attrs drive analysis while `detections.json` controls detection skip/resume.
 
-## Stage 5: Analysis
+## Stage 5: Energy/Polarization Analysis and Results Table
 
 Run after detection is accepted:
 
@@ -324,7 +328,7 @@ Verify:
 - **Auto labels look wrong**: create a bad-file list, relabel with semi-auto/manual, wait for the user to confirm, verify H5 `attrs["bursts"]`, then continue.
 - **Duplicate or low-SNR page should be excluded**: write `{"bursts": [], "has_burst": false}` through the UI by pressing `x`; editing only `detections.json` is not enough.
 - **Need raw-time peak flux**: rerun calibration with `down_time=1`, then rerun detect and analysis.
-- **Analysis says no bursts**: inspect H5 attrs for `bursts`; run or rerun detection.
+- **Energy/polarization analysis says no bursts**: inspect H5 attrs for `bursts`; run or rerun detection.
 - **Calibrated H5 has unexpected resolution**: inspect `time_reso_raw`, `time_reso`, `down_time`, `down_freq`, `nchan_raw`, `nchan`.
 - **No calibration FITS**: ask for the correct `_0001.fits` or copy it into the cut H5 directory before calibration.
 - **Existing detection output skips files**: delete selected entries from `detections.json` or use a new output directory.
@@ -349,4 +353,4 @@ Processed observation:
   key warnings:
 ```
 
-If the workflow paused for user review, mark it as pending user action. Give the manifest path, the exact relabel command, and the message the user should send when done. When the user reports completion, resume by verifying labels and running analysis.
+If the workflow paused for user review, mark it as pending user action. Give the manifest path, the exact relabel command, and the message the user should send when done. When the user reports completion, resume by verifying labels, running energy/polarization analysis, and exporting `burst_results.csv`.
