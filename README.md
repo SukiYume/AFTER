@@ -84,6 +84,8 @@ python -m pip install -r requirements.txt
 skills/fast-frb-observation-processing/
 ```
 
+交给 Codex agent 安装时，可以直接说：`请帮我安装本仓库的 Codex skill：复制 skills/fast-frb-observation-processing 到 Codex skills 目录，设置 DATA_PROCESSING_ROOT 为当前仓库，并完成 README 里的安装后自检。`
+
 推荐把这个目录复制到 Codex skills 目录，并设置 `DATA_PROCESSING_ROOT` 指向本仓库根目录。这样新 agent 可以自动找到脚本，而不是从 skill 目录误运行。
 
 Bash：
