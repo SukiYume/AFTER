@@ -1,0 +1,24 @@
+__pycache__/
+*.py[cod]
+
+# Generated data products and review outputs
+detections/
+analysis_output/
+analysis_outputs/
+*_cal.h5
+*.h5
+*.fits
+*.jpg
+*.png
+
+# Local observation catalogs and batch input tables
+batch_processing/*.txt
+!batch_processing/*.example.txt
+
+# Local/editor state
+.ipynb_checkpoints/
+.DS_Store
+Thumbs.db
+
+# Retired model checkpoints kept locally for rollback/reference
+models/*.old

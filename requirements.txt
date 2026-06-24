@@ -1,0 +1,12 @@
+numpy
+scipy
+h5py
+astropy
+matplotlib
+pandas
+seaborn
+numba
+opencv-python
+torch
+torchvision
+ultralytics
