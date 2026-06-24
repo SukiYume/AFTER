@@ -1,4 +1,4 @@
 interface:
   display_name: "AFTER FAST FRB Processing"
   short_description: "Run AFTER from TOA-guided cutting to results export."
-  default_prompt: "Use $fast-frb-observation-processing as the AFTER protocol for one FAST FRB observation. Start from raw FITS, cut H5, calibrated H5, or already detected H5 as appropriate; require user-provided TOAs for raw cutting; pause for burst-label review before energy/polarization analysis and results-table export."
+  default_prompt: "Use $fast-frb-observation-processing as the AFTER protocol for one FAST FRB observation. Start from raw FITS, cut H5, calibrated H5, or already detected H5 as appropriate; use user-provided TOAs for raw cutting; pause for burst-label review before energy/polarization analysis and results-table export."

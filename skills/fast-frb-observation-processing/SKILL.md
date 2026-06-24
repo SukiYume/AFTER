@@ -5,7 +5,7 @@ description: "Use when a user asks an agent to install, validate, or run AFTER f
 
 # AFTER FAST FRB Observation Processing
 
-AFTER is the AI-assisted FAST Transient End-to-end Reduction workflow for post-search FAST FRB burst processing. Use this skill as the agent operating protocol. The skill may be installed separately from the processing scripts, so always locate the script root before running commands.
+AFTER is the AI-assisted FAST Transient End-to-end Reduction workflow for post-search FAST FRB burst processing. Use this skill as the agent operating protocol. Locate the script root before running commands because the skill can be installed separately from the processing scripts.
 
 Normal AFTER sequence:
 
@@ -43,9 +43,9 @@ ZeithAngle.py
 gain_para.csv
 ```
 
-For calibration, also require `highcal_20201014_psr_tny.npz` unless the user supplies another noise-calibration file. For detection, require `models/best_model_yolo11n_ema.pth` unless the user supplies another model path and matching model name.
+For calibration, use `highcal_20201014_psr_tny.npz` or the user's supplied noise-calibration file. For detection, use `models/best_model_yolo11n_ema.pth` or the user's supplied model path and matching model name.
 
-If only the skill folder is available, explain that the installed skill provides the AFTER protocol but not the processing scripts. Ask for the complete AFTER script root. Do not run processing commands from the skill folder.
+When the skill folder is available before the script root, explain that the installed skill provides the AFTER protocol and ask for the complete AFTER script root. Run processing commands from the verified script root.
 
 ## 2. Install or Validate AFTER
 
@@ -63,7 +63,7 @@ One-line user-facing install request:
 Please install the Codex skill from this repository: copy skills/fast-frb-observation-processing into the Codex skills directory; if this machine has the full AFTER/data_processing script checkout, set DATA_PROCESSING_ROOT to that script root and run the post-install validation.
 ```
 
-Do not create extra files inside the skill folder during installation. This skill is intentionally only `SKILL.md` plus `agents/openai.yaml`.
+Keep the skill folder limited to `SKILL.md` plus `agents/openai.yaml` during installation.
 
 ## 3. Choose the Starting Point
 
@@ -78,12 +78,12 @@ Determine the earliest stage that already has valid inputs:
 
 Ask only for missing blocking inputs. Prefer discovering paths, counts, FITS headers, and H5 attrs locally before asking the user.
 
-Hard rules:
+Operating rules:
 
-- Do not infer TOAs from plots, filenames, or visual guesses. Raw-FITS cutting requires TOA seconds from the user or an upstream search product.
-- Do not start energy/polarization analysis until detection quality is checked and the user accepts auto labels or confirms corrections are finished.
+- Use TOA seconds supplied by the user or an upstream search product for raw-FITS cutting. Ask for the TOA list when it is missing.
+- Start energy/polarization analysis after detection quality is checked and the user accepts auto labels or confirms corrections are finished.
 - Treat `batch_processing/*.txt` as local, untracked observation catalogs. Ask for explicit `--burst-txt`, `--dm-file`, `--catalog-dir`, or `--plan-txt` paths when using batch wrappers.
-- Do not trust machine-local hard-coded defaults in `cut_burst_data.py`, `calibration.py`, or batch scripts. Collect explicit inputs or generate a one-off runner.
+- Collect explicit inputs or generate a one-off runner instead of relying on machine-local hard-coded defaults in `cut_burst_data.py`, `calibration.py`, or batch scripts.
 
 ## 4. Preflight
 
@@ -97,7 +97,7 @@ Before each stage:
    - Calibrated H5: count `*_cal.h5`; inspect one H5 for `data`, `freq`, `rfi_mask`, `gain`, `gain_err`, and attrs.
 4. Check output directories and existing products.
 5. Check whether a previous `detections.json` exists.
-6. Preserve existing outputs unless the user asks to overwrite.
+6. Preserve existing outputs and request overwrite confirmation when needed.
 
 Keep a run log with inputs, commands, counts, output paths, skipped files, warnings, and user-review status.
 
@@ -112,19 +112,19 @@ Recommended implementation:
 1. Import `read_obs_info`, `calc_dispersion_shift`, `cut_one_burst`, and `save_obs_json` from `cut_burst_data`.
 2. Build a sorted FITS list using beam pattern `M{beam:02d}`.
 3. Copy the first matching beam FITS into the cut output directory so calibration can find `_0001.fits`.
-4. Sort, deduplicate, and range-check TOAs without inventing missing TOAs.
+4. Sort, deduplicate, and range-check the supplied TOAs.
 5. Compute dispersion shifts with the requested DM.
 6. Run `cut_one_burst` for each valid TOA, using a process pool for multiple bursts.
 7. Run `save_obs_json`.
 
 Verify:
 
-- Cut H5 count matches valid TOA count unless some TOAs were outside the observation.
+- Cut H5 count matches the in-range valid TOA count.
 - Filenames follow `{frb}-{date}-M{beam:02d}-{fits_number:04d}-{start_sample:09d}.h5`.
 - One sample H5 has `data`, `freq`, `toa_sec`, `time_reso`, `obs_start_mjd`, and `dm`.
 - `obs_info.json` exists.
 
-Common blockers: no FITS matching beam, missing calibration/noise FITS, TOA outside observation, FITS missing `DATA` or `DAT_FREQ`.
+Common blockers: beam-matched FITS needed, calibration/noise FITS needed, TOA outside observation, FITS missing `DATA` or `DAT_FREQ`.
 
 ## 6. Calibrate
 
@@ -137,7 +137,7 @@ Recommended implementation:
 1. Import `find_cal_fits`, `fold_noise_cal`, `load_t_cal`, and `process_one_burst` from `calibration`.
 2. Group cut H5 files by beam from the `Mxx` filename token.
 3. For each beam, find matching `_0001.fits`, fold `noise_cal`, load `t_cal`, and process each H5.
-4. Use `rfi_fft=True` unless the user requests entropy RFI at calibration time.
+4. Use `rfi_fft=True` for standard calibration RFI, or use the user's requested calibration-time RFI strategy.
 
 Downsample policy:
 
@@ -215,11 +215,11 @@ When the user says labels are fixed:
 - Confirm current-label files include `burst_rfi_mask`, `burst_rfi_channel`, and `burst_rfi_method` when written by current `burst_detect.py`.
 - Keep or report the final `detections.json` path.
 
-Remember: `attrs["bursts"]` is the source of truth for analysis. Editing only `detections.json` does not remove old labels already written into H5 attrs.
+Remember: `attrs["bursts"]` is the source of truth for analysis. Update H5 attrs when a label should be removed or intentionally marked empty.
 
 ## 8. Analyze Energy and Polarization
 
-Run this stage only after burst labels are accepted.
+Run this stage after burst labels are accepted.
 
 Example:
 
@@ -234,7 +234,7 @@ python burst_analysis.py \
   --n-rm 100000
 ```
 
-Treat these values as examples, not defaults. Confirm DM/RM ranges against source knowledge before long runs.
+Treat these values as examples. Confirm DM/RM ranges against source knowledge before long runs.
 
 Analysis rules:
 
@@ -242,7 +242,7 @@ Analysis rules:
 - `--dm-range` is centered on the cut DM stored in each H5.
 - `--rm-min`, `--rm-max`, `--n-rm`, and `--n-boot` control RM search and uncertainty work.
 - Pass `--target-down-time` and `--target-down-freq` only for coarser analysis than the saved calibrated H5. Target factors must be integer multiples of saved `down_time/down_freq`.
-- Pass `--rfi-fft` only if FFT RFI is requested in analysis.
+- Pass `--rfi-fft` when FFT RFI is requested in analysis.
 - Rebuild the noise mask from accepted burst labels, subtract per-channel baseline, derive RFI from Stokes I and V, and apply the union mask to all Stokes parameters.
 - Use the accepted burst frequency range excluding RFI for peak flux and fluence.
 
@@ -299,11 +299,11 @@ Each burst region uses calibrated-H5 saved indices:
 ## 10. Recovery Patterns
 
 - **Auto labels look wrong**: create a bad-file list, relabel with semi-auto/manual, wait for user confirmation, verify H5 `attrs["bursts"]`, then continue.
-- **Duplicate or low-SNR page should be excluded**: write `{"bursts": [], "has_burst": false}` through the UI by pressing `x`; editing only `detections.json` is not enough.
+- **Duplicate or low-SNR page should be excluded**: write `{"bursts": [], "has_burst": false}` through the UI by pressing `x`; this updates the H5 analysis source of truth.
 - **Need raw-time peak flux**: rerun calibration with `down_time=1`, then rerun detection and analysis.
 - **Analysis says no bursts**: inspect H5 attrs for `bursts`; run or rerun detection.
 - **Calibrated H5 has unexpected resolution**: inspect `time_reso_raw`, `time_reso`, `down_time`, `down_freq`, `nchan_raw`, and `nchan`.
-- **No calibration FITS**: ask for the correct `_0001.fits` or copy it into the cut H5 directory before calibration.
+- **Calibration FITS needed**: ask for the correct `_0001.fits` or copy it into the cut H5 directory before calibration.
 - **Existing detection output skips files**: delete selected entries from `detections.json` or use a new output directory.
 
 ## 11. Final Report Template
