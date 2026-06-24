@@ -1,4 +1,16 @@
-# FAST FRB Burst 数据处理指南
+# AFTER
+
+**AI-assisted FAST Transient End-to-end Reduction**
+
+AFTER 是一套面向 FAST FRB burst 的搜索后端到端处理流程。它从用户或上游搜索流程提供的 TOA 列表开始，完成裁切、定标、爆发区域标记和人工复核、能量/偏振/DM/RM 分析，并导出结果表和诊断图。
+
+GitHub description:
+
+```text
+AI-assisted post-search FAST FRB burst processing: TOA-guided cutting, calibration, label review, energy/polarization analysis, and results-table export.
+```
+
+## FAST FRB Burst 数据处理指南
 
 本目录是一套面向 FAST FRB burst 的后处理脚本。它处理“搜索候选已经确认，已知源名、日期、beam、DM、TOA”之后的工作：从原始观测中裁切 burst，做偏振和流量定标，标记 burst 区域，计算 DM、RM、偏振、flux、fluence、width、bandwidth 等参数。
 

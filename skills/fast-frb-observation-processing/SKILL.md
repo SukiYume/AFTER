@@ -1,11 +1,11 @@
 ---
 name: fast-frb-observation-processing
-description: "Use when processing FAST FRB burst observations with data_processing scripts: raw FAST FITS, user-provided TOA lists, cut H5, calibrated H5, already detected H5 attrs['bursts'], burst_detect.py label review, detections.json resume behavior, energy/polarization/DM/RM analysis tables, or installing and validating this workflow on another machine."
+description: "Use when processing FAST FRB burst observations with AFTER/data_processing scripts: raw FAST FITS, user-provided TOA lists, cut H5, calibrated H5, already detected H5 attrs['bursts'], burst_detect.py label review, detections.json resume behavior, energy/polarization/DM/RM analysis tables, or installing and validating this workflow on another machine."
 ---
 
-# FAST FRB Observation Processing
+# AFTER FAST FRB Observation Processing
 
-Use this skill as the operating protocol for the FAST FRB `data_processing` script bundle. The skill may be installed separately from the scripts, so never assume the skill directory is the script root.
+Use this skill as the operating protocol for AFTER, the AI-assisted FAST Transient End-to-end Reduction workflow. The skill may be installed separately from the scripts, so never assume the skill directory is the script root.
 
 Normal chain:
 

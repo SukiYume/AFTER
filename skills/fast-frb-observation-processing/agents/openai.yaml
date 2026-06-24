@@ -1,4 +1,4 @@
 interface:
-  display_name: "FAST FRB Processing"
-  short_description: "Process one FAST FRB observation."
-  default_prompt: "Use $fast-frb-observation-processing to process one FAST FRB observation from raw, cut, calibrated, or already detected data through label review and results table export."
+  display_name: "AFTER FAST FRB Processing"
+  short_description: "Run AFTER post-search FAST FRB processing."
+  default_prompt: "Use $fast-frb-observation-processing as the AFTER protocol to process one FAST FRB observation from raw, cut, calibrated, or already detected data through label review and results table export."
