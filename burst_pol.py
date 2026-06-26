@@ -450,7 +450,11 @@ def plot_polarization(PAT, PAV, PAE, profile_I, profile_L, profile_V,
 
     fig.align_labels()
     if fmt == 'pdf':
+        # 保存矢量 PDF (出版用), 并附带一张 PNG 供面板等位图场景直接嵌入,
+        # 避免下游再依赖 PDF -> 位图转换 (如 pymupdf)。
         plt.savefig(save_path, format='pdf', bbox_inches='tight')
+        plt.savefig(os.path.splitext(save_path)[0] + '.png',
+                    format='png', dpi=200, bbox_inches='tight')
     else:
         plt.savefig(save_path, format='png', dpi=300, bbox_inches='tight')
     plt.close()
