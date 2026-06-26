@@ -89,6 +89,13 @@ For calibration, use the included `highcal_*.npz` file only after verifying it i
 
 When the skill folder is available before the script root, explain that the installed skill provides the AFTER protocol and ask for the complete AFTER script root. Run processing commands from the verified script root.
 
+Script capability check:
+
+- Do not assume every stage script is an argparse CLI. Some AFTER checkouts use constant-configured scripts whose `--help` path still imports heavy dependencies or touches hard-coded data paths.
+- Probe safely: inspect the script for `argparse`, `add_argument`, and `if __name__ == "__main__"` before running help. Run `--help` only when the current environment and script structure make it safe.
+- If a help probe fails because of missing optional dependencies, GPU packages, or hard-coded input paths, do not treat that as a pipeline failure. Read the constants/function signatures, verify the intended environment, and continue with the direct script or user-provided wrapper.
+- If a direct script is configured by source constants rather than CLI flags, report the constants that matter for the current stage and ask only for missing or risky values.
+
 ## 2. Install or Validate AFTER
 
 When the user asks to install AFTER on another machine:
@@ -97,7 +104,7 @@ When the user asks to install AFTER on another machine:
 2. Install Python dependencies from `requirements.txt`; choose CUDA-specific PyTorch packages for GPU inference when needed.
 3. Copy `skills/fast-frb-observation-processing/` into the Codex skills directory.
 4. Set `DATA_PROCESSING_ROOT` to the complete AFTER script root when the scripts are available.
-5. Run README post-install validation: syntax compile, dependency imports, CLI help, and skill validation.
+5. Run README post-install validation: syntax compile, dependency imports in the intended environment, CLI help for true argparse scripts, source/constant checks for constant-configured scripts, and skill validation.
 
 One-line user-facing install request:
 
@@ -174,6 +181,7 @@ Recommended implementation:
 Remote/direct-script rule:
 
 - If the user points to a remote cut wrapper or `cut_burst_data.py` whose data path/output root are already configured, inspect its accepted arguments once, then run it directly with the final TOA file and required parameters. Do not generate batch catalogs or wrapper scripts unless the direct script cannot express the requested segment length or output path.
+- If the cut script is configured by source constants, verify `DATA_PATH`, `SAVE_PATH`, `TOA_FILE`, `DM`, `SEGMENT_LENGTH`, `FRB_NAME`, `DATE`, and `BEAM` from source or user input before running it. For a user-confirmed configured remote script, pass only the required TOA/input arguments and avoid inventing extra wrappers.
 
 Verify:
 
@@ -207,6 +215,7 @@ Downsample policy:
 Remote/direct-script rule:
 
 - If the user points to a remote calibration wrapper or `calibration.py`, run that direct calibration path after cut verification. Do not switch to `batch_processing/batch_calibration.py` unless the user asked for batch mode, the direct script is absent, or the direct script cannot process the requested directory.
+- If the calibration script is configured by source constants, verify `BURST_DIR`, `OUTPUT_DIR`, `CAL_NPZ`, `RA`, `DEC`, `DOWN_TIME`, `DOWN_FREQ`, and RFI settings before running it. Do not assume local hard-coded defaults are valid for the user's observation.
 - Pull back calibrated products after calibration finishes. By default pull `*_cal.h5` and quick-look images into the local calibrated-data target; pull raw cut H5 only when the user asks.
 
 Verify:
@@ -304,6 +313,7 @@ Treat these values as examples. Confirm DM/RM ranges against source knowledge be
 Analysis rules:
 
 - `burst_analysis.py` processes `*_cal.h5` files directly inside one directory. Loop over date directories for multiple dates.
+- For a single-burst rerun such as an expanded RM search, use an isolated analysis output directory and, if the script has no single-file option, an isolated cal-dir view/copy/symlink containing only the chosen `*_cal.h5`. Do not overwrite the main observation `burst_results.csv` unless the user explicitly asks.
 - `--dm-range` is centered on the cut DM stored in each H5.
 - `--rm-min`, `--rm-max`, `--n-rm`, and `--n-boot` control RM search and uncertainty work.
 - Pass `--target-down-time` and `--target-down-freq` only for coarser analysis than the saved calibrated H5. Target factors must be integer multiples of saved `down_time/down_freq`.
@@ -328,18 +338,22 @@ Preferred command shape:
 python burst_dashboard.py \
   --csv /path/to/analysis/burst_results.csv \
   --output /path/to/analysis/burst_dashboard.html \
+  --analysis-dir /path/to/analysis \
   --source FRBNAME \
   --date YYYYMMDD \
   --reference-dm DM \
-  --rm-significance-threshold 5
+  --rm-significance-threshold 5 \
+  --top-n 10
 ```
 
 Dashboard rules:
 
 - Use `burst_results.csv` as the source. Do not re-run analysis just to build the dashboard.
+- If the user says only the dashboard script changed, first compile or otherwise sanity-check `burst_dashboard.py`, then regenerate from the existing CSV.
+- Pass `--analysis-dir` when diagnostic plot folders live beside the CSV; the dashboard may need it to embed dynamic spectra or combined polarization PNGs.
 - Lead with observation identity, burst count, time span, SNR range, DM range, fluence, width, and reliable-RM count.
 - Plot robust quantities: TOA/SNR timeline, DM results, fluence-width-SNR relation, frequency coverage, RM significance diagnostics, and property distributions.
-- If no reliable RM exists, show RM as a non-detection diagnostic and keep `linear_frac` / `circular_frac` only in the detail table with a visible caveat.
+- If no reliable RM exists, show RM as a non-detection diagnostic and keep `linear_frac` / `circular_frac` only in the detail table with a visible caveat. Do not interpret or foreground combined polarization plots when RM is unreliable.
 - Verify the dashboard output exists, embeds charts, has one detail row per analyzed burst, and opens locally without obvious layout overflow.
 
 ## 10. Data Contracts
