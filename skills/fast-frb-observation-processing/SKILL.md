@@ -350,11 +350,10 @@ Dashboard rules:
 
 - Use `burst_results.csv` as the source. Do not re-run analysis just to build the dashboard.
 - If the user says only the dashboard script changed, first compile or otherwise sanity-check `burst_dashboard.py`, then regenerate from the existing CSV.
-- Pass `--analysis-dir` when diagnostic plot folders live beside the CSV; the dashboard may need it to embed dynamic spectra or combined polarization PNGs.
-- Let `burst_dashboard.py` define and render the dashboard metrics. Do not manually recompute or rename script-defined summary values in the skill workflow.
-- Plot robust quantities: TOA/SNR timeline, DM results, fluence-width-SNR relation, frequency coverage, RM significance diagnostics, and property distributions.
-- If no reliable RM exists, show RM as a non-detection diagnostic and keep `linear_frac` / `circular_frac` only in the detail table with a visible caveat. Do not interpret or foreground combined polarization plots when RM is unreliable.
-- Verify the dashboard output exists, embeds charts, has one detail row per analyzed burst, and opens locally without obvious layout overflow.
+- Pass `--analysis-dir` when diagnostic asset folders live beside the CSV; the dashboard may need it to embed script-defined supporting assets.
+- Let `burst_dashboard.py` define and render the dashboard metrics, chart set, and polarization display. Do not manually recompute, rename, or restyle script-defined summary values in the skill workflow.
+- If no reliable RM exists, report it as a non-detection and avoid interpreting polarization quantities as trustworthy physical measurements.
+- Verify the dashboard output exists, embeds its expected assets, represents the analyzed burst rows, and opens locally without obvious layout overflow.
 
 ## 10. Data Contracts
 
