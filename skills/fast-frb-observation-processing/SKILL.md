@@ -351,7 +351,8 @@ Dashboard rules:
 - Use `burst_results.csv` as the source. Do not re-run analysis just to build the dashboard.
 - If the user says only the dashboard script changed, first compile or otherwise sanity-check `burst_dashboard.py`, then regenerate from the existing CSV.
 - Pass `--analysis-dir` when diagnostic plot folders live beside the CSV; the dashboard may need it to embed dynamic spectra or combined polarization PNGs.
-- Lead with observation identity, burst count, time span, SNR range, DM range, fluence, width, and reliable-RM count.
+- Lead with observation identity, burst count, time span, SNR range, DM range, width, reliable-RM count, and the dashboard's `FLUENCE × BW` value: `Σ(fluence × bandwidth_GHz)` in `Jy ms GHz`.
+- Treat `FLUENCE × BW` as an observation-side fluence-bandwidth summary only. Do not label it as isotropic energy or received energy, and do not multiply it by FAST collecting area, luminosity distance, or redshift inside the dashboard.
 - Plot robust quantities: TOA/SNR timeline, DM results, fluence-width-SNR relation, frequency coverage, RM significance diagnostics, and property distributions.
 - If no reliable RM exists, show RM as a non-detection diagnostic and keep `linear_frac` / `circular_frac` only in the detail table with a visible caveat. Do not interpret or foreground combined polarization plots when RM is unreliable.
 - Verify the dashboard output exists, embeds charts, has one detail row per analyzed burst, and opens locally without obvious layout overflow.

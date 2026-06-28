@@ -4,7 +4,7 @@
 
 **AI-assisted FAST Transient End-to-end Reduction**
 
-Post-search FAST FRB burst processing from TOA lists to calibrated measurements and result tables.
+Post-search FAST FRB burst processing from TOA lists to calibrated measurements, result tables, and observation dashboards.
 
 [![FAST FRB](https://img.shields.io/badge/FAST%20FRB-AFTER-1f6feb)](https://github.com/SukiYume/AFTER)
 [![Python](https://img.shields.io/badge/Python-3.9%2B-blue.svg)](https://www.python.org/)
@@ -22,7 +22,7 @@ Post-search FAST FRB burst processing from TOA lists to calibrated measurements 
 
 ## Overview
 
-**AFTER** is an AI-assisted reduction and analysis workflow for FAST fast radio burst (FRB) observations after a search pipeline has produced candidate burst TOAs. It carries one observation from known source metadata and TOA lists through cutting, calibration, burst-region review, energy and polarization analysis, and table export.
+**AFTER** is an AI-assisted reduction and analysis workflow for FAST fast radio burst (FRB) observations after a search pipeline has produced candidate burst TOAs. It carries one observation from known source metadata and TOA lists through cutting, calibration, burst-region review, energy and polarization analysis, table export, and dashboard summarization.
 
 AFTER complements search systems such as [DRAFTS](https://github.com/SukiYume/DRAFTS): search pipelines locate transient candidates, while AFTER reduces and characterizes confirmed FAST FRB bursts.
 
@@ -32,6 +32,7 @@ AFTER complements search systems such as [DRAFTS](https://github.com/SukiYume/DR
 - **Polarization and flux calibration** into Stokes I/Q/U/V products.
 - **AI-assisted burst labeling** with human review before physical measurement.
 - **Energy and polarization analysis** for TOA, flux, fluence, width, bandwidth, SNR, DM, RM, polarization fractions, PA, and PAV.
+- **Self-contained observation dashboards** from `burst_results.csv`, including charts, burst catalog rows, diagnostic-plot embeds, and reliable-RM caveats.
 - **Flexible entry points** from raw FITS, cut H5, calibrated H5, or calibrated H5 with existing burst labels.
 - **Codex skill support** for agent-driven installation, validation, staged processing, review handoff, and final reporting.
 
@@ -45,12 +46,13 @@ flowchart LR
     D --> E["human label review<br/>attrs['bursts']"]
     E --> F["burst_analysis.py<br/>energy / polarization / DM / RM"]
     F --> G["burst_results.csv<br/>diagnostic plots"]
+    G --> H["burst_dashboard.py<br/>summary HTML"]
 ```
 
 AFTER supports the full sequence:
 
 ```text
-cut -> calibrate -> detect -> review labels -> analyze energy/polarization -> export table
+cut -> calibrate -> detect -> review labels -> analyze energy/polarization -> export table -> build dashboard
 ```
 
 The workflow can also begin from an intermediate product:
@@ -72,6 +74,7 @@ TOA seconds are supplied by the user or an upstream search product. Automatic de
 | `calibration.py` | Calibrate cut H5 files into Stokes I/Q/U/V, gain-corrected products with RFI masks. |
 | `burst_detect.py` | Run automatic, semi-automatic, or manual burst-region labeling and write H5 `attrs["bursts"]`. |
 | `burst_analysis.py` | Measure DM, RM, polarization, flux, fluence, width, bandwidth, and SNR for accepted bursts. |
+| `burst_dashboard.py` | Build a self-contained HTML dashboard from `burst_results.csv` and analysis diagnostic plots. |
 | `burst_dm.py` | Fine DM search routines used by `burst_analysis.py`. |
 | `burst_pol.py` | RM, PA, PAV, and polarization processing routines used by `burst_analysis.py`. |
 | `burst_properties.py` | Flux, fluence, width, bandwidth, and SNR measurement routines. |
@@ -150,10 +153,11 @@ Add `DATA_PROCESSING_ROOT` to a shell profile or system environment variable for
 Run these checks from the repository root after installing dependencies:
 
 ```bash
-python -m py_compile cut_burst_data.py calibration.py burst_detect.py burst_analysis.py burst_dm.py burst_pol.py burst_properties.py rfi_utils.py ZeithAngle.py batch_processing/batch_calibration.py batch_processing/batch_cut_burst_data.py batch_processing/batch_cut_selected_long_period.py batch_processing/fits_to_h5.py
+python -m py_compile cut_burst_data.py calibration.py burst_detect.py burst_analysis.py burst_dashboard.py burst_dm.py burst_pol.py burst_properties.py rfi_utils.py ZeithAngle.py batch_processing/batch_calibration.py batch_processing/batch_cut_burst_data.py batch_processing/batch_cut_selected_long_period.py batch_processing/fits_to_h5.py
 python -c "import numpy, scipy, h5py, astropy, matplotlib, pandas, seaborn, numba, torch, torchvision, ultralytics, cv2; print('basic imports OK')"
 python burst_detect.py --help
 python burst_analysis.py --help
+python burst_dashboard.py --help
 ```
 
 Validate the Codex skill when a skill authoring validator is available:
@@ -265,6 +269,32 @@ burst_results.csv
 DM/RM/polarization diagnostic plots
 ```
 
+### 5. Build dashboard
+
+`burst_dashboard.py` reads `burst_results.csv` and produces a self-contained HTML summary that can be opened directly in a browser or printed to PDF.
+
+Example:
+
+```bash
+python burst_dashboard.py \
+  --csv /path/to/analysis/burst_results.csv \
+  --output /path/to/analysis/burst_dashboard.html \
+  --analysis-dir /path/to/analysis \
+  --source FRBNAME \
+  --date YYYYMMDD \
+  --reference-dm 539 \
+  --rm-significance-threshold 5 \
+  --top-n 10
+```
+
+Dashboard summary metrics include burst count, time span, event rate, peak S/N, DM range, width range, reliable-RM count, and `FLUENCE x BW = sum(fluence * bandwidth_GHz)` in `Jy ms GHz`. This is the observation-side fluence-bandwidth term only; it is not isotropic energy, received energy, or a luminosity-distance/redshift calculation.
+
+Primary output:
+
+```text
+burst_dashboard.html
+```
+
 ## Batch Catalogs
 
 Batch input tables are passed explicitly to the batch wrappers. Local observation catalogs under `batch_processing/*.txt` are ignored by git, while public templates can use `*.example.txt`.
@@ -286,7 +316,7 @@ FRB_name DM RA DEC
 AFTER keeps generated data products outside version control by default:
 
 - H5/FITS data: `*.h5`, `*.fits`, `*_cal.h5`
-- Diagnostic images: `*.jpg`, `*.png`
+- Diagnostic images and dashboard exports: `*.jpg`, `*.png`, `burst_dashboard.html`
 - Detection and analysis outputs: `detections/`, `analysis_output/`, `analysis_outputs/`
 - Local batch inputs: `batch_processing/*.txt`
 - Retired model checkpoints: `models/*.old`
