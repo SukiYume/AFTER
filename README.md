@@ -106,8 +106,8 @@ available:
 | [`ZeithAngle.py`](ZeithAngle.py) | FAST zenith-angle and beam-gain helpers. |
 | [`gain_para.csv`](gain_para.csv) | FAST beam gain parameters. |
 | [`highcal_20201014_psr_tny.npz`](highcal_20201014_psr_tny.npz) | Default noise-calibration reference. |
-| [`models/`](models/) | Production burst-region detector and local experimental checkpoints. |
-| [`batch_processing/`](batch_processing/) | Batch cutting, selected long-period cutting, legacy FITS conversion, and calibration wrappers. |
+| [`models/`](models/) | Current production burst-region detector checkpoint. |
+| [`batch_processing/`](batch_processing/README.md) | Batch cutting, selected long-period cutting, legacy FITS conversion, and calibration wrappers. |
 | [`skills/fast-frb-observation-processing/`](skills/fast-frb-observation-processing/) | Codex operating protocol for AFTER. |
 | [`requirements.txt`](requirements.txt) | Python dependencies. |
 
@@ -158,6 +158,10 @@ python -m pytest -q
 
 The examples below use generic paths. Replace `/path/to/...` with locations on
 your own workstation or compute node.
+
+The four batch wrappers, their input-table schemas, output layouts, and rerun
+options are documented together in
+[`batch_processing/README.md`](batch_processing/README.md).
 
 ### 1. Cut raw FAST FITS
 
