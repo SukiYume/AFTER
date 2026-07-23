@@ -1,195 +1,275 @@
-# FAST FRB Post-search Processing
+<h1 align="center">AFTER</h1>
 
-This directory contains the LPT workspace tools that turn confirmed FAST FRB candidates into calibrated H5 products, reviewed burst labels, physical measurements, result tables, and optional HTML dashboards.
+<div align="center">
 
-It is a processing subdirectory inside the local LPT workspace. The old standalone AFTER landing-page material has been removed from this README so the file describes the scripts that are actually here.
+**AI-assisted FAST Transient End-to-end Reduction**
 
-## Workflow
+From confirmed burst TOAs to calibrated, reviewable FAST FRB measurements
 
-```text
-raw FAST FITS + TOA/DM
-  -> cut_burst_data.py or batch_processing/batch_cut_burst_data.py
-  -> cut burst H5
-  -> calibration.py or batch_processing/batch_calibration.py
-  -> calibrated *_cal.h5
-  -> burst_detect.py
-  -> H5 attrs["bursts"] + detections.json
-  -> burst_analysis.py
-  -> burst_results.csv + diagnostic plots
-  -> burst_dashboard.py
+[![AFTER](https://img.shields.io/badge/FAST%20FRB-AFTER-1f6feb)](https://github.com/SukiYume/AFTER)
+[![GitHub Stars](https://img.shields.io/github/stars/SukiYume/AFTER.svg?label=Stars&logo=github)](https://github.com/SukiYume/AFTER/stargazers)
+[![Python](https://img.shields.io/badge/Python-3.9%2B-blue.svg)](https://www.python.org/)
+[![Codex Skill](https://img.shields.io/badge/Codex%20Skill-included-2ea44f)](skills/fast-frb-observation-processing)
+[![Related](https://img.shields.io/badge/Search-DRAFTS-da282a)](https://github.com/SukiYume/DRAFTS)
+
+[Overview](#overview) ·
+[Workflow](#after-workflow) ·
+[Installation](#installation) ·
+[Quick start](#quick-start) ·
+[Data contracts](#data-contracts) ·
+[Codex skill](#codex-skill) ·
+[简体中文](README.zh-CN.md)
+
+</div>
+
+---
+
+## Overview
+
+**AFTER** is an **AI-assisted FAST Transient End-to-end Reduction** workflow
+for post-search processing of FAST fast radio burst (FRB) observations. An
+upstream search pipeline or an observer supplies confirmed candidate TOAs and
+basic observation metadata; AFTER turns them into calibrated H5 products,
+reviewed burst regions, physical measurements, diagnostic figures, result
+tables, and an optional HTML observation dashboard.
+
+AFTER covers the scientific workflow after candidate discovery:
+
+1. cut burst-centered data from raw FAST FITS;
+2. calibrate flux and polarization into Stokes I/Q/U/V;
+3. detect burst regions with an AI model;
+4. review or correct the proposed labels;
+5. measure TOA, DM, RM, flux, fluence, width, bandwidth, SNR, and polarization;
+6. export reviewable tables, plots, and dashboards.
+
+AFTER complements search systems such as
+[DRAFTS](https://github.com/SukiYume/DRAFTS). DRAFTS finds transient
+candidates; AFTER reduces and characterizes the confirmed FAST bursts.
+
+### Why AFTER
+
+- **End-to-end post-search reduction** from TOA lists to science-ready tables;
+- **Flexible entry points** from raw FITS, cut H5, calibrated H5, or labeled H5;
+- **Flux and polarization calibration** with FAST beam gain and noise-cal data;
+- **AI-assisted, human-verified labels** before physical measurements;
+- **Reproducible data contracts** for cut, calibrated, detected, and analyzed products;
+- **Batch and interactive operation** for large observing campaigns and individual review;
+- **Codex skill support** for agent-guided setup, validation, staged execution, and handoff.
+
+## AFTER workflow
+
+```mermaid
+flowchart LR
+    A["Raw FAST FITS<br/>+ confirmed TOA / DM"] --> B["Cut<br/>burst-centered H5"]
+    B --> C["Calibrate<br/>Stokes I/Q/U/V"]
+    C --> D["AI detection<br/>candidate burst regions"]
+    D --> E{"Human review"}
+    E -->|"accept / correct"| F["H5 attrs['bursts']"]
+    F --> G["Analyze<br/>DM / RM / flux / fluence / polarization"]
+    G --> H["burst_results.csv<br/>diagnostic figures"]
+    H --> I["Optional HTML dashboard"]
 ```
 
-The pipeline can also start from an intermediate product:
+The pipeline is deliberately resumable. Start from the earliest product
+available:
 
-| Starting point | Required inputs | Continue with |
+| Starting point | Required input | AFTER continues with |
 |---|---|---|
-| Raw FAST FITS | FITS directory, source, date, beam, DM, TOA seconds, output directory | Cut, calibrate, detect, review, analyze |
-| Cut H5 | `.h5` files and matching `_0001.fits`, RA, DEC, calibration npz | Calibrate, detect, review, analyze |
-| Calibrated H5 | `*_cal.h5`, detector model, output directory | Detect, review, analyze |
-| Labeled calibrated H5 | `*_cal.h5` with H5 attr `bursts` | Analyze, export, dashboard |
+| Raw FAST FITS | FITS directory, source, date, beam, DM, confirmed TOA seconds | Cut, calibrate, detect, review, analyze, export |
+| Cut H5 | `.h5` files, matching `_0001.fits`, RA/DEC, calibration reference | Calibrate, detect, review, analyze, export |
+| Calibrated H5 | `*_cal.h5`, detector model, output directory | Detect, review, analyze, export |
+| Labeled calibrated H5 | `*_cal.h5` with H5 attr `bursts` | Verify labels, analyze, export, dashboard |
+| Analysis table | `burst_results.csv` and optional diagnostic directory | Build or refresh the dashboard |
 
-## Files
+### Two scientific guardrails
 
-| Path | Role |
+1. **AFTER does not infer TOAs from filenames or quick-look images.** TOA
+   seconds must come from the observer or an upstream search product.
+2. **Automatic boxes are proposals, not final measurements.** Review accepted
+   burst regions before running energy and polarization analysis.
+
+## Repository layout
+
+| Path | Role in AFTER |
 |---|---|
-| `cut_burst_data.py` | Helper functions and a local configured example for cutting burst-centered H5 files from raw FAST FITS. |
-| `calibration.py` | Helper functions and a local configured example for polarization/flux calibration, downsampling, RFI masks, quick-look plots, and `*_cal.h5`. |
-| `burst_detect.py` | CLI for automatic, semi-automatic, or manual burst-region labeling. Writes H5 `attrs["bursts"]`, `detections.json`, and review plots. |
-| `burst_analysis.py` | CLI for DM/RM/polarization/flux/fluence/width/SNR measurements from accepted burst labels. |
-| `burst_dashboard.py` | CLI for a static HTML observation dashboard from `burst_results.csv`. |
-| `burst_dm.py` | Fine DM search utilities used by `burst_analysis.py`. |
-| `burst_pol.py` | RM, PA, PAV, and polarization utilities. |
-| `burst_properties.py` | Flux, fluence, width, bandwidth, and SNR utilities. |
-| `rfi_utils.py` | Calibration and analysis RFI masking helpers. |
-| `ZeithAngle.py` | FAST zenith-angle and gain helper functions. |
-| `gain_para.csv` | FAST beam gain parameters. |
-| `highcal_20201014_psr_tny.npz` | Default noise-calibration reference file. |
-| `models/` | Burst detector weights. |
-| `batch_processing/` | Batch wrappers for cutting, legacy FITS-to-H5 conversion, selected long-period cuts, and calibration. |
-| `skills/fast-frb-observation-processing/` | Codex operating protocol for this processing workflow. |
-| `test_burst_dashboard.py` | Dashboard unit tests. |
-| `requirements.txt` | Python dependencies. |
+| [`cut_burst_data.py`](cut_burst_data.py) | Cut burst-centered H5 files from raw FAST FITS using TOA, DM, and beam metadata. |
+| [`calibration.py`](calibration.py) | Perform flux/polarization calibration, downsampling, RFI masking, and calibrated H5 export. |
+| [`calibration_noise.py`](calibration_noise.py) | Noise-diode calibration helpers and related calculations. |
+| [`burst_detect.py`](burst_detect.py) | Automatic, semi-automatic, or manual burst-region labeling; writes H5 `attrs["bursts"]`. |
+| [`burst_analysis.py`](burst_analysis.py) | Measure DM, RM, polarization, flux, fluence, width, bandwidth, and SNR. |
+| [`burst_dashboard.py`](burst_dashboard.py) | Build a self-contained HTML observation dashboard from `burst_results.csv`. |
+| [`burst_dm.py`](burst_dm.py) | Fine-DM search routines used by the analysis stage. |
+| [`burst_pol.py`](burst_pol.py) | RM, PA, PAV, and polarization utilities. |
+| [`burst_properties.py`](burst_properties.py) | Flux, fluence, width, bandwidth, and SNR utilities. |
+| [`rfi_utils.py`](rfi_utils.py) | Shared RFI channel and pixel masking utilities. |
+| [`ZeithAngle.py`](ZeithAngle.py) | FAST zenith-angle and beam-gain helpers. |
+| [`gain_para.csv`](gain_para.csv) | FAST beam gain parameters. |
+| [`highcal_20201014_psr_tny.npz`](highcal_20201014_psr_tny.npz) | Default noise-calibration reference. |
+| [`models/`](models/) | Production burst-region detector and local experimental checkpoints. |
+| [`batch_processing/`](batch_processing/) | Batch cutting, selected long-period cutting, legacy FITS conversion, and calibration wrappers. |
+| [`skills/fast-frb-observation-processing/`](skills/fast-frb-observation-processing/) | Codex operating protocol for AFTER. |
+| [`requirements.txt`](requirements.txt) | Python dependencies. |
 
-## Repository Boundary
+## Installation
 
-Git tracks the processing code, tests, workflow documentation, the production
-detector, and the small calibration/gain assets needed by the documented
-defaults. Raw observations, generated H5 files, review plots, result tables,
-local batch catalogs, caches, and retired model checkpoints remain local and
-are covered by `.gitignore`.
-
-The tracked production detector is
-`models/best_model_yolo11n_ema.pth`. Put experimental or replacement
-checkpoints in `models/` for local testing; they will stay untracked unless the
-ignore policy is deliberately updated.
-
-## Environment
-
-Install dependencies in the environment used for this LPT checkout:
+Linux/macOS:
 
 ```bash
+git clone https://github.com/SukiYume/AFTER.git
+cd AFTER
+python -m venv .venv
+source .venv/bin/activate
+python -m pip install -U pip
 python -m pip install -r requirements.txt
 ```
 
-For GPU detector inference, install `torch` and `torchvision` with the command that matches the machine CUDA driver. The dependency list intentionally does not pin CUDA-specific PyTorch wheels.
+Windows PowerShell:
 
-Quick validation from this directory:
+```powershell
+git clone https://github.com/SukiYume/AFTER.git
+cd AFTER
+python -m venv .venv
+.\.venv\Scripts\Activate.ps1
+python -m pip install -U pip
+python -m pip install -r requirements.txt
+```
+
+Install `torch` and `torchvision` with builds matching the target CUDA driver
+when GPU detection is required. For production runs, record the Python, CUDA,
+PyTorch, torchvision, and ultralytics versions with the output.
+
+Core dependencies include NumPy, SciPy, h5py, Astropy, Matplotlib, pandas,
+Seaborn, Numba, OpenCV, PyTorch, torchvision, and Ultralytics.
+
+### Validate the installation
 
 ```bash
-python -m py_compile cut_burst_data.py calibration.py burst_detect.py burst_analysis.py burst_dashboard.py burst_dm.py burst_pol.py burst_properties.py rfi_utils.py ZeithAngle.py batch_processing/batch_calibration.py batch_processing/batch_cut_burst_data.py batch_processing/batch_cut_selected_long_period.py batch_processing/fits_to_h5.py test_burst_dashboard.py
+python -m compileall -q .
 python burst_detect.py --help
 python burst_analysis.py --help
 python burst_dashboard.py --help
+python -m unittest \
+  test_burst_dashboard.py \
+  test_burst_detect_filters.py \
+  test_calibration_noise.py \
+  test_rm_reanalysis.py
 ```
 
-`cut_burst_data.py` and `calibration.py` have local configured `__main__` examples. New observations should use the batch wrappers or import their helper functions so old hard-coded paths are not reused accidentally.
+## Quick start
 
-## Cutting Raw FITS
+The examples below use generic paths. Replace `/path/to/...` with locations on
+your own workstation or compute node.
 
-Batch wrapper:
+### 1. Cut raw FAST FITS
+
+Batch entry point:
 
 ```bash
 python batch_processing/batch_cut_burst_data.py \
-  --burst-txt batch_processing/FRBXXXX_Burst.txt \
-  --output-root /path/to/after_data/H5_Cut/FRBXXXX \
+  --burst-txt /path/to/catalogs/FRBXXXX_Burst.txt \
+  --output-root /path/to/after_runs/cut/FRBXXXX \
   --save-frb-name FRBXXXX \
   --segment-length 65536 \
   --workers 8
 ```
 
-`FRB*_Burst.txt` format:
+`FRBXXXX_Burst.txt` uses:
 
 ```text
 base project name date beam dm time
 ```
 
-The wrapper groups rows by raw data path/date/beam/DM, copies the first beam-matched FITS into the output date directory for calibration, cuts each TOA, and writes `obs_info.json`.
+The wrapper groups events by raw-data path, date, beam, and DM; copies the first
+matching beam FITS needed for calibration; cuts every supplied TOA; and writes
+`obs_info.json`.
 
-For selected long-period candidates with row-level segment lengths:
+For selected long-period candidates with row-specific segment lengths:
 
 ```bash
 python batch_processing/batch_cut_selected_long_period.py \
-  --plan-txt batch_processing/Selected_LongPeriod_Burst.txt \
-  --output-root /path/to/after_data/LPT_Selected_Cut \
+  --plan-txt /path/to/catalogs/Selected_LongPeriod_Burst.txt \
+  --output-root /path/to/after_runs/long_period_cut \
   --workers 8
 ```
 
-## Converting Legacy Cut FITS
+### 2. Convert legacy burst FITS
 
-Use `fits_to_h5.py` when older burst FITS cuts need to be converted to the current H5 schema:
+Use the compatibility converter when older burst cuts need the current H5
+schema:
 
 ```bash
 python batch_processing/fits_to_h5.py \
-  --asd-root /path/to/after_data \
-  --output-root /path/to/after_data/H5_Cut \
-  --catalog-dir batch_processing
+  --asd-root /path/to/legacy_burst_data \
+  --output-root /path/to/after_runs/cut \
+  --catalog-dir /path/to/catalogs
 ```
 
-It copies calibration FITS files ending in `_0001.fits` and writes H5 files with the same datasets/attrs as `cut_burst_data.py`.
+It copies matching `_0001.fits` calibration files and writes H5 products
+compatible with `cut_burst_data.py`.
 
-## Calibration
-
-Batch wrapper:
+### 3. Calibrate
 
 ```bash
 python batch_processing/batch_calibration.py \
-  --root-dir /path/to/after_data/H5_Cut \
-  --cal-root /path/to/after_data/H5_Cut/H5_Cal \
-  --dm-file batch_processing/h5_calibration_dm_file.txt \
+  --root-dir /path/to/after_runs/cut \
+  --cal-root /path/to/after_runs/calibrated \
+  --dm-file /path/to/catalogs/h5_calibration_dm_file.txt \
   --cal-npz highcal_20201014_psr_tny.npz \
   --workers 8
 ```
 
-`h5_calibration_dm_file.txt` format:
+Calibration catalog format:
 
 ```text
 FRB_name DM RA DEC
 ```
 
-Common saved-resolution choices:
+Useful saved-resolution choices:
 
-- `--down-time` / `--down-freq` omitted: save at the automatic plot-friendly resolution.
-- `--down-time 1`: keep raw time resolution for peak-flux comparison.
-- `--down-freq 1`: keep raw frequency channels for detailed RFI or spectral inspection.
+- omit `--down-time` and `--down-freq` for automatic, plot-friendly resolution;
+- use `--down-time 1` to preserve raw time resolution for peak-flux comparisons;
+- use `--down-freq 1` to preserve raw frequency channels for detailed spectral
+  and RFI inspection.
 
-The calibrated H5 stores Stokes I/Q/U/V in `data`, plus `freq`, `rfi_mask`, `rfi_channel`, `gain`, and `gain_err`.
-
-## Detection And Label Review
+### 4. Detect and review burst regions
 
 Automatic mode:
 
 ```bash
 python burst_detect.py \
   --mode auto \
-  --cal-dir /path/to/calibrated_h5 \
+  --cal-dir /path/to/after_runs/calibrated \
   --model-path models/best_model_yolo11n_ema.pth \
   --model-name yolo11n \
-  --output-dir /path/to/detections_auto
+  --output-dir /path/to/after_runs/detections
 ```
 
-Detection outputs:
+Detection writes:
 
-- H5 `attrs["bursts"]`, the source of truth for analysis.
-- `detections.json`, the resume and review ledger.
-- `plots/*_det.png`, review plots.
+- H5 `attrs["bursts"]`, the label source used by analysis;
+- `detections.json`, the resume and review ledger;
+- `plots/*_det.png`, review images with the accepted regions.
 
-Auto and semi-auto detection run a single inference pass on the calibrated
-Stokes I. After burst boxes are confirmed, detection uses the non-burst samples
-to recompute the analysis-style Stokes-I/V RFI union, writes the `burst_rfi_*`
-products, and draws the final masked residual plot.
+Automatic and semi-automatic modes infer once from calibrated Stokes I. After
+regions are confirmed, AFTER recomputes the analysis-style Stokes-I/V RFI union
+from non-burst samples, writes the `burst_rfi_*` products, and saves the final
+masked residual plot.
 
-After confidence filtering, boxes wider than `--max-horizontal-aspect` times
-their height are removed (default `3`). For boxes with positive-area overlap,
-only the largest box is retained before NMS.
+After confidence filtering, overly horizontal boxes are removed using
+`--max-horizontal-aspect` (default `3`). Positive-area overlaps are reduced to
+the largest region before NMS.
 
-Use `--mode semi-auto` to relabel only files removed from an existing `detections.json`. Use `--mode manual` when model suggestions are misleading. In the interactive UI, `x` writes an intentionally empty burst list for a file; `q` or `Esc` saves completed progress and exits normally without marking the current file as processed.
+Use `--mode semi-auto` to revisit selected entries from `detections.json`, or
+`--mode manual` when model suggestions are not useful. In the interactive
+review UI, `x` records an intentionally empty burst list; `q` or `Esc` saves
+completed progress and exits without marking the current file complete.
 
-## Analysis
+### 5. Analyze physical properties
 
 ```bash
 python burst_analysis.py \
-  --cal-dir /path/to/calibrated_h5 \
-  --output-dir /path/to/analysis_output \
+  --cal-dir /path/to/after_runs/calibrated \
+  --output-dir /path/to/after_runs/analysis \
   --dm-range 5 \
   --dm-step 0.1 \
   --rm-min -1000 \
@@ -197,22 +277,24 @@ python burst_analysis.py \
   --n-rm 100000
 ```
 
-Measured quantities include TOA, peak flux, fluence, width, burst bandwidth, SNR, DM, RM, linear/circular/total polarization, PA, and PAV. Use an isolated output directory for reruns with different DM/RM ranges.
+Measured quantities include TOA, peak flux, fluence, width, burst bandwidth,
+SNR, DM, RM, linear/circular/total polarization, PA, and PAV. Write reruns with
+different DM/RM ranges to separate output directories.
 
 Primary outputs:
 
 ```text
 burst_results.csv
-DM/RM/polarization diagnostic plots
+DM / RM / polarization diagnostic figures
 ```
 
-## Dashboard
+### 6. Build the observation dashboard
 
 ```bash
 python burst_dashboard.py \
-  --csv /path/to/analysis/burst_results.csv \
-  --output /path/to/analysis/burst_dashboard.html \
-  --analysis-dir /path/to/analysis \
+  --csv /path/to/after_runs/analysis/burst_results.csv \
+  --output /path/to/after_runs/analysis/burst_dashboard.html \
+  --analysis-dir /path/to/after_runs/analysis \
   --source FRBNAME \
   --date YYYYMMDD \
   --reference-dm 539 \
@@ -220,11 +302,12 @@ python burst_dashboard.py \
   --top-n 10
 ```
 
-The dashboard is a self-contained HTML report for local review or PDF printing.
+The dashboard is a self-contained HTML report that can be opened locally or
+printed to PDF.
 
-## H5 Contracts
+## Data contracts
 
-Cut H5:
+### Cut H5
 
 ```text
 data: (nsamp, npol, nchan)
@@ -233,7 +316,7 @@ attrs: start_sample, file_mjd, toa_sec, time_reso, npol, nchan,
        segment_length, obs_start_mjd, dm
 ```
 
-Calibrated H5:
+### Calibrated H5
 
 ```text
 data:        (4, nsamp, nchan), Stokes I/Q/U/V, Jy
@@ -246,20 +329,96 @@ attrs: time_reso_raw, time_reso, down_time, down_freq,
        dm, beam, ra, dec
 ```
 
-Detection labels:
+### Accepted burst region
 
 ```json
-{"time_start": 120, "time_end": 180, "freq_start": 40, "freq_end": 500, "confidence": 0.82}
+{
+  "time_start": 120,
+  "time_end": 180,
+  "freq_start": 40,
+  "freq_end": 500,
+  "confidence": 0.82
+}
 ```
 
-## Output Policy
+An intentionally rejected page is represented by an empty burst list rather
+than a missing review record.
 
-Generated products are local run artifacts:
+## Codex skill
 
-- H5/FITS data: `*.h5`, `*.fits`, `*_cal.h5`
-- Diagnostic images and dashboard exports: `*.jpg`, `*.png`, `burst_dashboard.html`
-- Detection and analysis outputs: `detections/`, `analysis_output/`, `analysis_outputs/`
-- Local batch tables: `batch_processing/*.txt`
-- Retired local checkpoints: `models/*.old`
+AFTER includes a Codex skill at:
 
-Keep new runs in their own output directories. Do not mix new analysis, relabeling, or dashboard outputs into an older run unless the overwrite is intentional.
+```text
+skills/fast-frb-observation-processing/
+```
+
+You can ask Codex:
+
+```text
+Install the Codex skill from this AFTER repository, set DATA_PROCESSING_ROOT
+to the repository root, and run the post-install validation.
+```
+
+Manual Bash installation:
+
+```bash
+mkdir -p "${CODEX_HOME:-$HOME/.codex}/skills"
+cp -R skills/fast-frb-observation-processing \
+  "${CODEX_HOME:-$HOME/.codex}/skills/"
+export DATA_PROCESSING_ROOT="$(pwd)"
+```
+
+Windows PowerShell:
+
+```powershell
+$codexRoot = if ($env:CODEX_HOME) {
+    $env:CODEX_HOME
+} else {
+    Join-Path $HOME ".codex"
+}
+New-Item -ItemType Directory -Force (Join-Path $codexRoot "skills") | Out-Null
+Copy-Item -Recurse -Force `
+  .\skills\fast-frb-observation-processing `
+  (Join-Path $codexRoot "skills")
+$env:DATA_PROCESSING_ROOT = (Get-Location).Path
+```
+
+Persist `DATA_PROCESSING_ROOT` in the relevant shell profile or environment
+configuration if agents should find AFTER in later sessions.
+
+## Repository and output policy
+
+The repository tracks processing code, tests, documentation, the current
+production detector, and the compact calibration/gain assets required by the
+documented defaults.
+
+Generated products stay outside version control:
+
+- raw and cut data: `*.fits`, `*.h5`, `*_cal.h5`;
+- review and diagnostic images: `*.jpg`, `*.png`;
+- detection and analysis directories;
+- local observation catalogs under `batch_processing/*.txt`;
+- retired and experimental model checkpoints.
+
+The tracked production detector is
+`models/best_model_yolo11n_ema.pth`. Keep each new run in a dedicated output
+directory so relabeling, parameter sweeps, and dashboard refreshes do not
+silently overwrite earlier results.
+
+## DRAFTS and AFTER
+
+```text
+DRAFTS: transient search and candidate selection
+    -> confirmed source / date / beam / TOA / DM
+AFTER: cut, calibrate, review, measure, and report
+```
+
+Use [DRAFTS](https://github.com/SukiYume/DRAFTS) when the task is to find
+candidates in observation data. Use AFTER after the candidate list is known
+and the goal is calibrated physical characterization.
+
+---
+
+<div align="center">
+  <sub>AFTER · From confirmed FAST transients to calibrated measurements</sub>
+</div>
