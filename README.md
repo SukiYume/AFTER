@@ -10,15 +10,15 @@ From confirmed burst TOAs to calibrated, reviewable FAST FRB measurements
 [![GitHub Stars](https://img.shields.io/github/stars/SukiYume/AFTER.svg?label=Stars&logo=github)](https://github.com/SukiYume/AFTER/stargazers)
 [![Python](https://img.shields.io/badge/Python-3.9%2B-blue.svg)](https://www.python.org/)
 [![License](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
-[![Codex Skill](https://img.shields.io/badge/Codex%20Skill-included-2ea44f)](skills/fast-frb-observation-processing)
+[![Codex Skill](https://img.shields.io/badge/Codex%20Skill-included-2ea44f)](skills/fast-frb-observation-processing/SKILL.md)
 [![Related](https://img.shields.io/badge/Search-DRAFTS-da282a)](https://github.com/SukiYume/DRAFTS)
 
 [Overview](#overview) ·
 [Workflow](#after-workflow) ·
 [Installation](#installation) ·
+[Agent setup](#agent-one-prompt-setup) ·
 [Quick start](#quick-start) ·
 [Data contracts](#data-contracts) ·
-[Codex skill](#codex-skill) ·
 [简体中文](README.zh-CN.md)
 
 </div>
@@ -153,6 +153,48 @@ python burst_analysis.py --help
 python burst_dashboard.py --help
 python -m pytest -q
 ```
+
+## Agent one-prompt setup
+
+AFTER ships with an operating skill for Codex and other repository-aware
+coding agents. Copy the following single instruction into the agent:
+
+```text
+Install and configure https://github.com/SukiYume/AFTER: clone or open the repository, install skills/fast-frb-observation-processing in your agent's skills directory (or read its SKILL.md directly if custom skills are unsupported), set DATA_PROCESSING_ROOT to the repository root, run the README post-install validation, and report every result before processing observation data.
+```
+
+For Codex, the bundled skill lives at:
+
+```text
+skills/fast-frb-observation-processing/
+```
+
+Manual Bash installation:
+
+```bash
+mkdir -p "${CODEX_HOME:-$HOME/.codex}/skills"
+cp -R skills/fast-frb-observation-processing \
+  "${CODEX_HOME:-$HOME/.codex}/skills/"
+export DATA_PROCESSING_ROOT="$(pwd)"
+```
+
+Windows PowerShell:
+
+```powershell
+$codexRoot = if ($env:CODEX_HOME) {
+    $env:CODEX_HOME
+} else {
+    Join-Path $HOME ".codex"
+}
+New-Item -ItemType Directory -Force (Join-Path $codexRoot "skills") | Out-Null
+Copy-Item -Recurse -Force `
+  .\skills\fast-frb-observation-processing `
+  (Join-Path $codexRoot "skills")
+$env:DATA_PROCESSING_ROOT = (Get-Location).Path
+```
+
+Persist `DATA_PROCESSING_ROOT` in the relevant shell profile or environment
+configuration if agents should find AFTER in later sessions.
 
 ## Quick start
 
@@ -346,48 +388,6 @@ attrs: time_reso_raw, time_reso, down_time, down_freq,
 
 An intentionally rejected page is represented by an empty burst list rather
 than a missing review record.
-
-## Codex skill
-
-AFTER includes a Codex skill at:
-
-```text
-skills/fast-frb-observation-processing/
-```
-
-You can ask Codex:
-
-```text
-Install the Codex skill from this AFTER repository, set DATA_PROCESSING_ROOT
-to the repository root, and run the post-install validation.
-```
-
-Manual Bash installation:
-
-```bash
-mkdir -p "${CODEX_HOME:-$HOME/.codex}/skills"
-cp -R skills/fast-frb-observation-processing \
-  "${CODEX_HOME:-$HOME/.codex}/skills/"
-export DATA_PROCESSING_ROOT="$(pwd)"
-```
-
-Windows PowerShell:
-
-```powershell
-$codexRoot = if ($env:CODEX_HOME) {
-    $env:CODEX_HOME
-} else {
-    Join-Path $HOME ".codex"
-}
-New-Item -ItemType Directory -Force (Join-Path $codexRoot "skills") | Out-Null
-Copy-Item -Recurse -Force `
-  .\skills\fast-frb-observation-processing `
-  (Join-Path $codexRoot "skills")
-$env:DATA_PROCESSING_ROOT = (Get-Location).Path
-```
-
-Persist `DATA_PROCESSING_ROOT` in the relevant shell profile or environment
-configuration if agents should find AFTER in later sessions.
 
 ## Models and outputs
 

@@ -10,15 +10,15 @@
 [![GitHub Stars](https://img.shields.io/github/stars/SukiYume/AFTER.svg?label=Stars&logo=github)](https://github.com/SukiYume/AFTER/stargazers)
 [![Python](https://img.shields.io/badge/Python-3.9%2B-blue.svg)](https://www.python.org/)
 [![License](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
-[![Codex Skill](https://img.shields.io/badge/Codex%20Skill-%E5%B7%B2%E5%8C%85%E5%90%AB-2ea44f)](skills/fast-frb-observation-processing)
+[![Codex Skill](https://img.shields.io/badge/Codex%20Skill-%E5%B7%B2%E5%8C%85%E5%90%AB-2ea44f)](skills/fast-frb-observation-processing/SKILL.md)
 [![Related](https://img.shields.io/badge/Search-DRAFTS-da282a)](https://github.com/SukiYume/DRAFTS)
 
 [项目概览](#项目概览) ·
 [处理流程](#after-处理流程) ·
 [安装](#安装) ·
+[Agent 一句话安装](#agent-一句话安装) ·
 [快速开始](#快速开始) ·
 [数据契约](#数据契约) ·
-[Codex Skill](#codex-skill) ·
 [English](README.md)
 
 </div>
@@ -150,6 +150,48 @@ python burst_analysis.py --help
 python burst_dashboard.py --help
 python -m pytest -q
 ```
+
+## Agent 一句话安装
+
+AFTER 自带一份可供 Codex 和其他能够读取仓库的 coding agent 使用的操作协议。把下面这
+一整句直接发给 agent：
+
+```text
+请安装并配置 https://github.com/SukiYume/AFTER：克隆或打开该仓库，把 skills/fast-frb-observation-processing 安装到当前 agent 的 skills 目录（如果不支持自定义 skill，就直接读取其中的 SKILL.md 作为操作协议），将 DATA_PROCESSING_ROOT 设置为仓库根目录，执行 README 中的安装后自检，并在处理真实观测数据前逐项报告自检结果。
+```
+
+Codex 使用的 skill 位于：
+
+```text
+skills/fast-frb-observation-processing/
+```
+
+Bash 手动安装：
+
+```bash
+mkdir -p "${CODEX_HOME:-$HOME/.codex}/skills"
+cp -R skills/fast-frb-observation-processing \
+  "${CODEX_HOME:-$HOME/.codex}/skills/"
+export DATA_PROCESSING_ROOT="$(pwd)"
+```
+
+Windows PowerShell：
+
+```powershell
+$codexRoot = if ($env:CODEX_HOME) {
+    $env:CODEX_HOME
+} else {
+    Join-Path $HOME ".codex"
+}
+New-Item -ItemType Directory -Force (Join-Path $codexRoot "skills") | Out-Null
+Copy-Item -Recurse -Force `
+  .\skills\fast-frb-observation-processing `
+  (Join-Path $codexRoot "skills")
+$env:DATA_PROCESSING_ROOT = (Get-Location).Path
+```
+
+如果后续任务也要让 agent 自动定位 AFTER，应把 `DATA_PROCESSING_ROOT` 持久化到 shell
+profile 或系统环境变量。
 
 ## 快速开始
 
@@ -331,48 +373,6 @@ attrs: time_reso_raw, time_reso, down_time, down_freq,
 ```
 
 明确判定为无 burst 的页面使用空列表记录，而不是缺失复核状态。
-
-## Codex Skill
-
-AFTER 自带 Codex skill：
-
-```text
-skills/fast-frb-observation-processing/
-```
-
-可以直接让 Codex 执行：
-
-```text
-请安装当前 AFTER 仓库中的 Codex skill，把 DATA_PROCESSING_ROOT 设置为
-仓库根目录，并完成安装后的自检。
-```
-
-Bash 手动安装：
-
-```bash
-mkdir -p "${CODEX_HOME:-$HOME/.codex}/skills"
-cp -R skills/fast-frb-observation-processing \
-  "${CODEX_HOME:-$HOME/.codex}/skills/"
-export DATA_PROCESSING_ROOT="$(pwd)"
-```
-
-Windows PowerShell：
-
-```powershell
-$codexRoot = if ($env:CODEX_HOME) {
-    $env:CODEX_HOME
-} else {
-    Join-Path $HOME ".codex"
-}
-New-Item -ItemType Directory -Force (Join-Path $codexRoot "skills") | Out-Null
-Copy-Item -Recurse -Force `
-  .\skills\fast-frb-observation-processing `
-  (Join-Path $codexRoot "skills")
-$env:DATA_PROCESSING_ROOT = (Get-Location).Path
-```
-
-如果后续任务也要让 agent 自动定位 AFTER，应把 `DATA_PROCESSING_ROOT` 持久化到 shell
-profile 或系统环境变量。
 
 ## 模型与运行结果
 
