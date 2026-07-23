@@ -9,6 +9,7 @@
 [![AFTER](https://img.shields.io/badge/FAST%20FRB-AFTER-1f6feb)](https://github.com/SukiYume/AFTER)
 [![GitHub Stars](https://img.shields.io/github/stars/SukiYume/AFTER.svg?label=Stars&logo=github)](https://github.com/SukiYume/AFTER/stargazers)
 [![Python](https://img.shields.io/badge/Python-3.9%2B-blue.svg)](https://www.python.org/)
+[![License](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
 [![Codex Skill](https://img.shields.io/badge/Codex%20Skill-%E5%B7%B2%E5%8C%85%E5%90%AB-2ea44f)](skills/fast-frb-observation-processing)
 [![Related](https://img.shields.io/badge/Search-DRAFTS-da282a)](https://github.com/SukiYume/DRAFTS)
 
@@ -142,14 +143,12 @@ OpenCV、PyTorch、torchvision 和 Ultralytics。
 
 ```bash
 python -m compileall -q .
+python batch_processing/batch_cut_burst_data.py --help
+python batch_processing/batch_calibration.py --help
 python burst_detect.py --help
 python burst_analysis.py --help
 python burst_dashboard.py --help
-python -m unittest \
-  test_burst_dashboard.py \
-  test_burst_detect_filters.py \
-  test_calibration_noise.py \
-  test_rm_reanalysis.py
+python -m pytest -q
 ```
 
 ## 快速开始
@@ -386,6 +385,10 @@ detector 时，可以通过 `--model-path` 指定其他兼容 checkpoint。
 
 每个观测或参数重跑都应使用独立输出目录，避免重新标注、DM/RM 扫描或刷新面板时
 无意覆盖旧结果。
+
+## 许可
+
+AFTER 采用 [MIT License](LICENSE)。
 
 ## DRAFTS 与 AFTER
 

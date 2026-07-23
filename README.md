@@ -9,6 +9,7 @@ From confirmed burst TOAs to calibrated, reviewable FAST FRB measurements
 [![AFTER](https://img.shields.io/badge/FAST%20FRB-AFTER-1f6feb)](https://github.com/SukiYume/AFTER)
 [![GitHub Stars](https://img.shields.io/github/stars/SukiYume/AFTER.svg?label=Stars&logo=github)](https://github.com/SukiYume/AFTER/stargazers)
 [![Python](https://img.shields.io/badge/Python-3.9%2B-blue.svg)](https://www.python.org/)
+[![License](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
 [![Codex Skill](https://img.shields.io/badge/Codex%20Skill-included-2ea44f)](skills/fast-frb-observation-processing)
 [![Related](https://img.shields.io/badge/Search-DRAFTS-da282a)](https://github.com/SukiYume/DRAFTS)
 
@@ -145,14 +146,12 @@ Seaborn, Numba, OpenCV, PyTorch, torchvision, and Ultralytics.
 
 ```bash
 python -m compileall -q .
+python batch_processing/batch_cut_burst_data.py --help
+python batch_processing/batch_calibration.py --help
 python burst_detect.py --help
 python burst_analysis.py --help
 python burst_dashboard.py --help
-python -m unittest \
-  test_burst_dashboard.py \
-  test_burst_detect_filters.py \
-  test_calibration_noise.py \
-  test_rm_reanalysis.py
+python -m pytest -q
 ```
 
 ## Quick start
@@ -402,6 +401,10 @@ A complete run can produce:
 Keep each observation or parameter rerun in a dedicated output directory so
 relabeling, DM/RM sweeps, and dashboard refreshes do not silently overwrite
 earlier results.
+
+## License
+
+AFTER is released under the [MIT License](LICENSE).
 
 ## DRAFTS and AFTER
 

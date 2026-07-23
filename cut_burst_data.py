@@ -237,7 +237,7 @@ if __name__ == '__main__':
     FRB_NAME       = 'FRB20201124A'     # FRB 名称
     DATE           = '20210526'         # 观测日期
 
-    DATA_PATH      = '/data31-new/ZD2023_5/FRB20201124A/20210526/'
+    DATA_PATH      = '/path/to/raw_fast/source/date/'
     SAVE_PATH      = '/path/to/after_data/FRB20201124A/20210526/'
     TOA_FILE       = 'toa_list_fast.txt'
 

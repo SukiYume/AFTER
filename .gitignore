@@ -6,19 +6,32 @@ __pycache__/
 .coverage
 .coverage.*
 htmlcov/
+build/
+dist/
+*.egg-info/
 
 # Generated data products and review outputs
 detections/
 analysis_output/
 analysis_outputs/
 outputs/
+cut/
+calibrated/
+plots/
+reports/
+test-reports/
 *_cal.h5
 *.h5
+*.hdf5
 *.fits
+*.fit
 *.npy
 *.npz
 *.jpg
 *.png
+*.html
+*.log
+obs_info.json
 detections.json
 burst_results.csv
 burst_dashboard.html
@@ -45,6 +58,10 @@ Desktop.ini
 # retired checkpoints kept only for rollback/reference.
 models/*.pth
 !models/best_model_yolo11n_ema.pth
+models/*.pt
+models/*.ckpt
+models/*.onnx
+models/*.safetensors
 models/*.old
 
 # Required calibration asset intentionally kept in Git.
