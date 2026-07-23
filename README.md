@@ -386,24 +386,22 @@ $env:DATA_PROCESSING_ROOT = (Get-Location).Path
 Persist `DATA_PROCESSING_ROOT` in the relevant shell profile or environment
 configuration if agents should find AFTER in later sessions.
 
-## Repository and output policy
+## Models and outputs
 
-The repository tracks processing code, tests, documentation, the current
-production detector, and the compact calibration/gain assets required by the
-documented defaults.
+AFTER includes the default burst detector at
+`models/best_model_yolo11n_ema.pth`. Select another compatible checkpoint with
+`--model-path` when comparing or updating detectors.
 
-Generated products stay outside version control:
+A complete run can produce:
 
-- raw and cut data: `*.fits`, `*.h5`, `*_cal.h5`;
-- review and diagnostic images: `*.jpg`, `*.png`;
-- detection and analysis directories;
-- local observation catalogs under `batch_processing/*.txt`;
-- retired and experimental model checkpoints.
+- cut and calibrated H5 files;
+- `detections.json` and burst review figures;
+- `burst_results.csv` and DM/RM/polarization diagnostics;
+- a self-contained `burst_dashboard.html`.
 
-The tracked production detector is
-`models/best_model_yolo11n_ema.pth`. Keep each new run in a dedicated output
-directory so relabeling, parameter sweeps, and dashboard refreshes do not
-silently overwrite earlier results.
+Keep each observation or parameter rerun in a dedicated output directory so
+relabeling, DM/RM sweeps, and dashboard refreshes do not silently overwrite
+earlier results.
 
 ## DRAFTS and AFTER
 

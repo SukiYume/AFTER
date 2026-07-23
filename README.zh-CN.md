@@ -372,21 +372,20 @@ $env:DATA_PROCESSING_ROOT = (Get-Location).Path
 如果后续任务也要让 agent 自动定位 AFTER，应把 `DATA_PROCESSING_ROOT` 持久化到 shell
 profile 或系统环境变量。
 
-## 版本库与输出边界
+## 模型与运行结果
 
-仓库追踪处理代码、测试、说明文档、当前生产 detector，以及默认流程需要的小型定标和
-gain 文件。
+AFTER 默认使用 `models/best_model_yolo11n_ema.pth` 进行 burst 检测。比较或更新
+detector 时，可以通过 `--model-path` 指定其他兼容 checkpoint。
 
-以下运行产物不进入版本控制：
+一次完整运行可以产生：
 
-- 原始和裁切数据：`*.fits`、`*.h5`、`*_cal.h5`；
-- 复核与诊断图：`*.jpg`、`*.png`；
-- detection 与 analysis 输出目录；
-- `batch_processing/*.txt` 下的本地观测清单；
-- 退役或实验模型权重。
+- 裁切和定标后的 H5；
+- `detections.json` 和 burst 复核图；
+- `burst_results.csv` 与 DM/RM/偏振诊断图；
+- 自包含的 `burst_dashboard.html`。
 
-当前追踪的生产检测模型为 `models/best_model_yolo11n_ema.pth`。每次新运行应使用独立
-输出目录，避免重标、参数扫描或面板刷新无意覆盖旧结果。
+每个观测或参数重跑都应使用独立输出目录，避免重新标注、DM/RM 扫描或刷新面板时
+无意覆盖旧结果。
 
 ## DRAFTS 与 AFTER
 
