@@ -511,12 +511,16 @@ def analyze_pol(I, Q, U, V, freq, time_reso, burst_mask, freq_index, noise_mask,
     """
     wave = const.c.value / (freq * 1e6)   # 波长 (m)
 
-    # 爆发时间 × 有效通道: 干净数据, NaN → 0 送入 numba
-    ts_idx      = np.where(burst_mask)[0]
-    ts, te      = ts_idx[0], ts_idx[-1] + 1
-    burst_I     = np.nan_to_num(I[ts:te][:, freq_index], nan=0.0)
-    burst_Q     = np.nan_to_num(Q[ts:te][:, freq_index], nan=0.0)
-    burst_U     = np.nan_to_num(U[ts:te][:, freq_index], nan=0.0)
+    # 爆发强采样点 × 有效通道: 干净数据, NaN → 0 送入 numba。
+    # burst_mask 可以是不连续的布尔门（例如多峰爆发中只保留超过半峰高的
+    # 采样点），因此必须直接布尔索引；不能再用首尾切片把中间噪声带回来。
+    if not np.any(burst_mask):
+        raise ValueError('burst_mask 没有有效时间采样点')
+    if not np.any(freq_index):
+        raise ValueError('freq_index 没有有效频率通道')
+    burst_I     = np.nan_to_num(I[burst_mask][:, freq_index], nan=0.0)
+    burst_Q     = np.nan_to_num(Q[burst_mask][:, freq_index], nan=0.0)
+    burst_U     = np.nan_to_num(U[burst_mask][:, freq_index], nan=0.0)
     burst_wave  = wave[freq_index]
 
     # RM 合成

@@ -15,7 +15,6 @@
 """
 
 import os
-import sys
 import json
 import glob
 import argparse
@@ -24,7 +23,8 @@ import torch
 import numpy as np
 import h5py
 import matplotlib
-import seaborn as sns                      # 'mako' 颜色映射需要 seaborn 支持
+# 导入 seaborn 会向 Matplotlib 注册 ``mako`` 颜色映射。
+import seaborn  # noqa: F401
 import matplotlib.pyplot as plt
 import matplotlib.patches as patches
 from matplotlib.widgets import RectangleSelector
@@ -37,6 +37,8 @@ from ultralytics.cfg import get_cfg
 from rfi_utils import cal_rfi
 
 device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+
+DEFAULT_MAX_HORIZONTAL_ASPECT = 3.0
 
 
 def load_yolo_model(model_path, model_name='yolo11n'):
@@ -272,7 +274,62 @@ def prepare_image_tiles(stokes_I, target_size=512, time_factor=None, freq_factor
     return tiles, offsets, time_factor, freq_factor
 
 
-def predict_single(model, img_float32, conf=0.25, iou_threshold=0.5):
+def filter_inference_boxes(scores, boxes,
+                           max_horizontal_aspect=DEFAULT_MAX_HORIZONTAL_ASPECT):
+    """去掉横向伪框；重叠框按面积从大到小只保留最大框。"""
+    if scores is None or boxes is None:
+        return None, None
+    if max_horizontal_aspect <= 0:
+        raise ValueError('max_horizontal_aspect must be positive')
+
+    scores = np.asarray(scores)
+    boxes = np.asarray(boxes)
+    if boxes.ndim != 2 or boxes.shape[1] != 4:
+        raise ValueError(f'boxes must have shape (N, 4), got {boxes.shape}')
+    if scores.ndim != 1 or len(scores) != len(boxes):
+        raise ValueError('scores must have shape (N,) matching boxes')
+
+    width, height = boxes[:, 2], boxes[:, 3]
+    valid = (
+        np.isfinite(scores)
+        & np.all(np.isfinite(boxes), axis=1)
+        & (width > 0)
+        & (height > 0)
+        & (width <= max_horizontal_aspect * height)
+    )
+    scores, boxes = scores[valid], boxes[valid]
+    if not len(boxes):
+        return None, None
+
+    half_width, half_height = boxes[:, 2] / 2, boxes[:, 3] / 2
+    xyxy = np.column_stack([
+        boxes[:, 0] - half_width,
+        boxes[:, 1] - half_height,
+        boxes[:, 0] + half_width,
+        boxes[:, 1] + half_height,
+    ])
+    order = sorted(
+        range(len(boxes)),
+        key=lambda i: (float(boxes[i, 2] * boxes[i, 3]), float(scores[i])),
+        reverse=True,
+    )
+
+    keep = []
+    for index in order:
+        candidate = xyxy[index]
+        overlaps = any(
+            min(candidate[2], xyxy[kept][2]) > max(candidate[0], xyxy[kept][0])
+            and min(candidate[3], xyxy[kept][3]) > max(candidate[1], xyxy[kept][1])
+            for kept in keep
+        )
+        if not overlaps:
+            keep.append(index)
+
+    return scores[keep], boxes[keep]
+
+
+def predict_single(model, img_float32, conf=0.25, iou_threshold=0.5,
+                   max_horizontal_aspect=DEFAULT_MAX_HORIZONTAL_ASPECT):
     """对单张 512×512 灰度图做 YOLO 推理 + NMS。
 
     Parameters
@@ -283,6 +340,8 @@ def predict_single(model, img_float32, conf=0.25, iou_threshold=0.5):
         置信度阈值，低于此值的预测被过滤。
     iou_threshold : float
         NMS 的 IoU 阈值。
+    max_horizontal_aspect : float
+        允许的最大模型像素宽高比，默认 3；超过后视为横向 RFI 框。
 
     Returns
     -------
@@ -312,6 +371,13 @@ def predict_single(model, img_float32, conf=0.25, iou_threshold=0.5):
 
     if len(box) == 0:
         return None, None
+
+    score_np, box_np = filter_inference_boxes(
+        score.cpu().numpy(), box.cpu().numpy(), max_horizontal_aspect)
+    if box_np is None:
+        return None, None
+    box = torch.as_tensor(box_np, dtype=box.dtype, device=box.device)
+    score = torch.as_tensor(score_np, dtype=score.dtype, device=score.device)
 
     # cxcywh → xyxy，用于 NMS
     cx, cy, w, h = box[:, 0], box[:, 1], box[:, 2], box[:, 3]
@@ -525,7 +591,7 @@ def review_interactive(stokes_I, freq, time_reso, burst_regions=None):
                             实时回显在图上, 可以连续拖出多个框
       * 鼠标右键           → 撤销最近一次画的用户框 (多次右键 = 连续 pop,
                             为空则忽略). 模型框不会被右键撤销.
-      * q / Esc           → 中断整批处理 (抛 KeyboardInterrupt)
+      * q / Esc           → 正常结束整批处理并保存已完成进度
       * 关闭窗口           → 等价于按 Enter, 误关不会中断批处理
     """
     burst_regions = burst_regions or []
@@ -665,7 +731,7 @@ def review_interactive(stokes_I, freq, time_reso, burst_regions=None):
     del selector
 
     if state['command'] == 'quit':
-        raise KeyboardInterrupt('User quit semi-auto review')
+        return None
     if state['command'] == 'empty':
         return []
 
@@ -678,7 +744,8 @@ def review_interactive(stokes_I, freq, time_reso, burst_regions=None):
 
 
 def detect_one_file(h5_path, model, conf=0.25, iou_threshold=0.5,
-                    mode='auto', plot_dir=None, rfi_fft=False):
+                    mode='auto', plot_dir=None, rfi_fft=False,
+                    max_horizontal_aspect=DEFAULT_MAX_HORIZONTAL_ASPECT):
     """对一个定标后 h5 文件做爆发检测。
 
     Parameters
@@ -698,6 +765,8 @@ def detect_one_file(h5_path, model, conf=0.25, iou_threshold=0.5,
     rfi_fft : bool
         检测确认后写入 H5 的 RFI 是否使用 FFT 方法; 默认使用与
         burst_analysis.py 相同的熵方法。
+    max_horizontal_aspect : float
+        模型框允许的最大宽高比；重叠框始终优先保留面积最大的框。
 
     长数据切 tile: 当 nsamp_save 经过"清晰下采样"后还宽于 512 时, 把图按
     时间轴每 512 列切一片送 YOLO 推理. 检测下采样倍率默认取 calibration
@@ -705,8 +774,9 @@ def detect_one_file(h5_path, model, conf=0.25, iou_threshold=0.5,
 
     Returns
     -------
-    result : dict
-        包含 'bursts'（区域列表）和 'has_burst'（是否检测到爆发）。
+    result : dict or None
+        包含 'bursts'（区域列表）和 'has_burst'（是否检测到爆发）；用户按
+        q/Esc 时返回 None。
     """
     with h5py.File(h5_path, 'r') as f:
         iquv      = f['data'][:]                 # (4, nsamp, nchan)
@@ -732,13 +802,17 @@ def detect_one_file(h5_path, model, conf=0.25, iou_threshold=0.5,
 
         tile_results = []
         for tile, offset in zip(tiles, offsets):
-            scores, boxes = predict_single(model, tile, conf=conf, iou_threshold=iou_threshold)
+            scores, boxes = predict_single(
+                model, tile, conf=conf, iou_threshold=iou_threshold,
+                max_horizontal_aspect=max_horizontal_aspect)
             tile_results.append((boxes, scores, offset))
         burst_regions = boxes_to_regions_tiled(tile_results, time_factor, freq_factor, nsamp, nchan)
 
     # semi-auto: 把 YOLO 结果交给用户审查 / 修改
     if mode == 'semi-auto':
         burst_regions = review_interactive(stokes_I, freq, time_reso, burst_regions)
+    if burst_regions is None:
+        return None
 
     fname = os.path.basename(h5_path)
     print(f'  [{fname}] 检测到 {len(burst_regions)} 个爆发')
@@ -771,6 +845,9 @@ if __name__ == '__main__':
     parser.add_argument('--output-dir',    default='./detections/',           help='输出目录')
     parser.add_argument('--conf',          default=0.25, type=float,          help='置信度阈值')
     parser.add_argument('--iou-threshold', default=0.5,  type=float,          help='NMS IoU 阈值')
+    parser.add_argument('--max-horizontal-aspect',
+                        default=DEFAULT_MAX_HORIZONTAL_ASPECT, type=float,
+                        help='过滤 width/height 超过该值的横向模型框')
     parser.add_argument('--mode',          default='auto',
                         choices=['auto', 'semi-auto', 'manual'],
                         help='auto=全自动; semi-auto=YOLO+人工审查; manual=纯手工标记')
@@ -779,6 +856,8 @@ if __name__ == '__main__':
     parser.add_argument('--rfi-fft',       action='store_true',
                         help='检测确认后写入 H5 的 RFI 改用 FFT 法')
     args = parser.parse_args()
+    if args.max_horizontal_aspect <= 0:
+        parser.error('--max-horizontal-aspect 必须大于 0')
 
     if args.mode == 'auto':
         matplotlib.use('Agg')
@@ -814,20 +893,35 @@ if __name__ == '__main__':
             detections = json.load(f)
         print(f'  已载入 {len(detections)} 条历史记录, 已处理的文件会跳过')
 
+    quit_requested = False
     for h5_path in h5_files:
         fname = os.path.basename(h5_path)
         if fname in detections:
             print(f'  [{fname}] 跳过 (detections.json 中已存在)')
             continue
-        result = detect_one_file(h5_path, model, conf=args.conf,
-                                 iou_threshold=args.iou_threshold,
-                                 mode=args.mode, plot_dir=plot_dir,
-                                 rfi_fft=args.rfi_fft)
+        result = detect_one_file(
+            h5_path, model, conf=args.conf,
+            iou_threshold=args.iou_threshold,
+            mode=args.mode, plot_dir=plot_dir,
+            rfi_fft=args.rfi_fft,
+            max_horizontal_aspect=args.max_horizontal_aspect)
+        if result is None:
+            quit_requested = True
+            break
         detections[fname] = result
         # 每文件落盘一次, 中途中断 / Ctrl+C 不会丢已经标好的进度
         with open(det_path, 'w') as f:
             json.dump(detections, f, indent=2)
 
-    print(f'[OK] 检测结果已保存: {det_path}')
-    n_with = sum(1 for v in detections.values() if v['has_burst'])
-    print(f'\n完成: {n_with}/{len(detections)} 个文件检测到爆发')
+    if quit_requested:
+        # 当前文件不记为已处理，下次从它继续。
+        with open(det_path, 'w') as f:
+            json.dump(detections, f, indent=2)
+        n_with = sum(1 for v in detections.values() if v['has_burst'])
+        print(f'\n[退出] 当前进度已保存: {det_path}')
+        print(f'已处理 {len(detections)}/{len(h5_files)} 个文件，'
+              f'其中 {n_with} 个检测到爆发')
+    else:
+        print(f'[OK] 检测结果已保存: {det_path}')
+        n_with = sum(1 for v in detections.values() if v['has_burst'])
+        print(f'\n完成: {n_with}/{len(detections)} 个文件检测到爆发')

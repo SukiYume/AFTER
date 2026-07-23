@@ -77,6 +77,7 @@ CYCLE = [
 # 所有图（含偏振这类双子图）都用同一个约 4:3 的长宽比渲染，配合 CSS 里同比例的卡片框，
 # 各图便排成整齐的每行 4 个的统一网格。
 FIG_SIZE = (5.6, 4.2)
+FIG_SIZE_WIDE = (11.4, 4.2)
 FIGURE_DPI = 160              # 内嵌图 PNG 的渲染分辨率
 
 # --- fluence × bandwidth 汇总（显示在顶部指标栏）-------------------------- #
@@ -549,7 +550,8 @@ def plot_frequency_coverage(df):
     ax_top.set_ylabel("覆盖该频率的 burst 数")
     ax_top.set_ylim(bottom=0)
     ax_top.set_title(f"频率覆盖占用（共 {len(data)} 个 burst）")
-    ax_top.legend(loc="upper left", frameon=False)
+    ax_top.legend(loc="upper left", bbox_to_anchor=(0.02, 0.90),
+                  frameon=False, borderaxespad=0.0)
 
     # 下方直方图：优先用 center_freq 列，缺失则取 (low+high)/2。
     center = data["center_freq"] if "center_freq" in data.columns and data["center_freq"].notna().any() \
@@ -625,7 +627,7 @@ def plot_waiting_time(df):
 def plot_polarization(df):
     """偏振与 RM：仅含可靠 RM 的 burst，左 RM、右线/圆偏振分数（左右并排两连图）。"""
     data = df[df["rm_reliable"]].copy()
-    fig, (ax_rm, ax_pol) = plt.subplots(1, 2, figsize=FIG_SIZE)
+    fig, (ax_rm, ax_pol) = plt.subplots(1, 2, figsize=FIG_SIZE_WIDE)
     fig.subplots_adjust(wspace=0.32)
     x = data["time_s"] / 60.0
 
@@ -1052,6 +1054,7 @@ def build_css():
       transition:border-color .18s ease, transform .18s ease, box-shadow .18s ease;
     }
     .panel:hover{ transform:translateY(-2px); box-shadow:var(--shadow); }
+    .panel-wide{ width:calc((100% - 11px) / 2); }
     .panel-head{ display:flex; gap:9px; align-items:baseline; margin-bottom:7px; }
     .panel-idx{ font-weight:800; font-size:11.5px; font-variant-numeric:tabular-nums;
       letter-spacing:.02em; color:var(--teal); flex:0 0 auto; }
@@ -1062,6 +1065,7 @@ def build_css():
     /* 固定 4:3 比例框让每块图版大小一致；图的白底与卡片融为一体，object-fit 留边不可见。 */
     .panel-fig{ margin-top:auto; aspect-ratio:4/3; background:var(--surface);
       border-radius:6px; overflow:hidden; }
+    .panel-wide .panel-fig{ aspect-ratio:8/3; }
     .panel-fig img{ display:block; width:100%; height:100%; object-fit:contain; }
 
     .gallery{ display:grid; grid-template-columns:repeat(auto-fill,minmax(196px,1fr)); gap:11px; }
@@ -1137,6 +1141,7 @@ def build_css():
     /* 响应式断点都限定为 screen，使打印时始终保持满密度（8 格 / 3 列）；A3 够宽。 */
     @media screen and (max-width:1200px){
       .panel{ width:calc((100% - 11px) / 2); }   /* 每行 2 个 */
+      .panel-wide{ width:100%; }
       .rail{ grid-template-columns:repeat(4,minmax(0,1fr)); }
       .stat{ border-bottom:1px solid var(--line); }
       .stat:nth-child(4n){ border-right:none; }
@@ -1150,6 +1155,7 @@ def build_css():
     @media screen and (max-width:760px){
       .shell{ width:calc(100vw - 28px); }
       .panel{ width:100%; }                       /* 每行 1 个 */
+      .panel-wide .panel-fig{ aspect-ratio:4/3; }
       .rail{ grid-template-columns:repeat(2,minmax(0,1fr)); }
       .stat:nth-child(odd){ border-right:1px solid var(--line); }
       .stat:nth-child(2n){ border-right:none; }
@@ -1226,7 +1232,7 @@ def build_html(df, csv_path, output_path, analysis_dir, metadata, args):
 
     chart_html = "\n".join(
         f"""
-        <article class="panel">
+        <article class="panel{' panel-wide' if title == '偏振与 RM' else ''}">
           <div class="panel-head">
             <span class="panel-idx">{i:02d}</span>
             <div class="panel-titles">

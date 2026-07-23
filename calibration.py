@@ -43,9 +43,12 @@ from astropy.io import fits
 from astropy.utils import iers
 from multiprocessing import Pool
 from ZeithAngle import get_za, get_gain
+from calibration_noise import fold_noise_cal
 from rfi_utils import cal_rfi
 
 iers.conf.auto_download = False
+# 远端计算节点通常不联网；允许现有 IERS 表用于较新的观测日期。
+iers.conf.auto_max_age = None
 
 
 # 画图目标分辨率: 频率 ~512 通道, 时间 ~ 49.152us × 8 ≈ 393us.
@@ -60,28 +63,6 @@ def find_cal_fits(directory, beam):
         if fname.endswith('_0001.fits') and f'M{beam:02d}' in fname:
             return os.path.join(directory, fname)
     return None
-
-
-def fold_noise_cal(cal_fits_path):
-    """折叠噪声管数据, 返回 noise_on - noise_off, 形状 (npol, nchan)。"""
-    with fits.open(cal_fits_path) as f:
-        h         = f[1].header
-        time_reso = h['TBIN']
-        data      = f[1].data['DATA'].reshape(
-            h['NAXIS2'] * h['NSBLK'], h['NPOL'], h['NCHAN']
-        )
-
-    # FAST 噪声管周期(采样点数): 噪声管频率 = 1e9 / (4096 * 4096 * 12) Hz
-    noise_period = int(4096 * 4096 * 12 / (time_reso * 1e9))
-    n_periods    = data.shape[0] // noise_period
-    data = data[:n_periods * noise_period].reshape(
-        n_periods, noise_period, h['NPOL'], h['NCHAN']).mean(axis=0)
-
-    power     = np.mean(data[:, :2, :], axis=(1, 2))
-    on_mask   = power > np.mean(power)
-    noise_on  = np.mean(data[on_mask],  axis=0)
-    noise_off = np.mean(data[~on_mask], axis=0)
-    return noise_on - noise_off
 
 
 def load_t_cal(cal_npz_path, beam, nchan):
@@ -334,7 +315,7 @@ if __name__ == '__main__':
         with fits.open(cal_fits_path) as f:
             nchan = f[1].header['NCHAN']
 
-        noise_cal = fold_noise_cal(cal_fits_path)
+        noise_cal = fold_noise_cal(cal_fits_path, diagnostic_dir=OUTPUT_DIR)
         t_cal     = load_t_cal(CAL_NPZ, beam, nchan)
 
         print(f'  波束 M{beam:02d}: {len(h5_list)} 个 burst, '

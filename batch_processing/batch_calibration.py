@@ -168,7 +168,9 @@ def process_group(group):
     with fits.open(group["cal_fits_path"]) as f:
         nchan = f[1].header["NCHAN"]
 
-    noise_cal = fold_noise_cal(group["cal_fits_path"])
+    noise_cal = fold_noise_cal(
+        group["cal_fits_path"], diagnostic_dir=group["output_dir"]
+    )
     t_cal = load_t_cal(group["cal_npz"], group["beam"], nchan)
 
     print(
