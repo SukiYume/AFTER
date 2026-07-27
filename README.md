@@ -6,12 +6,9 @@
 
 From confirmed burst TOAs to calibrated, reviewable FAST FRB measurements
 
-[![AFTER](https://img.shields.io/badge/FAST%20FRB-AFTER-1f6feb)](https://github.com/SukiYume/AFTER)
-[![GitHub Stars](https://img.shields.io/github/stars/SukiYume/AFTER.svg?label=Stars&logo=github)](https://github.com/SukiYume/AFTER/stargazers)
 [![Python](https://img.shields.io/badge/Python-3.9%2B-blue.svg)](https://www.python.org/)
 [![License](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
 [![Codex Skill](https://img.shields.io/badge/Codex%20Skill-included-2ea44f)](skills/fast-frb-observation-processing/SKILL.md)
-[![Related](https://img.shields.io/badge/Search-DRAFTS-da282a)](https://github.com/SukiYume/DRAFTS)
 
 [Overview](#overview) ·
 [Workflow](#after-workflow) ·
@@ -43,8 +40,7 @@ AFTER covers the scientific workflow after candidate discovery:
 5. measure TOA, DM, RM, flux, fluence, width, bandwidth, SNR, and polarization;
 6. export reviewable tables, plots, and dashboards.
 
-AFTER complements search systems such as
-[DRAFTS](https://github.com/SukiYume/DRAFTS). DRAFTS finds transient
+AFTER complements search systems such as DRAFTS. DRAFTS finds transient
 candidates; AFTER reduces and characterizes the confirmed FAST bursts.
 
 ### Why AFTER
@@ -130,7 +126,8 @@ from the repository root.
 Linux/macOS:
 
 ```bash
-git clone https://github.com/SukiYume/AFTER.git
+: "${AFTER_REPOSITORY_URL:?set the repository URL}"
+git clone "$AFTER_REPOSITORY_URL" AFTER
 cd AFTER
 python -m venv .venv
 source .venv/bin/activate
@@ -141,7 +138,8 @@ python -m pip install -r requirements.txt
 Windows PowerShell:
 
 ```powershell
-git clone https://github.com/SukiYume/AFTER.git
+if (-not $env:AFTER_REPOSITORY_URL) { throw "Set AFTER_REPOSITORY_URL first" }
+git clone $env:AFTER_REPOSITORY_URL AFTER
 cd AFTER
 python -m venv .venv
 .\.venv\Scripts\Activate.ps1
@@ -150,16 +148,10 @@ python -m pip install -r requirements.txt
 ```
 
 Install `torch` and `torchvision` with builds matching the target CUDA driver
-when GPU detection is required. The following is a validated production stack,
-not a claim that every newer combination is compatible:
-
-| Validation target | Date | Python | PyTorch / CUDA build | torchvision | CuPy | Ultralytics | GPU / driver | Result |
-|---|---|---|---|---|---|---|---|---|
-| `pg13` calibration and inference | 2026-07-27 | 3.11.15 | 2.5.1+cu121 / 12.1 | 0.20.1+cu121 | 14.0.1 / runtime 12.9 (not required by AFTER) | 8.4.50 | NVIDIA L40 / 535.129.03 | imports, PyTorch CUDA tensor operation, and CuPy CUDA array operation passed |
-
-The same environment reported NumPy 2.4.4, SciPy 1.16.3, Astropy 7.2.0, and
-h5py 3.16.0. Record the actual environment beside every production output;
-`requirements.txt` intentionally does not pin GPU wheels.
+when GPU detection is required. AFTER does not require a particular host,
+GPU model, or driver version. Validate imports and a CUDA tensor operation in
+the target environment, and record the actual runtime metadata beside every
+production output. `requirements.txt` intentionally does not pin GPU wheels.
 
 Core dependencies include NumPy, SciPy, h5py, Astropy, Matplotlib, pandas,
 Seaborn, Numba, OpenCV, PyTorch, torchvision, and Ultralytics.
@@ -183,7 +175,7 @@ AFTER ships with an operating skill for Codex and other repository-aware
 coding agents. Copy the following single instruction into the agent:
 
 ```text
-Install and configure https://github.com/SukiYume/AFTER: clone or open the repository, install skills/fast-frb-observation-processing in your agent's skills directory (or read its SKILL.md directly if custom skills are unsupported), set DATA_PROCESSING_ROOT to the repository root, run the README post-install validation, and report every result before processing observation data.
+Install and configure the AFTER repository: clone or open it, install skills/fast-frb-observation-processing in your agent's skills directory (or read its SKILL.md directly if custom skills are unsupported), set DATA_PROCESSING_ROOT to the repository root, run the README post-install validation, and report every result before processing observation data.
 ```
 
 For Codex, the bundled skill lives at:
@@ -488,7 +480,7 @@ Bundled binary assets are identified by content hash:
 
 | Artifact | Verified contents and provenance | SHA-256 |
 |---|---|---|
-| `models/best_model_yolo11n_ema.pth` | YOLO11n-compatible `OrderedDict` state dict with 499 entries; loaded successfully on the validated `pg13` stack and introduced in repository commit `17511c1` on 2026-06-22. The checkpoint does not embed the training dataset, epoch, command, or Ultralytics version, so the hash is its authoritative version. | `9BEEF810651B7B4B793A0DD85DFBB0E0959406BAE4B8D322313C841791E830FA` |
+| `models/best_model_yolo11n_ema.pth` | YOLO11n-compatible `OrderedDict` state dict with 499 entries; introduced in repository commit `17511c1` on 2026-06-22. The checkpoint does not embed the training dataset, epoch, command, or Ultralytics version, so the hash is its authoritative version. | `9BEEF810651B7B4B793A0DD85DFBB0E0959406BAE4B8D322313C841791E830FA` |
 | `highcal_20201014_psr_tny.npz` | 19-beam calibration table with `freq (4096,) float32` and `tcal (4096, 2, 19) float64`; introduced in the same commit. The generator/source version is not embedded, so the filename date and hash are the available provenance. | `4FC36ACC2E639962B2A10C7F81803FA88C93F4F85B33D07D657ABC40CD410F66` |
 
 A complete run can produce:
@@ -514,8 +506,8 @@ DRAFTS: transient search and candidate selection
 AFTER: cut, calibrate, review, measure, and report
 ```
 
-Use [DRAFTS](https://github.com/SukiYume/DRAFTS) when the task is to find
-candidates in observation data. Use AFTER after the candidate list is known
+Use DRAFTS when the task is to find candidates in observation data. Use AFTER
+after the candidate list is known
 and the goal is calibrated physical characterization.
 
 ---

@@ -114,7 +114,7 @@ When the user asks to install AFTER on another machine:
 One-line user-facing install request:
 
 ```text
-Install and configure https://github.com/SukiYume/AFTER: clone or open the repository, install skills/fast-frb-observation-processing in your agent's skills directory (or read its SKILL.md directly if custom skills are unsupported), set DATA_PROCESSING_ROOT to the repository root, run the README post-install validation, and report every result before processing observation data.
+Install and configure the AFTER repository: clone or open it, install skills/fast-frb-observation-processing in your agent's skills directory (or read its SKILL.md directly if custom skills are unsupported), set DATA_PROCESSING_ROOT to the repository root, run the README post-install validation, and report every result before processing observation data.
 ```
 
 Keep the skill folder limited to `SKILL.md` plus `agents/openai.yaml` during installation.

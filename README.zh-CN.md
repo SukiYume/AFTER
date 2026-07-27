@@ -6,12 +6,9 @@
 
 从已确认 burst TOA 到可复核的 FAST FRB 定标测量
 
-[![AFTER](https://img.shields.io/badge/FAST%20FRB-AFTER-1f6feb)](https://github.com/SukiYume/AFTER)
-[![GitHub Stars](https://img.shields.io/github/stars/SukiYume/AFTER.svg?label=Stars&logo=github)](https://github.com/SukiYume/AFTER/stargazers)
 [![Python](https://img.shields.io/badge/Python-3.9%2B-blue.svg)](https://www.python.org/)
 [![License](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
 [![Codex Skill](https://img.shields.io/badge/Codex%20Skill-%E5%B7%B2%E5%8C%85%E5%90%AB-2ea44f)](skills/fast-frb-observation-processing/SKILL.md)
-[![Related](https://img.shields.io/badge/Search-DRAFTS-da282a)](https://github.com/SukiYume/DRAFTS)
 
 [项目概览](#项目概览) ·
 [处理流程](#after-处理流程) ·
@@ -41,8 +38,8 @@ AFTER 覆盖候选发现之后的完整科学处理链：
 5. 测量 TOA、DM、RM、flux、fluence、width、bandwidth、SNR 和偏振；
 6. 导出可复核的表格、诊断图和观测面板。
 
-AFTER 与 [DRAFTS](https://github.com/SukiYume/DRAFTS) 组成连续流程：
-DRAFTS 负责找到 transient candidates，AFTER 负责对已确认的 FAST burst 做定标、
+AFTER 与 DRAFTS 组成连续流程：DRAFTS 负责找到 transient candidates，AFTER
+负责对已确认的 FAST burst 做定标、
 测量和出表。
 
 ### AFTER 的特点
@@ -124,7 +121,8 @@ AFTER 可以从已有的最早产物继续，不要求每次都从原始 FITS �
 Linux/macOS：
 
 ```bash
-git clone https://github.com/SukiYume/AFTER.git
+: "${AFTER_REPOSITORY_URL:?请设置代码仓库地址}"
+git clone "$AFTER_REPOSITORY_URL" AFTER
 cd AFTER
 python -m venv .venv
 source .venv/bin/activate
@@ -135,7 +133,8 @@ python -m pip install -r requirements.txt
 Windows PowerShell：
 
 ```powershell
-git clone https://github.com/SukiYume/AFTER.git
+if (-not $env:AFTER_REPOSITORY_URL) { throw "请先设置 AFTER_REPOSITORY_URL" }
+git clone $env:AFTER_REPOSITORY_URL AFTER
 cd AFTER
 python -m venv .venv
 .\.venv\Scripts\Activate.ps1
@@ -143,15 +142,9 @@ python -m pip install -U pip
 python -m pip install -r requirements.txt
 ```
 
-需要 GPU detection 时，应根据目标机器的 CUDA 驱动安装匹配的 `torch` 和
-`torchvision`。下表是已经实际验证的生产环境，不表示任意更新版本都兼容：
-
-| 验证环境 | 日期 | Python | PyTorch / CUDA build | torchvision | CuPy | Ultralytics | GPU / 驱动 | 结果 |
-|---|---|---|---|---|---|---|---|---|
-| `pg13` 定标与推理 | 2026-07-27 | 3.11.15 | 2.5.1+cu121 / 12.1 | 0.20.1+cu121 | 14.0.1 / runtime 12.9（AFTER 不依赖） | 8.4.50 | NVIDIA L40 / 535.129.03 | import、PyTorch CUDA tensor 运算和 CuPy CUDA array 运算均通过 |
-
-同一环境的 NumPy、SciPy、Astropy 和 h5py 分别为 2.4.4、1.16.3、7.2.0 和
-3.16.0。每次正式运行仍应把实际环境随结果保存；`requirements.txt` 有意不锁定
+需要 GPU detection 时，应根据目标 CUDA 驱动安装匹配的 `torch` 和
+`torchvision`。AFTER 不绑定特定主机、GPU 型号或驱动版本；应在目标环境验证 import
+和 CUDA tensor 运算，并把实际运行环境随结果保存。`requirements.txt` 有意不锁定
 GPU wheel。
 
 核心依赖包括 NumPy、SciPy、h5py、Astropy、Matplotlib、pandas、Seaborn、Numba、
@@ -176,7 +169,7 @@ AFTER 自带一份可供 Codex 和其他能够读取仓库的 coding agent 使�
 一整句直接发给 agent：
 
 ```text
-请安装并配置 https://github.com/SukiYume/AFTER：克隆或打开该仓库，把 skills/fast-frb-observation-processing 安装到当前 agent 的 skills 目录（如果不支持自定义 skill，就直接读取其中的 SKILL.md 作为操作协议），将 DATA_PROCESSING_ROOT 设置为仓库根目录，执行 README 中的安装后自检，并在处理真实观测数据前逐项报告自检结果。
+请安装并配置 AFTER 仓库：克隆或打开该仓库，把 skills/fast-frb-observation-processing 安装到当前 agent 的 skills 目录（如果不支持自定义 skill，就直接读取其中的 SKILL.md 作为操作协议），将 DATA_PROCESSING_ROOT 设置为仓库根目录，执行 README 中的安装后自检，并在处理真实观测数据前逐项报告自检结果。
 ```
 
 Codex 使用的 skill 位于：
@@ -459,7 +452,7 @@ detector 时，可以通过 `--model-path` 指定其他兼容 checkpoint。
 
 | 资产 | 已核验内容与 provenance | SHA-256 |
 |---|---|---|
-| `models/best_model_yolo11n_ema.pth` | 与 YOLO11n 兼容、含 499 项的 `OrderedDict` state dict；已在表中 `pg13` 环境成功加载，2026-06-22 由仓库 commit `17511c1` 引入。checkpoint 未嵌入训练集、epoch、命令或 Ultralytics 版本，因此以哈希作为权威版本。 | `9BEEF810651B7B4B793A0DD85DFBB0E0959406BAE4B8D322313C841791E830FA` |
+| `models/best_model_yolo11n_ema.pth` | 与 YOLO11n 兼容、含 499 项的 `OrderedDict` state dict；2026-06-22 由仓库 commit `17511c1` 引入。checkpoint 未嵌入训练集、epoch、命令或 Ultralytics 版本，因此以哈希作为权威版本。 | `9BEEF810651B7B4B793A0DD85DFBB0E0959406BAE4B8D322313C841791E830FA` |
 | `highcal_20201014_psr_tny.npz` | 19 beam 定标表，包含 `freq (4096,) float32` 和 `tcal (4096, 2, 19) float64`；由同一 commit 引入。生成器/来源版本未嵌入，现有 provenance 为文件名日期和哈希。 | `4FC36ACC2E639962B2A10C7F81803FA88C93F4F85B33D07D657ABC40CD410F66` |
 
 一次完整运行可以产生：
@@ -484,8 +477,7 @@ DRAFTS：暂现源搜索与候选筛选
 AFTER：裁切、定标、复核、测量和出表
 ```
 
-需要从观测数据中寻找候选时使用
-[DRAFTS](https://github.com/SukiYume/DRAFTS)；候选列表已经确定、目标是做 FAST
+需要从观测数据中寻找候选时使用 DRAFTS；候选列表已经确定、目标是做 FAST
 定标和物理量分析时使用 AFTER。
 
 ---
