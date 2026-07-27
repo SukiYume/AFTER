@@ -93,23 +93,37 @@ available:
 
 | Path | Role in AFTER |
 |---|---|
-| [`cut_burst_data.py`](cut_burst_data.py) | Cut burst-centered H5 files from raw FAST FITS using TOA, DM, and beam metadata. |
-| [`calibration.py`](calibration.py) | Perform flux/polarization calibration, downsampling, RFI masking, and calibrated H5 export. |
-| [`calibration_noise.py`](calibration_noise.py) | Noise-diode calibration helpers and related calculations. |
-| [`burst_detect.py`](burst_detect.py) | Automatic, semi-automatic, or manual burst-region labeling; writes H5 `attrs["bursts"]`. |
-| [`burst_analysis.py`](burst_analysis.py) | Measure DM, RM, polarization, flux, fluence, width, bandwidth, and SNR. |
-| [`burst_dashboard.py`](burst_dashboard.py) | Build a self-contained HTML observation dashboard from `burst_results.csv`. |
-| [`burst_dm.py`](burst_dm.py) | Fine-DM search routines used by the analysis stage. |
-| [`burst_pol.py`](burst_pol.py) | RM, PA, PAV, and polarization utilities. |
-| [`burst_properties.py`](burst_properties.py) | Flux, fluence, width, bandwidth, and SNR utilities. |
-| [`rfi_utils.py`](rfi_utils.py) | Shared RFI channel and pixel masking utilities. |
-| [`ZeithAngle.py`](ZeithAngle.py) | FAST zenith-angle and beam-gain helpers. |
+| [`after/`](after/) | Importable single-observation package. Run its entry points from the repository root as `python -m after.<module>`. |
+| [`calibration.py`](calibration.py) and [`cut_burst_data.py`](cut_burst_data.py) | Thin compatibility launchers that preserve the historical `python calibration.py` and `python cut_burst_data.py` commands and legacy imports. |
+| [`after/cut_burst_data.py`](after/cut_burst_data.py) | Cut burst-centered H5 files from raw FAST FITS using TOA, DM, and beam metadata. |
+| [`after/calibration.py`](after/calibration.py) and [`after/calibration_noise.py`](after/calibration_noise.py) | Flux/polarization and noise-diode calibration, downsampling, RFI masking, and calibrated H5 export. |
+| [`after/burst_detect.py`](after/burst_detect.py) | Automatic, semi-automatic, or manual burst-region labeling; writes H5 `attrs["bursts"]`. |
+| [`after/burst_analysis.py`](after/burst_analysis.py) | Measure DM, RM, polarization, flux, fluence, width, bandwidth, and SNR. |
+| [`after/burst_sync_rm.py`](after/burst_sync_rm.py) | Search a common RM by combining multiple labeled calibrated H5 burst components. |
+| [`after/burst_dashboard.py`](after/burst_dashboard.py) | Build a self-contained HTML observation dashboard from `burst_results.csv`. |
+| [`after/burst_dm.py`](after/burst_dm.py), [`after/burst_pol.py`](after/burst_pol.py), and [`after/burst_properties.py`](after/burst_properties.py) | Scientific measurement modules used by the analysis stage. |
+| [`after/rfi.py`](after/rfi.py), [`after/obs_metadata.py`](after/obs_metadata.py), and [`after/zenith_angle.py`](after/zenith_angle.py) | Shared RFI, observation-metadata, and FAST beam-gain helpers. |
 | [`gain_para.csv`](gain_para.csv) | FAST beam gain parameters. |
 | [`highcal_20201014_psr_tny.npz`](highcal_20201014_psr_tny.npz) | Default noise-calibration reference. |
 | [`models/`](models/) | Current production burst-region detector checkpoint. |
 | [`batch_processing/`](batch_processing/README.md) | Batch cutting, selected long-period cutting, legacy FITS conversion, and calibration wrappers. |
+| [`tests/`](tests/) | Regression tests for calibration, detection, RM analysis, and dashboard generation. |
 | [`skills/fast-frb-observation-processing/`](skills/fast-frb-observation-processing/) | Codex operating protocol for AFTER. |
 | [`requirements.txt`](requirements.txt) | Python dependencies. |
+
+Runtime assets stay at the repository root and are resolved from
+[`after/__init__.py`](after/__init__.py), not from the caller's current working
+directory:
+
+- gain calibration: `gain_para.csv`;
+- default noise-calibration table: `highcal_20201014_psr_tny.npz`;
+- default detector checkpoint: `models/best_model_yolo11n_ema.pth`.
+
+The two compatibility launchers delegate to the package without duplicating
+scientific code. Configure single-observation constants in
+`after/calibration.py` or `after/cut_burst_data.py`, then run either the
+historical root command or the equivalent `python -m after.<module>` command
+from the repository root.
 
 ## Installation
 
@@ -136,8 +150,16 @@ python -m pip install -r requirements.txt
 ```
 
 Install `torch` and `torchvision` with builds matching the target CUDA driver
-when GPU detection is required. For production runs, record the Python, CUDA,
-PyTorch, torchvision, and ultralytics versions with the output.
+when GPU detection is required. The following is a validated production stack,
+not a claim that every newer combination is compatible:
+
+| Validation target | Date | Python | PyTorch / CUDA build | torchvision | CuPy | Ultralytics | GPU / driver | Result |
+|---|---|---|---|---|---|---|---|---|
+| `pg13` calibration and inference | 2026-07-27 | 3.11.15 | 2.5.1+cu121 / 12.1 | 0.20.1+cu121 | 14.0.1 / runtime 12.9 (not required by AFTER) | 8.4.50 | NVIDIA L40 / 535.129.03 | imports, PyTorch CUDA tensor operation, and CuPy CUDA array operation passed |
+
+The same environment reported NumPy 2.4.4, SciPy 1.16.3, Astropy 7.2.0, and
+h5py 3.16.0. Record the actual environment beside every production output;
+`requirements.txt` intentionally does not pin GPU wheels.
 
 Core dependencies include NumPy, SciPy, h5py, Astropy, Matplotlib, pandas,
 Seaborn, Numba, OpenCV, PyTorch, torchvision, and Ultralytics.
@@ -145,12 +167,13 @@ Seaborn, Numba, OpenCV, PyTorch, torchvision, and Ultralytics.
 ### Validate the installation
 
 ```bash
-python -m compileall -q .
+python -m compileall -q after batch_processing tests calibration.py cut_burst_data.py
+python -c "from calibration import process_one_burst; from cut_burst_data import cut_one_burst; print('compatibility imports OK')"
 python batch_processing/batch_cut_burst_data.py --help
 python batch_processing/batch_calibration.py --help
-python burst_detect.py --help
-python burst_analysis.py --help
-python burst_dashboard.py --help
+python -m after.burst_detect --help
+python -m after.burst_analysis --help
+python -m after.burst_dashboard --help
 python -m pytest -q
 ```
 
@@ -198,14 +221,22 @@ configuration if agents should find AFTER in later sessions.
 
 ## Quick start
 
-The examples below use generic paths. Replace `/path/to/...` with locations on
-your own workstation or compute node.
+Run every command below from the repository root. The examples use generic
+paths; replace `/path/to/...` with locations on your own workstation or compute
+node.
 
 The four batch wrappers, their input-table schemas, output layouts, and rerun
 options are documented together in
 [`batch_processing/README.md`](batch_processing/README.md).
 
 ### 1. Cut raw FAST FITS
+
+For the historical constant-configured single-observation workflow, edit the
+configuration block at the bottom of `after/cut_burst_data.py`, then run:
+
+```bash
+python cut_burst_data.py
+```
 
 Batch entry point:
 
@@ -218,7 +249,8 @@ python batch_processing/batch_cut_burst_data.py \
   --workers 8
 ```
 
-`FRBXXXX_Burst.txt` uses:
+Start from [`batch_processing/Burst.example.txt`](batch_processing/Burst.example.txt)
+or create a whitespace-separated table with this header:
 
 ```text
 base project name date beam dm time
@@ -226,7 +258,9 @@ base project name date beam dm time
 
 The wrapper groups events by raw-data path, date, beam, and DM; copies the first
 matching beam FITS needed for calibration; cuts every supplied TOA; and writes
-`obs_info.json`.
+`obs_info.json`. If one date directory contains mixed beam, DM, or segment
+length values, the top-level field is a list and each burst entry retains its
+own values.
 
 For selected long-period candidates with row-specific segment lengths:
 
@@ -250,9 +284,20 @@ python batch_processing/fits_to_h5.py \
 ```
 
 It copies matching `_0001.fits` calibration files and writes H5 products
-compatible with `cut_burst_data.py`.
+compatible with `after.cut_burst_data`.
 
 ### 3. Calibrate
+
+For the historical constant-configured single-observation workflow, edit
+`BURST_DIR`, `OUTPUT_DIR`, RA/DEC, resolution, and worker settings at the bottom
+of `after/calibration.py`, then run:
+
+```bash
+python calibration.py
+```
+
+The default `CAL_NPZ` already points to the repository-root
+`highcal_20201014_psr_tny.npz`.
 
 ```bash
 python batch_processing/batch_calibration.py \
@@ -276,12 +321,17 @@ Useful saved-resolution choices:
 - use `--down-freq 1` to preserve raw frequency channels for detailed spectral
   and RFI inspection.
 
+Each burst beam requires its own matching `Mxx..._0001.fits`. Calibration fails
+if that exact beam file is absent; it never substitutes M01 for another beam.
+FFT RFI detection is the batch default. Pass `--no-rfi-fft` to select entropy
+mode. Outputs are written below `<cal-root>/<FRB>/<date>/`.
+
 ### 4. Detect and review burst regions
 
 Automatic mode:
 
 ```bash
-python burst_detect.py \
+python -m after.burst_detect \
   --mode auto \
   --cal-dir /path/to/after_runs/calibrated \
   --model-path models/best_model_yolo11n_ema.pth \
@@ -302,7 +352,7 @@ masked residual plot.
 
 After confidence filtering, overly horizontal boxes are removed using
 `--max-horizontal-aspect` (default `3`). Positive-area overlaps are reduced to
-the largest region before NMS.
+the largest region.
 
 Use `--mode semi-auto` to revisit selected entries from `detections.json`, or
 `--mode manual` when model suggestions are not useful. In the interactive
@@ -312,19 +362,20 @@ completed progress and exits without marking the current file complete.
 ### 5. Analyze physical properties
 
 ```bash
-python burst_analysis.py \
+python -m after.burst_analysis \
   --cal-dir /path/to/after_runs/calibrated \
   --output-dir /path/to/after_runs/analysis \
   --dm-range 5 \
   --dm-step 0.1 \
   --rm-min -1000 \
-  --rm-max 1000 \
-  --n-rm 100000
+  --rm-max 1000
 ```
 
 Measured quantities include TOA, peak flux, fluence, width, burst bandwidth,
 SNR, DM, RM, linear/circular/total polarization, PA, and PAV. Write reruns with
-different DM/RM ranges to separate output directories.
+different DM/RM ranges to separate output directories. `--cal-dir` is scanned
+recursively, so it can point directly at the `<cal-root>` produced by batch
+calibration.
 
 Primary outputs:
 
@@ -333,10 +384,34 @@ burst_results.csv
 DM / RM / polarization diagnostic figures
 ```
 
+To search a common RM directly from multiple labeled calibrated H5 files:
+
+```bash
+python -m after.burst_sync_rm \
+  --cal-dir /path/to/after_runs/calibrated_df1 \
+  --output-dir /path/to/after_runs/joint_rm \
+  --rm-min -50000 \
+  --rm-max 50000 \
+  --test-window full:-50000:50000 \
+  --test-window expected:30000:40000 \
+  --n-null 1000
+```
+
+`after.burst_sync_rm` reports both the primary per-time-sample PA-independent
+power sum (`time_pa_power`) and a fixed-weight stack of standardized per-burst
+RM-versus-linear-degree curves (`linear_degree_stack`). It reads
+`attrs["bursts"]`, selects the strongest time samples from Stokes I alone, and
+uses the union of channel-level RFI masks. It never applies a time-frequency
+pixel mask. The off-pulse trials use the same time-sample counts and channel
+masks to include the look-elsewhere effect within each declared test window.
+Both analysis paths derive the RM spacing automatically from the narrowest
+RMSF implied by the selected effective lambda-squared coverage; users specify
+only `--rm-min` and `--rm-max`.
+
 ### 6. Build the observation dashboard
 
 ```bash
-python burst_dashboard.py \
+python -m after.burst_dashboard \
   --csv /path/to/after_runs/analysis/burst_results.csv \
   --output /path/to/after_runs/analysis/burst_dashboard.html \
   --analysis-dir /path/to/after_runs/analysis \
@@ -358,7 +433,7 @@ printed to PDF.
 data: (nsamp, npol, nchan)
 freq: (nchan,), MHz
 attrs: start_sample, file_mjd, toa_sec, time_reso, npol, nchan,
-       segment_length, obs_start_mjd, dm
+       segment_length, obs_start_mjd, beam, dm
 ```
 
 ### Calibrated H5
@@ -389,11 +464,32 @@ attrs: time_reso_raw, time_reso, down_time, down_freq,
 An intentionally rejected page is represented by an empty burst list rather
 than a missing review record.
 
+### Analysis CSV
+
+Every DM and polarization measurement carries an explicit status:
+
+```text
+dm, dm_err, dm_status, dm_error_reason
+rm, rm_err, ..., pol_status, pol_error_reason
+```
+
+Successful rows use status `ok` and an empty reason. Failed searches use status
+`failed`, preserve the exception type/message, and store scientific outputs as
+NaN. A failed fit is therefore never indistinguishable from a measured zero or
+the nominal cut DM.
+
 ## Models and outputs
 
 AFTER includes the default burst detector at
 `models/best_model_yolo11n_ema.pth`. Select another compatible checkpoint with
 `--model-path` when comparing or updating detectors.
+
+Bundled binary assets are identified by content hash:
+
+| Artifact | Verified contents and provenance | SHA-256 |
+|---|---|---|
+| `models/best_model_yolo11n_ema.pth` | YOLO11n-compatible `OrderedDict` state dict with 499 entries; loaded successfully on the validated `pg13` stack and introduced in repository commit `17511c1` on 2026-06-22. The checkpoint does not embed the training dataset, epoch, command, or Ultralytics version, so the hash is its authoritative version. | `9BEEF810651B7B4B793A0DD85DFBB0E0959406BAE4B8D322313C841791E830FA` |
+| `highcal_20201014_psr_tny.npz` | 19-beam calibration table with `freq (4096,) float32` and `tcal (4096, 2, 19) float64`; introduced in the same commit. The generator/source version is not embedded, so the filename date and hash are the available provenance. | `4FC36ACC2E639962B2A10C7F81803FA88C93F4F85B33D07D657ABC40CD410F66` |
 
 A complete run can produce:
 

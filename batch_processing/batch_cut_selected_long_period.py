@@ -27,7 +27,7 @@ DEFAULT_OUTPUT_ROOT = "/path/to/after_data/LPT_Selected_Cut"
 
 
 def load_cut_helpers():
-    from cut_burst_data import (
+    from after.cut_burst_data import (
         calc_dispersion_shift,
         cut_one_burst,
         read_obs_info,

@@ -2,19 +2,24 @@
 """burst_dashboard 的最小冒烟测试：用合成数据跑通整条流水线并校验关键产物。
 
 直接运行即可（无需 pytest）：
-    python test_burst_dashboard.py
+    python tests/test_burst_dashboard.py
 也兼容 pytest：
-    pytest test_burst_dashboard.py
+    pytest tests/test_burst_dashboard.py
 """
 
 from argparse import Namespace
 from pathlib import Path
+import sys
 import tempfile
 
 import numpy as np
 import pandas as pd
 
-import burst_dashboard as bd
+REPOSITORY_ROOT = Path(__file__).resolve().parents[1]
+if str(REPOSITORY_ROOT) not in sys.path:
+    sys.path.insert(0, str(REPOSITORY_ROOT))
+
+from after import burst_dashboard as bd
 
 
 def _make_csv(path, n=40, reliable_rm=True, seed=1):

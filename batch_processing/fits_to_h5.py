@@ -26,10 +26,9 @@ cut output layout.
 from __future__ import annotations
 
 import argparse
-import json
-import os
 import re
 import shutil
+import sys
 from collections import defaultdict
 from multiprocessing import Pool
 from pathlib import Path
@@ -37,6 +36,13 @@ from pathlib import Path
 import h5py
 import numpy as np
 from astropy.io import fits
+
+
+PROJECT_DIR = Path(__file__).resolve().parent.parent
+if str(PROJECT_DIR) not in sys.path:
+    sys.path.insert(0, str(PROJECT_DIR))
+
+from after.obs_metadata import write_obs_info_json  # noqa: E402
 
 
 DEFAULT_ASD_ROOT = "/path/to/after_data"
@@ -192,7 +198,7 @@ def match_catalog_row(name_info, nsamp: int, info: dict, rows: list[dict]):
 
 
 def save_to_h5(save_path: Path, filename: str, data: np.ndarray, meta: dict):
-    """Write H5 using the same dataset/attribute layout as cut_burst_data.py."""
+    """Write H5 using the same dataset/attribute layout as :mod:`after.cut_burst_data`."""
     save_path.mkdir(parents=True, exist_ok=True)
     filepath = save_path / filename
     with h5py.File(filepath, "w") as f:
@@ -206,6 +212,7 @@ def save_to_h5(save_path: Path, filename: str, data: np.ndarray, meta: dict):
         f.attrs["nchan"] = meta["nchan"]
         f.attrs["segment_length"] = meta["segment_length"]
         f.attrs["obs_start_mjd"] = meta["obs_start_mjd"]
+        f.attrs["beam"] = meta["beam"]
         f.attrs["dm"] = meta["dm"]
     return filepath
 
@@ -250,6 +257,7 @@ def convert_one_fits(args):
         "nchan": info["nchan"],
         "segment_length": nsamp,
         "obs_start_mjd": info["start_mjd"],
+        "beam": name_info["beam"],
         "dm": dm,
         "freq": info["freq"],
     }
@@ -259,42 +267,7 @@ def convert_one_fits(args):
 
 
 def save_obs_json(output_dir: Path):
-    h5_files = sorted(
-        p for p in output_dir.iterdir()
-        if p.suffix == ".h5" and not p.name.endswith("_cal.h5")
-    )
-    if not h5_files:
-        return
-
-    bursts = []
-    dm_values = []
-    segment_length = None
-    info_values = None
-
-    for h5_path in h5_files:
-        with h5py.File(h5_path, "r") as f:
-            if info_values is None:
-                info_values = {
-                    "obs_start_mjd": float(f.attrs["obs_start_mjd"]),
-                    "nchan": int(f.attrs["nchan"]),
-                    "time_reso": float(f.attrs["time_reso"]),
-                    "npol": int(f.attrs["npol"]),
-                }
-                segment_length = int(f.attrs["segment_length"])
-            bursts.append({"file": h5_path.name, "toa_sec": round(float(f.attrs["toa_sec"]), 4)})
-            dm_values.append(float(f.attrs["dm"]))
-
-    unique_dm = sorted(set(round(dm, 8) for dm in dm_values))
-    obs_info = {
-        **info_values,
-        "dm": unique_dm[0] if len(unique_dm) == 1 else unique_dm,
-        "segment_length": segment_length,
-        "bursts": bursts,
-    }
-
-    json_path = output_dir / "obs_info.json"
-    with json_path.open("w", encoding="utf-8") as f:
-        json.dump(obs_info, f, indent=2, ensure_ascii=False)
+    write_obs_info_json(output_dir)
 
 
 def collect_tasks(asd_root: Path, output_root: Path, catalog_dir: Path,

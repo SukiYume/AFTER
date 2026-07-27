@@ -50,6 +50,11 @@ env/
 .ipynb_checkpoints/
 .idea/
 .vscode/
+
+# Local AI-assistant state; repository instructions such as CLAUDE.md stay visible.
+.claude/
+.codex/
+
 .DS_Store
 Thumbs.db
 Desktop.ini
@@ -63,6 +68,7 @@ models/*.ckpt
 models/*.onnx
 models/*.safetensors
 models/*.old
+/models/best_model.pth.old
 
 # Required calibration asset intentionally kept in Git.
 !highcal_20201014_psr_tny.npz

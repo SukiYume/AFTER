@@ -1,4 +1,4 @@
-"""Run cut_burst_data.py on a Burst.txt table and write date-grouped H5 cuts."""
+"""Run :mod:`after.cut_burst_data` on a Burst.txt table and write date-grouped H5 cuts."""
 
 from __future__ import annotations
 
@@ -15,7 +15,7 @@ PROJECT_DIR = SCRIPT_DIR.parent
 if str(PROJECT_DIR) not in sys.path:
     sys.path.insert(0, str(PROJECT_DIR))
 
-from cut_burst_data import (
+from after.cut_burst_data import (
     calc_dispersion_shift,
     cut_one_burst,
     read_obs_info,

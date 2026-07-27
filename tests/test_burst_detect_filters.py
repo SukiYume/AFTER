@@ -11,9 +11,8 @@ import numpy as np
 # 这里测试检测阶段的 RFI 数据流。用最小模块桩隔离未参与测试、且在
 # Windows 上加载较慢的 Torch/Ultralytics GPU 栈。
 _STUBBED_MODULE_NAMES = (
-    'torch', 'torchvision', 'torchvision.ops',
-    'ultralytics', 'ultralytics.nn', 'ultralytics.nn.tasks',
-    'ultralytics.cfg', 'seaborn', 'scipy', 'scipy.ndimage', 'rfi_utils',
+    'torch', 'ultralytics', 'ultralytics.nn', 'ultralytics.nn.tasks',
+    'ultralytics.cfg', 'seaborn', 'scipy', 'scipy.ndimage', 'after.rfi',
 )
 _ORIGINAL_MODULES = {
     name: sys.modules.get(name) for name in _STUBBED_MODULE_NAMES
@@ -24,13 +23,6 @@ torch_stub.device = lambda name: name
 torch_stub.cuda = types.SimpleNamespace(is_available=lambda: False)
 torch_stub.Tensor = type('Tensor', (), {})
 sys.modules['torch'] = torch_stub
-
-torchvision_stub = types.ModuleType('torchvision')
-torchvision_ops_stub = types.ModuleType('torchvision.ops')
-torchvision_ops_stub.nms = lambda *args, **kwargs: None
-torchvision_stub.ops = torchvision_ops_stub
-sys.modules['torchvision'] = torchvision_stub
-sys.modules['torchvision.ops'] = torchvision_ops_stub
 
 ultralytics_stub = types.ModuleType('ultralytics')
 ultralytics_nn_stub = types.ModuleType('ultralytics.nn')
@@ -68,7 +60,7 @@ scipy_ndimage_stub.zoom = zoom_stub
 sys.modules['scipy'] = scipy_stub
 sys.modules['scipy.ndimage'] = scipy_ndimage_stub
 
-rfi_utils_stub = types.ModuleType('rfi_utils')
+rfi_stub = types.ModuleType('after.rfi')
 RFI_CALLS = []
 
 
@@ -86,13 +78,14 @@ def cal_rfi_stub(data, noise_mask, **kwargs):
     return channel, pixel
 
 
-rfi_utils_stub.cal_rfi = cal_rfi_stub
-sys.modules['rfi_utils'] = rfi_utils_stub
+rfi_stub.cal_rfi = cal_rfi_stub
+sys.modules['after.rfi'] = rfi_stub
 
-import burst_detect  # noqa: E402
-from burst_detect import (  # noqa: E402
+from after import burst_detect  # noqa: E402
+from after.burst_detect import (  # noqa: E402
     detect_one_file,
     filter_inference_boxes,
+    prepare_calibration_display,
     prepare_image_tiles,
     write_detection_results,
 )
@@ -136,6 +129,118 @@ class FilterInferenceBoxesTest(unittest.TestCase):
 
         np.testing.assert_allclose(kept_scores, scores)
         np.testing.assert_allclose(kept_boxes, boxes)
+
+    def test_kept_boxes_have_no_positive_area_overlap(self):
+        scores = np.array([0.6, 0.9, 0.7, 0.8], dtype=np.float32)
+        boxes = np.array([
+            [50, 50, 60, 60],
+            [55, 50, 20, 20],
+            [110, 50, 40, 40],
+            [130, 50, 20, 20],
+        ], dtype=np.float32)
+
+        _, kept_boxes = filter_inference_boxes(scores, boxes)
+        half_size = kept_boxes[:, 2:] / 2
+        xyxy = np.column_stack([
+            kept_boxes[:, :2] - half_size,
+            kept_boxes[:, :2] + half_size,
+        ])
+
+        for first in range(len(xyxy)):
+            for second in range(first + 1, len(xyxy)):
+                overlap_width = min(
+                    xyxy[first, 2], xyxy[second, 2]) - max(
+                    xyxy[first, 0], xyxy[second, 0])
+                overlap_height = min(
+                    xyxy[first, 3], xyxy[second, 3]) - max(
+                    xyxy[first, 1], xyxy[second, 1])
+                self.assertFalse(
+                    overlap_width > 0 and overlap_height > 0)
+
+
+class DetectionDisplayTest(unittest.TestCase):
+
+    def test_calibration_display_subtracts_baseline_and_downsamples_copy(self):
+        data = np.array([
+            [1, 10, 100, 1000],
+            [3, 12, 102, 1002],
+            [5, 14, 104, 1004],
+            [7, 16, 106, 1006],
+        ], dtype=np.float32)
+        original = data.copy()
+        freq = np.array([1000, 1100, 1200, 1300], dtype=np.float32)
+
+        display, display_freq, display_time_reso = \
+            prepare_calibration_display(
+                data, freq, time_reso=0.001,
+                time_factor=2, freq_factor=2)
+
+        np.testing.assert_array_equal(data, original)
+        np.testing.assert_allclose(display, [[-2, -2], [2, 2]])
+        np.testing.assert_allclose(display_freq, [1050, 1250])
+        self.assertEqual(display_time_reso, 0.002)
+
+    def test_two_panel_matches_calibration_quicklook_layout(self):
+        data = np.arange(16, dtype=np.float32).reshape(4, 4)
+        freq = np.linspace(1000, 1500, 4)
+        fig = burst_detect.plt.figure(
+            figsize=burst_detect.TWO_PANEL_FIGSIZE)
+        try:
+            with mock.patch('matplotlib.axes.Axes.imshow') as imshow_mock:
+                burst_detect._render_two_panel(
+                    fig, data, freq, time_reso=0.001)
+            kwargs = imshow_mock.call_args.kwargs
+            self.assertNotIn('interpolation', kwargs)
+            self.assertNotIn('resample', kwargs)
+            self.assertEqual(kwargs['extent'], [0, 4, 1000, 1500])
+            self.assertEqual(
+                tuple(fig.get_size_inches()),
+                burst_detect.TWO_PANEL_FIGSIZE)
+        finally:
+            burst_detect.plt.close(fig)
+
+    def test_interactive_title_and_labels_stay_inside_canvas(self):
+        data = np.arange(16, dtype=np.float32).reshape(4, 4)
+        freq = np.linspace(1000, 1500, 4)
+        figures = []
+        real_figure = burst_detect.plt.figure
+        real_close = burst_detect.plt.close
+
+        def capture_figure(*args, **kwargs):
+            fig = real_figure(*args, **kwargs)
+            fig.canvas.start_event_loop = mock.Mock()
+            figures.append(fig)
+            return fig
+
+        with mock.patch.object(
+                burst_detect.plt, 'figure', side_effect=capture_figure), \
+                mock.patch.object(burst_detect.plt, 'show'), \
+                mock.patch.object(burst_detect.plt, 'pause'), \
+                mock.patch.object(burst_detect.plt, 'close'), \
+                mock.patch.object(burst_detect, '_raise_window'), \
+                mock.patch('matplotlib.axes.Axes.imshow'):
+            result = burst_detect.review_interactive(
+                data, freq, time_reso=0.001)
+
+        self.assertEqual(result, [])
+        fig = figures[0]
+        try:
+            ax_prof, ax_spec = fig.axes
+            title = ax_prof.title
+            fig.canvas.draw()
+
+            renderer = fig.canvas.get_renderer()
+            for artist in (
+                    title, ax_prof.yaxis.label,
+                    ax_spec.yaxis.label, ax_spec.xaxis.label):
+                bounds = artist.get_window_extent(renderer)
+                self.assertGreaterEqual(bounds.x0, 0)
+                self.assertGreaterEqual(bounds.y0, 0)
+                self.assertLessEqual(bounds.x1, fig.bbox.x1)
+                self.assertLessEqual(bounds.y1, fig.bbox.y1)
+            self.assertIn('\n', title.get_text())
+        finally:
+            real_close(fig)
 
 
 class DetectionRfiTest(unittest.TestCase):
@@ -207,16 +312,27 @@ class DetectionRfiTest(unittest.TestCase):
                     'rfi_mask', data=np.zeros((512, 512), dtype=bool))
                 h5.attrs['time_reso'] = 0.000393216
                 h5.attrs['down_time'] = 8
-                h5.attrs['plot_down_time'] = 8
+                h5.attrs['plot_down_time'] = 16
+                h5.attrs['down_freq'] = 4
+                h5.attrs['plot_down_freq'] = 8
 
             with mock.patch.object(
                     burst_detect, 'predict_single', return_value=(None, None)), \
                     mock.patch.object(
-                        burst_detect, 'review_interactive', return_value=None):
+                        burst_detect, 'review_interactive',
+                        return_value=None) as review_mock:
                 result = detect_one_file(
                     str(path), object(), mode='semi-auto')
 
             self.assertIsNone(result)
+            np.testing.assert_array_equal(
+                review_mock.call_args.args[0],
+                np.ones((512, 512), dtype=np.float32),
+            )
+            self.assertEqual(
+                review_mock.call_args.kwargs['time_factor'], 2)
+            self.assertEqual(
+                review_mock.call_args.kwargs['freq_factor'], 2)
             with h5py.File(path, 'r') as h5:
                 self.assertNotIn('bursts', h5.attrs)
                 self.assertNotIn('burst_rfi_mask', h5)

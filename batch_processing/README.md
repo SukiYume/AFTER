@@ -50,6 +50,8 @@ is optional; each data row must contain at least seven columns:
 base project name date beam dm time
 ```
 
+Copy [`Burst.example.txt`](Burst.example.txt) as a header-only starting point.
+
 | Column | Meaning |
 |---|---|
 | `base` | First component of the raw-data root, without the leading `/`. |
@@ -83,7 +85,7 @@ python batch_processing/batch_cut_burst_data.py \
 `--segment-length` is the number of samples in each cut and defaults to
 `65536`. The wrapper groups rows by raw path, date, beam, and DM; copies the
 first matching beam FITS needed for calibration; and calls the
-`cut_burst_data.py` helpers for every TOA.
+`after.cut_burst_data` helpers for every TOA.
 
 Typical output:
 
@@ -96,7 +98,9 @@ Typical output:
 ```
 
 Pass `--overwrite` explicitly when existing cuts with the same names must be
-rebuilt.
+rebuilt. `obs_info.json` is derived from every H5 in the date directory:
+uniform values remain scalars, while mixed beam, DM, and segment-length values
+become lists and are also recorded per burst.
 
 ## 2. Cut candidates with per-row window lengths
 
@@ -205,6 +209,9 @@ FRB_name DM RA DEC
 
 RA and DEC may use colon notation or another Astropy-readable unit format. DM
 is retained as source metadata; each cut H5 should also carry its own DM.
+Every beam group must have a matching `Mxx..._0001.fits` in the same date
+directory. Missing calibration data is a hard error; M01 is never substituted
+for another beam.
 
 ### Run
 
@@ -235,6 +242,9 @@ Saved-resolution choices:
 - use `--down-time 1` to retain the raw time resolution;
 - use `--down-freq 1` to retain the raw frequency channels.
 
+FFT RFI detection is enabled by default. Pass `--no-rfi-fft` to use entropy
+mode instead.
+
 Output layout:
 
 ```text
@@ -251,17 +261,20 @@ Output layout:
 Continue with the repository-root entry points:
 
 ```bash
-python burst_detect.py \
+python -m after.burst_detect \
   --mode auto \
   --cal-dir /path/to/after_runs/calibrated \
   --model-path models/best_model_yolo11n_ema.pth \
   --model-name yolo11n \
   --output-dir /path/to/after_runs/detections
 
-python burst_analysis.py \
+python -m after.burst_analysis \
   --cal-dir /path/to/after_runs/calibrated \
   --output-dir /path/to/after_runs/analysis
 ```
+
+Both root-level commands recursively discover `*_cal.h5`, so the shown
+`--cal-dir` can be the batch `<cal-root>` rather than one date directory.
 
 Automatic boxes are review proposals, not final scientific measurement
 regions. Check or correct the regions written to H5 `attrs["bursts"]` before

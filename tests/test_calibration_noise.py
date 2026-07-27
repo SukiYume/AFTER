@@ -3,7 +3,7 @@ from pathlib import Path
 import numpy as np
 from astropy.io import fits
 
-from calibration_noise import NOISE_CLOCK_PRODUCT, fold_noise_cal
+from after.calibration_noise import NOISE_CLOCK_PRODUCT, fold_noise_cal
 
 
 def _write_synthetic_noise_cal(path: Path):

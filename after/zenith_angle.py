@@ -1,12 +1,13 @@
 import numpy as np
 import pandas as pd
 from scipy.interpolate import interp1d
-from pathlib import Path
 
 import astropy.units as u
 from astropy.time import Time
 from astropy.constants import c
 from astropy.coordinates import SkyCoord, EarthLocation, AltAz
+
+from . import DEFAULT_GAIN_CSV
 
 ### 根据时间计算某个源的天顶角
 def get_za(mjd, source_ra='05h08m03.5077', source_dec='+26d03m38.504s'):
@@ -36,8 +37,7 @@ def get_za(mjd, source_ra='05h08m03.5077', source_dec='+26d03m38.504s'):
 ### 计算不同天顶角的增益
 def get_gain(ZA, beam, freq_reso):
 
-    gain_path      = Path(__file__).with_name('gain_para.csv')
-    data           = pd.read_csv(gain_path, header=[0, 1])
+    data           = pd.read_csv(DEFAULT_GAIN_CSV, header=[0, 1])
     gain_zero      = 25.6
     beam           = 'M{:0>2d}'.format(beam)
 

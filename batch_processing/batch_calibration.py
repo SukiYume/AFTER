@@ -34,17 +34,18 @@ PROJECT_DIR = SCRIPT_DIR.parent
 if str(PROJECT_DIR) not in sys.path:
     sys.path.insert(0, str(PROJECT_DIR))
 
-from calibration import (
+from after.calibration import (  # noqa: E402
     find_cal_fits,
     fold_noise_cal,
     load_t_cal,
     process_one_burst,
 )
+from after import DEFAULT_CAL_NPZ as DEFAULT_CAL_NPZ_PATH  # noqa: E402
 
 
 DEFAULT_ROOT_DIR = "/path/to/after_data/H5_Cut"
 DEFAULT_DM_FILE = str(SCRIPT_DIR / "h5_calibration_dm_file.txt")
-DEFAULT_CAL_NPZ = str(PROJECT_DIR / "highcal_20201014_psr_tny.npz")
+DEFAULT_CAL_NPZ = str(DEFAULT_CAL_NPZ_PATH)
 DEFAULT_CAL_ROOT = "/path/to/after_data/H5_Cut/H5_Cal"
 
 
@@ -134,13 +135,12 @@ def collect_calibration_groups(root_dir, cal_root, sources, cal_npz, down_time, 
                 beam_groups[extract_beam(os.path.basename(h5_path))].append(h5_path)
 
             for beam, h5_list in sorted(beam_groups.items()):
-                cal_fits_path = find_cal_fits(date_dir, beam) or find_cal_fits(date_dir, 1)
+                cal_fits_path = find_cal_fits(date_dir, beam)
                 if cal_fits_path is None:
-                    print(
-                        f'    [SKIP] {src["name"]}/{date} M{beam:02d}: '
-                        f'no calibration FITS for {len(h5_list)} bursts'
+                    raise FileNotFoundError(
+                        f'{src["name"]}/{date} M{beam:02d}: no matching '
+                        f'calibration FITS for {len(h5_list)} bursts'
                     )
-                    continue
 
                 groups.append(
                     {
@@ -234,8 +234,12 @@ def parse_args():
     parser.add_argument("--down-time", type=int, default=None)
     parser.add_argument("--down-freq", type=int, default=None)
     parser.add_argument("--rfi-down-freq", type=int, default=None, help=argparse.SUPPRESS)
-    parser.add_argument("--rfi-fft", action="store_true", default=True,
-                        help="Use FFT RFI flagger during calibration (default)")
+    parser.add_argument(
+        "--rfi-fft",
+        action=argparse.BooleanOptionalAction,
+        default=True,
+        help="Use FFT RFI flagger; pass --no-rfi-fft for entropy mode",
+    )
     parser.add_argument("--workers", type=int, default=8)
     parser.add_argument("--only", nargs="*", default=None, help="Optional FRB names to process")
     return parser.parse_args()

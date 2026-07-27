@@ -5,9 +5,9 @@
 支持 auto（全自动）和 semi-auto（模型给初始框、人工确认/修改）两种模式。
 
 用法:
-    python burst_detect.py                          # 自动模式
-    python burst_detect.py --mode semi-auto         # 半自动交互
-    python burst_detect.py --conf 0.3               # 自定义置信度阈值
+    python -m after.burst_detect                          # 自动模式
+    python -m after.burst_detect --mode semi-auto         # 半自动交互
+    python -m after.burst_detect --conf 0.3               # 自定义置信度阈值
 
 输出:
     detections.json  — 每个文件的爆发区域列表
@@ -22,23 +22,25 @@ import argparse
 import torch
 import numpy as np
 import h5py
-import matplotlib
 # 导入 seaborn 会向 Matplotlib 注册 ``mako`` 颜色映射。
 import seaborn  # noqa: F401
 import matplotlib.pyplot as plt
 import matplotlib.patches as patches
 from matplotlib.widgets import RectangleSelector
 from scipy.ndimage import zoom
-from torchvision.ops import nms
 
 from ultralytics.nn.tasks import DetectionModel
 from ultralytics.cfg import get_cfg
 
-from rfi_utils import cal_rfi
+from . import DEFAULT_DETECTOR_MODEL
+from .rfi import cal_rfi
 
 device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 
 DEFAULT_MAX_HORIZONTAL_ASPECT = 3.0
+
+# 与 calibration.py 的 quicklook 保持同样的画布大小。
+TWO_PANEL_FIGSIZE = (5, 5)
 
 
 def load_yolo_model(model_path, model_name='yolo11n'):
@@ -80,9 +82,8 @@ def load_yolo_model(model_path, model_name='yolo11n'):
 def _fill_nonfinite(data):
     """把 NaN/inf 替换为全局中值，避免下采样和模型输入出现非有限值。
 
-    calibration 阶段可能会把 RFI 或坏通道标成 NaN。YOLO 推理和 matplotlib
-    显示都不需要保留 NaN 的语义，因此这里统一用有限值中值补齐。这个函数只
-    返回副本，不会修改传入的 H5 数据。
+    YOLO 推理不需要保留 NaN 的语义，因此这里统一用有限值中值补齐。
+    这个函数只返回副本，不会修改传入的 H5 数据。
     """
     arr = np.asarray(data, dtype=np.float32).copy()
     bad = ~np.isfinite(arr)
@@ -101,12 +102,12 @@ def normalize_image(data, pmin=5, pmax=95):
       1. 沿时间维度求每个频率通道的平均值；
       2. 每个频率通道除以自己的时间平均值；
       3. 对归一化后的二维图做 5%–95% 百分位 clip；
-      4. 线性映射到 [0, 1]，作为模型输入或画图图像。
+      4. 线性映射到 [0, 1]，作为模型输入。
 
-    这样模型检测、自动/半自动诊断图、纯手工标注窗口都使用完全相同的亮度
-    标定，避免不同模式之间出现肉眼看到和模型看到不一致的问题。
+    这套归一化仅用于 YOLO 模型输入。人工交互窗口使用 calibration.py 的
+    quicklook 处理方式，以 Jy 为单位显示；显示副本不会修改模型输入或 H5。
 
-    调用方通常会加 .T 转成 (freq, time) 图像坐标用于 imshow / YOLO 输入。
+    调用方会加 .T 转成 (freq, time) 图像坐标送入 YOLO。
 
     Parameters
     ----------
@@ -138,6 +139,43 @@ def normalize_image(data, pmin=5, pmax=95):
     img = np.clip(img, vmin, vmax)
     img = (img - vmin) / (vmax - vmin + 1e-8)
     return img.astype(np.float32)
+
+
+def prepare_calibration_display(stokes_I, freq, time_reso,
+                                time_factor=1, freq_factor=1):
+    """按 calibration.py 的 quicklook 方式准备人工检查用动态谱。
+
+    这里只复制 Stokes I、逐频率通道减去时间中值，并按 calibration 保存的
+    额外倍率下采样。特意不读取或屏蔽任何 RFI 通道，也不会改动原数组。
+    """
+    plot_I = np.asarray(stokes_I, dtype=np.float32).copy()
+    plot_freq = np.asarray(freq).copy()
+    time_factor = max(1, int(time_factor))
+    freq_factor = max(1, int(freq_factor))
+
+    plot_I -= np.nanmedian(plot_I, axis=0)
+    nsamp, nchan = plot_I.shape
+
+    if time_factor > 1:
+        nt = nsamp // time_factor
+        plot_I = np.nanmean(
+            plot_I[:nt * time_factor].reshape(
+                nt, time_factor, nchan),
+            axis=1,
+        )
+        nsamp = nt
+
+    if freq_factor > 1:
+        nc = nchan // freq_factor
+        plot_I = np.nanmean(
+            plot_I[:, :nc * freq_factor].reshape(
+                nsamp, nc, freq_factor),
+            axis=2,
+        )
+        plot_freq = plot_freq[:nc * freq_factor].reshape(
+            nc, freq_factor).mean(axis=1)
+
+    return plot_I, plot_freq, float(time_reso) * time_factor
 
 
 def write_detection_results(h5_path, iquv, burst_regions, rfi_fft=False):
@@ -328,9 +366,9 @@ def filter_inference_boxes(scores, boxes,
     return scores[keep], boxes[keep]
 
 
-def predict_single(model, img_float32, conf=0.25, iou_threshold=0.5,
+def predict_single(model, img_float32, conf=0.25,
                    max_horizontal_aspect=DEFAULT_MAX_HORIZONTAL_ASPECT):
-    """对单张 512×512 灰度图做 YOLO 推理 + NMS。
+    """对单张 512×512 灰度图做 YOLO 推理并过滤模型框。
 
     Parameters
     ----------
@@ -338,8 +376,6 @@ def predict_single(model, img_float32, conf=0.25, iou_threshold=0.5,
     img_float32 : ndarray (512, 512) float32，取值 [0, 1]
     conf : float
         置信度阈值，低于此值的预测被过滤。
-    iou_threshold : float
-        NMS 的 IoU 阈值。
     max_horizontal_aspect : float
         允许的最大模型像素宽高比，默认 3；超过后视为横向 RFI 框。
 
@@ -376,15 +412,8 @@ def predict_single(model, img_float32, conf=0.25, iou_threshold=0.5,
         score.cpu().numpy(), box.cpu().numpy(), max_horizontal_aspect)
     if box_np is None:
         return None, None
-    box = torch.as_tensor(box_np, dtype=box.dtype, device=box.device)
-    score = torch.as_tensor(score_np, dtype=score.dtype, device=score.device)
-
-    # cxcywh → xyxy，用于 NMS
-    cx, cy, w, h = box[:, 0], box[:, 1], box[:, 2], box[:, 3]
-    boxes_xyxy = torch.stack([cx - w / 2, cy - h / 2, cx + w / 2, cy + h / 2], dim=1)
-
-    keep = nms(boxes_xyxy, score, iou_threshold=iou_threshold)
-    return score[keep].cpu().numpy(), box[keep].cpu().numpy()
+    order = np.argsort(-score_np, kind='stable')
+    return score_np[order], box_np[order]
 
 
 def boxes_to_regions_tiled(tile_results, time_factor, freq_factor, nsamp, nchan):
@@ -497,62 +526,52 @@ def bbox_to_region(x0, y0, x1, y1, freq, time_reso, nsamp, nchan, confidence=1.0
     }
 
 
-def _render_two_panel(fig, stokes_I, freq, time_reso, normalize=True):
+def _render_two_panel(fig, stokes_I, freq, time_reso):
     """在 fig 上构建标准两面板布局: 上 profile + 下动态谱, 返回 (ax_profile, ax_spec).
 
-    时间刻度、profile 计算这套视觉自动 / 半自动 / 手动模式共享,
-    normalize=True 时保留检测/交互用的除背景归一化显示; normalize=False
-    时直接显示调用方传入的数据, 用于保存已减背景并 mask RFI 的结果图.
-    抽出来避免 plot_detection 和 review_interactive 的画布逐渐漂移.
-    本函数不画任何 burst box, 调用方拿到两个 ax 后自己叠加.
+    输入是已经减过基线的 Jy 数据。本函数只负责共享绘图样式，不画 burst box。
     """
     nsamp, _ = stokes_I.shape
-    if normalize:
-        image = normalize_image(stokes_I).T  # (freq, time)
-        profile = np.mean(image, axis=0)
-        vmin, vmax = 0, 1
-        ylabel = 'Intensity (abbr.)'
+    image = np.asarray(stokes_I, dtype=np.float32).T
+    profile = np.nanmean(stokes_I, axis=1)
+    finite = image[np.isfinite(image)]
+    if finite.size:
+        vmin, vmax = np.nanpercentile(finite, [5, 95])
+        if not np.isfinite(vmin) or not np.isfinite(vmax) or vmax <= vmin:
+            center = float(np.nanmedian(finite))
+            vmin, vmax = center - 1.0, center + 1.0
     else:
-        image = np.asarray(stokes_I, dtype=np.float32).T
-        profile = np.nanmean(stokes_I, axis=1)
-        finite = image[np.isfinite(image)]
-        if finite.size:
-            vmin, vmax = np.nanpercentile(finite, [5, 95])
-            if not np.isfinite(vmin) or not np.isfinite(vmax) or vmax <= vmin:
-                center = float(np.nanmedian(finite))
-                vmin, vmax = center - 1.0, center + 1.0
-        else:
-            image = np.zeros_like(image, dtype=np.float32)
-            vmin, vmax = 0, 1
-        ylabel = 'Flux (Jy)'
-    time_ms  = np.arange(nsamp) * time_reso * 1e3
+        image = np.zeros_like(image, dtype=np.float32)
+        vmin, vmax = 0, 1
+    time_ms = np.arange(nsamp) * time_reso * 1e3
+    time_end_ms = nsamp * time_reso * 1e3
 
-    gs       = fig.add_gridspec(4, 1, hspace=0)
-    ax_prof  = fig.add_subplot(gs[0, 0])
+    gs = fig.add_gridspec(4, 1, hspace=0)
+    ax_prof = fig.add_subplot(gs[0, 0])
     ax_prof.step(time_ms, profile, where='mid', color='royalblue', lw=0.8)
-    ax_prof.set_xlim(time_ms[0], time_ms[-1])
+    ax_prof.set_xlim(0, time_end_ms)
     ax_prof.set_xticks([])
-    ax_prof.set_ylabel(ylabel)
+    ax_prof.set_ylabel('Flux (Jy)')
 
-    ax_spec  = fig.add_subplot(gs[1:, 0])
+    ax_spec = fig.add_subplot(gs[1:, 0])
     ax_spec.imshow(
         image, aspect='auto', origin='lower', cmap='mako', vmin=vmin, vmax=vmax,
-        extent=[time_ms[0], time_ms[-1], freq[0], freq[-1]],
+        extent=[0, time_end_ms, freq[0], freq[-1]],
     )
     ax_spec.set_xlabel('Time (ms)')
     ax_spec.set_ylabel('Frequency (MHz)')
     return ax_prof, ax_spec
 
 
-def plot_detection(stokes_I, freq, time_reso, burst_regions, save_path, normalize=True):
+def plot_detection(stokes_I, freq, time_reso, burst_regions, save_path):
     """绘制动态谱 + 检测框叠加图 (自动模式落盘版)."""
-    nsamp, nchan = stokes_I.shape
-    fig = plt.figure(figsize=(5, 5))
-    ax_prof, ax_spec = _render_two_panel(fig, stokes_I, freq, time_reso,
-                                         normalize=normalize)
+    nchan = stokes_I.shape[1]
+    fig = plt.figure(figsize=TWO_PANEL_FIGSIZE)
+    ax_prof, ax_spec = _render_two_panel(fig, stokes_I, freq, time_reso)
     add_region_patches(ax_prof, ax_spec, burst_regions, freq, time_reso, nchan,
                        label_conf=True, linewidth=1)
-    plt.savefig(save_path, dpi=200, bbox_inches='tight')
+    fig.align_labels()
+    fig.savefig(save_path, dpi=200, bbox_inches='tight')
     plt.close(fig)
 
 
@@ -578,11 +597,13 @@ def _raise_window(fig):
         pass
 
 
-def review_interactive(stokes_I, freq, time_reso, burst_regions=None):
+def review_interactive(stokes_I, freq, time_reso, burst_regions=None,
+                       time_factor=1, freq_factor=1):
     """显示动态谱供人工确认或重新标注爆发位置。
 
     burst_regions=None → 纯手动标注模式, 直接拖拽鼠标画框；
     burst_regions 有内容 → 展示模型检测结果, 用户可按 Enter 接受。
+    动态谱按 calibration.py 的 quicklook 方式显示，但不读取或屏蔽 RFI。
 
     交互逻辑 (一图窗内完成, 不来回切终端):
       * Enter / Return    → 接受当前显示的框 (模型框 或 已经画过的用户框)
@@ -595,29 +616,39 @@ def review_interactive(stokes_I, freq, time_reso, burst_regions=None):
       * 关闭窗口           → 等价于按 Enter, 误关不会中断批处理
     """
     burst_regions = burst_regions or []
-    nsamp, nchan  = stokes_I.shape
+    nsamp, nchan = stokes_I.shape
 
-    title_review  = 'Enter: accept | x: no burst | drag to redraw | q: quit'
-    title_draw    = 'Drag: add box | right-click: undo last | x: no burst | Enter: finish | q: quit'
+    title_review = (
+        'Enter: accept | x: no burst | drag: redraw\n'
+        'right-click: undo drawn box | q/Esc: quit'
+    )
+    title_draw = (
+        'Drag: add box | right-click: undo | x: no burst\n'
+        'Enter: finish | q/Esc: quit'
+    )
     showing_model = bool(burst_regions)
 
-    fig = plt.figure(figsize=(8, 5))
-    ax_prof, ax_spec = _render_two_panel(fig, stokes_I, freq, time_reso)
+    display_I, display_freq, display_time_reso = prepare_calibration_display(
+        stokes_I, freq, time_reso,
+        time_factor=time_factor, freq_factor=freq_factor,
+    )
+    fig = plt.figure(figsize=TWO_PANEL_FIGSIZE)
+    ax_prof, ax_spec = _render_two_panel(
+        fig, display_I, display_freq, display_time_reso)
     # title 挂在上面板, 才会出现在图窗顶端而不是两面板之间.
-    ax_prof.set_title(title_review if showing_model else title_draw)
+    ax_prof.set_title(
+        title_review if showing_model else title_draw, fontsize=10, pad=6)
 
     # 模型框的 (rect, span) artist 列表; 第一次拖拽时整体清掉.
     model_artists = (add_region_patches(ax_prof, ax_spec, burst_regions, freq, time_reso, nchan,
                                         label_conf=False, linewidth=1.5)
                      if showing_model else [])
 
-    # 把可变状态收进 dict, 方便嵌套回调里 mutate (Python 闭包不能直接赋值外层标量).
-    # user_regions / user_artists 是平行栈: on_select 同步 push, on_mouse_press 右键同步 pop.
+    # 可变状态放进 dict，方便回调修改；每个用户框同时保存坐标和两个 artist。
     state = {
-        'command':       None,    # 'accept' | 'empty' | 'quit'
+        'command': None,          # 'accept' | 'empty' | 'quit'
         'showing_model': showing_model,
-        'user_regions':  [],      # [(x0, y0, x1, y1), ...] 时间ms / 频率MHz
-        'user_artists':  [],      # [(rect, span), ...] 跟 user_regions 一一对应, 用于右键 undo
+        'user_boxes': [],         # [((x0, y0, x1, y1), rect, span), ...]
     }
 
     def on_select(eclick, erelease):
@@ -651,16 +682,14 @@ def review_interactive(stokes_I, freq, time_reso, burst_regions=None):
             for rect, span in model_artists:
                 rect.remove()
                 span.remove()
-            model_artists.clear()
             state['showing_model'] = False
-            ax_prof.set_title(title_draw)
+            ax_prof.set_title(title_draw, fontsize=10, pad=6)
         x0, x1 = sorted([p0[0], p1[0]])
         y0, y1 = sorted([p0[1], p1[1]])
         # 立刻回显: 黄色虚线框 + profile gold 半透明高亮, 跟模型的 lime/steelblue 区分.
         rect, span = _draw_burst_box(ax_prof, ax_spec, x0, x1, y0, y1,
                                      edge='yellow', face='gold', lw=1.5)
-        state['user_regions'].append((x0, y0, x1, y1))
-        state['user_artists'].append((rect, span))
+        state['user_boxes'].append(((x0, y0, x1, y1), rect, span))
         fig.canvas.draw_idle()
 
     def on_mouse_press(event):
@@ -669,12 +698,9 @@ def review_interactive(stokes_I, freq, time_reso, burst_regions=None):
         button==3 是 matplotlib 对鼠标右键的统一编号 (跨平台). 左键的拖拽走
         RectangleSelector 自己的逻辑 (button=[1] 过滤), 不会进这里.
         """
-        if event.button != 3:
+        if event.button != 3 or not state['user_boxes']:
             return
-        if not state['user_regions']:
-            return
-        state['user_regions'].pop()
-        rect, span = state['user_artists'].pop()
+        _, rect, span = state['user_boxes'].pop()
         rect.remove()
         span.remove()
         fig.canvas.draw_idle()
@@ -697,7 +723,7 @@ def review_interactive(stokes_I, freq, time_reso, burst_regions=None):
             state['command'] = 'accept'
             fig.canvas.stop_event_loop()
 
-    selector = RectangleSelector(
+    _selector = RectangleSelector(
         ax_spec, on_select, useblit=True, button=[1],
         minspanx=5, minspany=5, spancoords='pixels', interactive=False,
     )
@@ -705,9 +731,7 @@ def review_interactive(stokes_I, freq, time_reso, burst_regions=None):
     cid_close = fig.canvas.mpl_connect('close_event',        on_close)
     cid_mouse = fig.canvas.mpl_connect('button_press_event', on_mouse_press)
 
-    # tight_layout 处理外边距防止 xlabel 被裁掉; 但它会把 GridSpec 的 hspace
-    # 撑开, 所以紧接着再 subplots_adjust 把上下面板贴回去.
-    plt.tight_layout()
+    fig.tight_layout(pad=0.8)
     fig.subplots_adjust(hspace=0)
     plt.show(block=False)
     fig.canvas.draw_idle()
@@ -727,9 +751,6 @@ def review_interactive(stokes_I, freq, time_reso, burst_regions=None):
         fig.canvas.mpl_disconnect(cid_mouse)
 
     plt.close(fig)
-    # selector 持有一个引用避免被 GC; close 之后即可释放
-    del selector
-
     if state['command'] == 'quit':
         return None
     if state['command'] == 'empty':
@@ -739,12 +760,14 @@ def review_interactive(stokes_I, freq, time_reso, burst_regions=None):
     if state['showing_model']:
         return burst_regions
     # 用户重画过 → 用拖拽得到的矩形 (允许零框, 表示该文件没有真实爆发)
-    return [bbox_to_region(*box, freq, time_reso, nsamp, nchan)
-            for box in state['user_regions']]
+    return [
+        bbox_to_region(*box, freq, time_reso, nsamp, nchan)
+        for box, _, _ in state['user_boxes']
+    ]
 
 
-def detect_one_file(h5_path, model, conf=0.25, iou_threshold=0.5,
-                    mode='auto', plot_dir=None, rfi_fft=False,
+def detect_one_file(h5_path, model, conf=0.25, mode='auto',
+                    plot_dir=None, rfi_fft=False,
                     max_horizontal_aspect=DEFAULT_MAX_HORIZONTAL_ASPECT):
     """对一个定标后 h5 文件做爆发检测。
 
@@ -756,8 +779,6 @@ def detect_one_file(h5_path, model, conf=0.25, iou_threshold=0.5,
         manual 模式下可传 None.
     conf : float
         置信度阈值。
-    iou_threshold : float
-        NMS IoU 阈值。
     mode : str
         'auto'(YOLO 全自动) / 'semi-auto'(YOLO + 人工审查) / 'manual'(纯手工标记).
     plot_dir : str or None
@@ -784,17 +805,25 @@ def detect_one_file(h5_path, model, conf=0.25, iou_threshold=0.5,
         time_reso = float(f.attrs['time_reso'])
         save_dt   = int(f.attrs.get('down_time', 1))
         plot_dt   = int(f.attrs.get('plot_down_time', save_dt))
+        save_df   = int(f.attrs.get('down_freq', 1))
+        plot_df   = int(f.attrs.get('plot_down_freq', save_df))
 
     stokes_I = iquv[0]  # (nsamp, nchan)
     nsamp, nchan = stokes_I.shape
+    plot_time_factor = max(1, plot_dt // save_dt)
+    plot_freq_factor = max(1, plot_df // save_df)
 
     if mode == 'manual':
-        burst_regions = review_interactive(stokes_I, freq, time_reso)
+        burst_regions = review_interactive(
+            stokes_I, freq, time_reso,
+            time_factor=plot_time_factor,
+            freq_factor=plot_freq_factor,
+        )
     else:
         # auto / semi-auto: YOLO 推理.
         # 检测时间下采样跟 calibration 画图倍率一致 (像素 → 保存采样点的换算)
-        det_time_factor = max(1, plot_dt // save_dt)
-        tiles, offsets, time_factor, freq_factor = prepare_image_tiles(stokes_I, target_size=512, time_factor=det_time_factor)
+        tiles, offsets, time_factor, freq_factor = prepare_image_tiles(
+            stokes_I, target_size=512, time_factor=plot_time_factor)
 
         if len(tiles) > 1:
             print(f'    长数据: 分 {len(tiles)} 个 tile 推理 '
@@ -803,14 +832,18 @@ def detect_one_file(h5_path, model, conf=0.25, iou_threshold=0.5,
         tile_results = []
         for tile, offset in zip(tiles, offsets):
             scores, boxes = predict_single(
-                model, tile, conf=conf, iou_threshold=iou_threshold,
+                model, tile, conf=conf,
                 max_horizontal_aspect=max_horizontal_aspect)
             tile_results.append((boxes, scores, offset))
         burst_regions = boxes_to_regions_tiled(tile_results, time_factor, freq_factor, nsamp, nchan)
 
     # semi-auto: 把 YOLO 结果交给用户审查 / 修改
     if mode == 'semi-auto':
-        burst_regions = review_interactive(stokes_I, freq, time_reso, burst_regions)
+        burst_regions = review_interactive(
+            stokes_I, freq, time_reso, burst_regions,
+            time_factor=plot_time_factor,
+            freq_factor=plot_freq_factor,
+        )
     if burst_regions is None:
         return None
 
@@ -824,10 +857,9 @@ def detect_one_file(h5_path, model, conf=0.25, iou_threshold=0.5,
 
     if plot_dir is not None:
         os.makedirs(plot_dir, exist_ok=True)
-        basename  = os.path.splitext(fname)[0]
-        plot_path = os.path.join(plot_dir, basename + '_det.png')
-        plot_detection(plot_I, freq, time_reso, burst_regions, plot_path,
-                       normalize=False)
+        plot_path = os.path.join(
+            plot_dir, os.path.splitext(fname)[0] + '_det.png')
+        plot_detection(plot_I, freq, time_reso, burst_regions, plot_path)
 
     # H5 中已写入 attrs['bursts'] 和检测后 RFI; detections.json 只负责断点续跑。
     return {
@@ -840,11 +872,10 @@ if __name__ == '__main__':
 
     parser = argparse.ArgumentParser(description='YOLO 爆发检测')
     parser.add_argument('--cal-dir',       default='./cal/',                  help='定标 h5 文件目录')
-    parser.add_argument('--model-path',    default='./models/best_model_yolo11n_ema.pth', help='YOLO 权重文件路径')
+    parser.add_argument('--model-path',    default=str(DEFAULT_DETECTOR_MODEL), help='YOLO 权重文件路径')
     parser.add_argument('--model-name',    default='yolo11n',                          help='YOLO 模型配置名')
     parser.add_argument('--output-dir',    default='./detections/',           help='输出目录')
     parser.add_argument('--conf',          default=0.25, type=float,          help='置信度阈值')
-    parser.add_argument('--iou-threshold', default=0.5,  type=float,          help='NMS IoU 阈值')
     parser.add_argument('--max-horizontal-aspect',
                         default=DEFAULT_MAX_HORIZONTAL_ASPECT, type=float,
                         help='过滤 width/height 超过该值的横向模型框')
@@ -860,7 +891,7 @@ if __name__ == '__main__':
         parser.error('--max-horizontal-aspect 必须大于 0')
 
     if args.mode == 'auto':
-        matplotlib.use('Agg')
+        plt.switch_backend('Agg')
 
     # manual 模式不需要 YOLO 模型
     model = None if args.mode == 'manual' else load_yolo_model(
@@ -901,7 +932,6 @@ if __name__ == '__main__':
             continue
         result = detect_one_file(
             h5_path, model, conf=args.conf,
-            iou_threshold=args.iou_threshold,
             mode=args.mode, plot_dir=plot_dir,
             rfi_fft=args.rfi_fft,
             max_horizontal_aspect=args.max_horizontal_aspect)
@@ -913,15 +943,14 @@ if __name__ == '__main__':
         with open(det_path, 'w') as f:
             json.dump(detections, f, indent=2)
 
+    n_with = sum(1 for value in detections.values() if value['has_burst'])
     if quit_requested:
         # 当前文件不记为已处理，下次从它继续。
         with open(det_path, 'w') as f:
             json.dump(detections, f, indent=2)
-        n_with = sum(1 for v in detections.values() if v['has_burst'])
         print(f'\n[退出] 当前进度已保存: {det_path}')
         print(f'已处理 {len(detections)}/{len(h5_files)} 个文件，'
               f'其中 {n_with} 个检测到爆发')
     else:
         print(f'[OK] 检测结果已保存: {det_path}')
-        n_with = sum(1 for v in detections.values() if v['has_burst'])
         print(f'\n完成: {n_with}/{len(detections)} 个文件检测到爆发')

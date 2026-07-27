@@ -48,6 +48,8 @@ python batch_processing/batch_calibration.py --help
 base project name date beam dm time
 ```
 
+可复制只有表头的 [`Burst.example.txt`](Burst.example.txt) 作为起点。
+
 | 列 | 含义 |
 |---|---|
 | `base` | 原始数据根的第一段路径，不含开头 `/`。 |
@@ -79,7 +81,7 @@ python batch_processing/batch_cut_burst_data.py \
 
 `--segment-length` 是每个 cut 的样本数，默认值为 `65536`。脚本按原始路径、日期、beam
 和 DM 分组，复制该 beam 的第一个匹配 FITS 作为定标参考，并为每个 TOA 调用
-`cut_burst_data.py` 的裁切函数。
+`after.cut_burst_data` 的裁切函数。
 
 典型输出：
 
@@ -91,7 +93,9 @@ python batch_processing/batch_cut_burst_data.py \
     obs_info.json
 ```
 
-同名输出需要重建时显式增加 `--overwrite`。
+同名输出需要重建时显式增加 `--overwrite`。`obs_info.json` 会逐个读取日期目录中的
+H5：一致值保持标量，混合 beam、DM 和 segment length 写成列表，并在每个 burst 条目
+中保留各自取值。
 
 ## 2. 裁切逐事件长窗口
 
@@ -195,6 +199,8 @@ FRB_name DM RA DEC
 
 RA/DEC 可以使用冒号格式或 Astropy 可识别的带单位格式。DM 用于 source 记录；每个 cut
 H5 自身也应保存对应 DM。
+每个 beam 组必须在同一日期目录中存在匹配的 `Mxx..._0001.fits`。缺少定标数据会直接
+报错，M01 不会代替其他 beam。
 
 ### 运行
 
@@ -225,6 +231,8 @@ python batch_processing/batch_calibration.py \
 - `--down-time 1`：保留原始时间分辨率；
 - `--down-freq 1`：保留原始频率通道。
 
+批处理默认启用 FFT RFI；传入 `--no-rfi-fft` 可改用熵方法。
+
 输出布局：
 
 ```text
@@ -241,17 +249,20 @@ python batch_processing/batch_calibration.py \
 定标完成后，使用仓库根目录的入口继续处理：
 
 ```bash
-python burst_detect.py \
+python -m after.burst_detect \
   --mode auto \
   --cal-dir /path/to/after_runs/calibrated \
   --model-path models/best_model_yolo11n_ema.pth \
   --model-name yolo11n \
   --output-dir /path/to/after_runs/detections
 
-python burst_analysis.py \
+python -m after.burst_analysis \
   --cal-dir /path/to/after_runs/calibrated \
   --output-dir /path/to/after_runs/analysis
 ```
+
+两个根目录入口都会递归查找 `*_cal.h5`，因此这里的 `--cal-dir` 可以直接是批处理
+`<cal-root>`，不必逐日期运行。
 
 自动检测框是复核建议，不是最终科学测量区域。运行能量和偏振分析前，应先检查或修正
 写入 H5 `attrs["bursts"]` 的区域。

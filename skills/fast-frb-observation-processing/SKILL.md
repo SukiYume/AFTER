@@ -5,23 +5,23 @@ description: "Use when a user asks an agent to install, validate, or run AFTER f
 
 # AFTER FAST FRB Observation Processing
 
-AFTER is the AI-assisted FAST Transient End-to-end Reduction workflow for post-search FAST FRB burst processing. Use this skill as the agent operating protocol. Locate the script root before running commands because the skill can be installed separately from the processing scripts.
+AFTER is the AI-assisted FAST Transient End-to-end Reduction workflow for post-search FAST FRB burst processing. Use this skill as the agent operating protocol. Locate the repository root before running commands because the skill can be installed separately from the processing package.
 
 Normal AFTER sequence:
 
 ```text
 raw FAST FITS + user-provided TOA list
-  -> cut_burst_data.py
+  -> after.cut_burst_data
   -> cut H5
-  -> calibration.py
+  -> after.calibration
   -> *_cal.h5
-  -> burst_detect.py
+  -> after.burst_detect
   -> human label review/correction
   -> H5 attrs["bursts"] + detections.json
-  -> burst_analysis.py
+  -> after.burst_analysis
   -> energy/polarization/DM/RM measurements
   -> burst_results.csv + diagnostic plots
-  -> optional burst_dashboard.py summary
+  -> optional after.burst_dashboard summary
 ```
 
 ## Operating Mode: One Observation, Minimum Interaction
@@ -41,8 +41,8 @@ Use this interaction policy:
 3. Ask the user directly for non-discoverable or expensive-risk inputs: source/date/beam, raw FITS path, TOA source, DM, RA/DEC, segment length, remote host/script root, remote output root, local pull target, analysis DM/RM ranges, and overwrite/delete permission.
 4. Treat user corrections about host, path, script choice, segment length, or workflow scope as authoritative for the rest of the observation.
 5. If the user asks only for a command, give the command only. Do not create helper files, runners, manifests, or dashboards unless they are explicitly requested or required by the current pipeline stage.
-6. Prefer direct stage scripts in the verified script root (`cut_burst_data.py`, `calibration.py`, `burst_detect.py`, `burst_analysis.py`, `burst_dashboard.py`) or a user-specified project wrapper for that stage. Use `batch_processing/*` only when the user explicitly asks for batch mode or provides a batch catalog.
-7. On remote hosts, use the script root and data/output paths the user named. Do not sync code, replace scripts, or invent wrapper layers unless the user requests it or the named script cannot accept the required inputs.
+6. In the current checkout, prefer `python -m after.<module>` for single-observation stages. Treat the root `calibration.py` and `cut_burst_data.py` files as supported compatibility launchers for the historical direct commands and imports. Use `batch_processing/*` only when the user explicitly asks for batch mode or provides a batch catalog.
+7. On remote hosts, use the script root and data/output paths the user named. Do not sync code, replace scripts, or invent wrapper layers unless the user requests it or the named script cannot accept the required inputs. When the script root also stores local catalogs or experiment scripts, sync an explicit source allowlist without `--delete`.
 8. Before destructive cleanup or overwrite, verify the resolved absolute target path and ask unless the user has explicitly requested that cleanup for the same target.
 9. Keep human pauses to the necessary gates: TOA review, burst-label review, destructive cleanup/overwrite, and unknown expensive parameters. Continue automatically after the user says the review or edit is finished.
 10. Keep a run log in the conversation: command, inputs, output paths, counts, key attrs, warnings, and next action.
@@ -54,7 +54,7 @@ Need before cutting:
   source/date/beam:
   search-plot folder or TOA txt:
   raw FITS directory:
-  remote host and AFTER/script root:
+  remote host and AFTER repository/script root:
   cut output root:
   DM:
   RA/DEC:
@@ -62,12 +62,12 @@ Need before cutting:
   local calibrated-data target:
 Optional before analysis:
   DM search half-range / step:
-  RM min/max / n_rm:
+  RM min/max (grid spacing is automatic):
 ```
 
 ## 1. Locate AFTER
 
-Before any processing command, verify the complete AFTER script root. Use the first working source:
+Before any processing command, verify the complete AFTER repository root. Use the first working source:
 
 1. Current working directory, if it contains the sentinel files.
 2. `DATA_PROCESSING_ROOT`, if set.
@@ -76,23 +76,28 @@ Before any processing command, verify the complete AFTER script root. Use the fi
 Sentinel files:
 
 ```text
-cut_burst_data.py
+after/cut_burst_data.py
+after/calibration.py
+after/burst_detect.py
+after/burst_analysis.py
+after/rfi.py
+after/zenith_angle.py
 calibration.py
-burst_detect.py
-burst_analysis.py
-rfi_utils.py
-ZeithAngle.py
+cut_burst_data.py
 gain_para.csv
 ```
 
-For calibration, use the included `highcal_*.npz` file only after verifying it is the intended noise-calibration file, or use the user's supplied calibration file. For detection, use the included trained detector checkpoint only after verifying the path/model name, or use the user's supplied model path and matching model name.
+Resolve the included defaults from the repository root: `gain_para.csv`,
+`highcal_20201014_psr_tny.npz`, and
+`models/best_model_yolo11n_ema.pth`. Verify each file before use. Accept a
+user-supplied calibration table or detector checkpoint when requested.
 
-When the skill folder is available before the script root, explain that the installed skill provides the AFTER protocol and ask for the complete AFTER script root. Run processing commands from the verified script root.
+When the skill folder is available before the repository, explain that the installed skill provides the AFTER protocol and ask for the complete AFTER repository root. Run processing commands from that root so Python can resolve the `after` package and repository-level assets.
 
 Script capability check:
 
-- Do not assume every stage script is an argparse CLI. Some AFTER checkouts use constant-configured scripts whose `--help` path still imports heavy dependencies or touches hard-coded data paths.
-- Probe safely: inspect the script for `argparse`, `add_argument`, and `if __name__ == "__main__"` before running help. Run `--help` only when the current environment and script structure make it safe.
+- Do not assume every stage module or legacy script is an argparse CLI. Some AFTER entry points are constant-configured; importing them or probing `--help` may load heavy dependencies or encounter hard-coded data paths.
+- Probe safely: inspect the module for `argparse`, `add_argument`, and `if __name__ == "__main__"` before running help. Run `python -m after.<module> --help` only when the current environment and module structure make it safe.
 - If a help probe fails because of missing optional dependencies, GPU packages, or hard-coded input paths, do not treat that as a pipeline failure. Read the constants/function signatures, verify the intended environment, and continue with the direct script or user-provided wrapper.
 - If a direct script is configured by source constants rather than CLI flags, report the constants that matter for the current stage and ask only for missing or risky values.
 
@@ -103,7 +108,7 @@ When the user asks to install AFTER on another machine:
 1. Clone or copy the AFTER repository or script bundle.
 2. Install Python dependencies from `requirements.txt`; choose CUDA-specific PyTorch packages for GPU inference when needed.
 3. Copy `skills/fast-frb-observation-processing/` into the Codex skills directory.
-4. Set `DATA_PROCESSING_ROOT` to the complete AFTER script root when the scripts are available.
+4. Set `DATA_PROCESSING_ROOT` to the complete AFTER repository root when the package is available.
 5. Run README post-install validation: syntax compile, dependency imports in the intended environment, CLI help for true argparse scripts, source/constant checks for constant-configured scripts, and skill validation.
 
 One-line user-facing install request:
@@ -140,7 +145,7 @@ Operating rules:
 
 Before each stage, perform only the checks needed to prevent a wrong run:
 
-1. Work from the verified AFTER script root and report absolute paths.
+1. Work from the verified AFTER repository root and report absolute paths.
 2. Inspect the user-specified Python environment, especially for GPU or plotting workloads.
 3. Check input counts and one representative file:
    - Raw FITS: count beam-matched `*Mxx*.fits`; inspect one FITS header for timing/channel metadata.
@@ -170,7 +175,7 @@ TOA preparation from search-result figures:
 
 Recommended implementation:
 
-1. Import `read_obs_info`, `calc_dispersion_shift`, `cut_one_burst`, and `save_obs_json` from `cut_burst_data`.
+1. Import `read_obs_info`, `calc_dispersion_shift`, `cut_one_burst`, and `save_obs_json` from `after.cut_burst_data`.
 2. Build a sorted FITS list using beam pattern `M{beam:02d}`.
 3. Copy the first matching beam FITS into the cut output directory so calibration can find `_0001.fits`.
 4. Sort, deduplicate, range-check, and apply any user-confirmed close-pair midpoint merges to the supplied TOAs.
@@ -180,7 +185,8 @@ Recommended implementation:
 
 Remote/direct-script rule:
 
-- If the user points to a remote cut wrapper or `cut_burst_data.py` whose data path/output root are already configured, inspect its accepted arguments once, then run it directly with the final TOA file and required parameters. Do not generate batch catalogs or wrapper scripts unless the direct script cannot express the requested segment length or output path.
+- In the current checkout, configure `after/cut_burst_data.py`, then run either `python cut_burst_data.py` or `python -m after.cut_burst_data` from the repository root; both execute the same package code.
+- If the user points to a remote legacy `cut_burst_data.py` or cut wrapper whose data path/output root are already configured, inspect its accepted arguments once, then run it directly with the final TOA file and required parameters. Do not generate batch catalogs or wrapper scripts unless that entry point cannot express the requested segment length or output path.
 - If the cut script is configured by source constants, verify `DATA_PATH`, `SAVE_PATH`, `TOA_FILE`, `DM`, `SEGMENT_LENGTH`, `FRB_NAME`, `DATE`, and `BEAM` from source or user input before running it. For a user-confirmed configured remote script, pass only the required TOA/input arguments and avoid inventing extra wrappers.
 
 Verify:
@@ -200,7 +206,7 @@ Required inputs: cut H5 directory, calibration output directory, RA, DEC, beam i
 
 Recommended implementation:
 
-1. Import `find_cal_fits`, `fold_noise_cal`, `load_t_cal`, and `process_one_burst` from `calibration`.
+1. Import `find_cal_fits`, `fold_noise_cal`, `load_t_cal`, and `process_one_burst` from `after.calibration`.
 2. Group cut H5 files by beam from the `Mxx` filename token.
 3. For each beam, find matching `_0001.fits`, fold `noise_cal`, load `t_cal`, and process each H5.
 4. Use `rfi_fft=True` for standard calibration RFI, or use the user's requested calibration-time RFI strategy.
@@ -214,7 +220,8 @@ Downsample policy:
 
 Remote/direct-script rule:
 
-- If the user points to a remote calibration wrapper or `calibration.py`, run that direct calibration path after cut verification. Do not switch to `batch_processing/batch_calibration.py` unless the user asked for batch mode, the direct script is absent, or the direct script cannot process the requested directory.
+- In the current checkout, configure `after/calibration.py`, then run either `python calibration.py` or `python -m after.calibration` from the repository root; both execute the same package code. Its default `CAL_NPZ` resolves to the repository-root `highcal_20201014_psr_tny.npz`.
+- If the user points to a remote legacy `calibration.py` or calibration wrapper, run that direct calibration path after cut verification. Do not switch to `batch_processing/batch_calibration.py` unless the user asked for batch mode, the direct entry point is absent, or it cannot process the requested directory.
 - If the calibration script is configured by source constants, verify `BURST_DIR`, `OUTPUT_DIR`, `CAL_NPZ`, `RA`, `DEC`, `DOWN_TIME`, `DOWN_FREQ`, and RFI settings before running it. Do not assume local hard-coded defaults are valid for the user's observation.
 - Pull back calibrated products after calibration finishes. By default pull `*_cal.h5` and quick-look images into the local calibrated-data target; pull raw cut H5 only when the user asks.
 
@@ -232,7 +239,7 @@ Run this stage when starting from calibrated H5 or after successful calibration.
 Auto detection example:
 
 ```bash
-python burst_detect.py \
+python -m after.burst_detect \
   --mode auto \
   --cal-dir /path/to/cal_date \
   --model-path /path/to/detector_checkpoint.pth \
@@ -256,18 +263,18 @@ After auto detection:
 4. Tell the user which files need review, where plots are, how many labels look acceptable, and how to relabel bad files.
 5. Pause until the user confirms labels are acceptable or corrections are finished.
 
-If the user asks for a semi-auto/manual command, provide the exact `python burst_detect.py ...` command and stop. Do not create a runner file.
+If the user asks for a semi-auto/manual command, provide the exact `python -m after.burst_detect ...` command and stop. Do not create a runner file.
 
 Use semi-auto for bad auto labels:
 
 1. Remove only bad filenames from that output directory's `detections.json`.
-2. Rerun `burst_detect.py --mode semi-auto` with the same `--cal-dir` and `--output-dir`.
+2. Rerun `python -m after.burst_detect --mode semi-auto` with the same `--cal-dir` and `--output-dir`.
 3. The script skips files still listed in `detections.json` and opens only removed files.
 
 Use manual mode when the model is misleading:
 
 ```bash
-python burst_detect.py \
+python -m after.burst_detect \
   --mode manual \
   --cal-dir /path/to/cal_date \
   --output-dir /path/to/detections_manual
@@ -286,7 +293,7 @@ When the user says labels are fixed:
 - Verify each intended H5 has `attrs["bursts"]`.
 - Count total files, intentionally empty files, and accepted burst regions.
 - Confirm reviewed files now have plausible non-empty or intentionally empty regions.
-- Confirm current-label files include `burst_rfi_mask`, `burst_rfi_channel`, and `burst_rfi_method` when written by current `burst_detect.py`.
+- Confirm current-label files include `burst_rfi_mask`, `burst_rfi_channel`, and `burst_rfi_method` when written by current `after.burst_detect`.
 - Keep or report the final `detections.json` path.
 
 Remember: `attrs["bursts"]` is the source of truth for analysis. Update H5 attrs when a label should be removed or intentionally marked empty.
@@ -298,35 +305,66 @@ Run this stage after burst labels are accepted.
 Example:
 
 ```bash
-python burst_analysis.py \
+python -m after.burst_analysis \
   --cal-dir /path/to/cal_date \
   --output-dir /path/to/analysis_output \
   --dm-range 5 \
   --dm-step 0.1 \
   --rm-min -1000 \
-  --rm-max 1000 \
-  --n-rm 100000
+  --rm-max 1000
 ```
 
 Treat these values as examples. Confirm DM/RM ranges against source knowledge before long runs.
 
 Analysis rules:
 
-- `burst_analysis.py` processes `*_cal.h5` files directly inside one directory. Loop over date directories for multiple dates.
+- `after.burst_analysis` recursively processes `*_cal.h5` files below `--cal-dir`; point it at one date directory or a calibrated root containing multiple dates.
 - For a single-burst rerun such as an expanded RM search, use an isolated analysis output directory and, if the script has no single-file option, an isolated cal-dir view/copy/symlink containing only the chosen `*_cal.h5`. Do not overwrite the main observation `burst_results.csv` unless the user explicitly asks.
 - `--dm-range` is centered on the cut DM stored in each H5.
-- `--rm-min`, `--rm-max`, `--n-rm`, and `--n-boot` control RM search and uncertainty work.
+- `--rm-min` and `--rm-max` control the RM search range; the code derives the
+  grid spacing automatically from the effective lambda-squared coverage and
+  RMSF FWHM. `--n-boot` controls uncertainty work.
 - Pass `--target-down-time` and `--target-down-freq` only for coarser analysis than the saved calibrated H5. Target factors must be integer multiples of saved `down_time/down_freq`.
 - Pass `--rfi-fft` when FFT RFI is requested in analysis.
 - Rebuild the noise mask from accepted burst labels, subtract per-channel baseline, derive RFI from Stokes I and V, and apply the union mask to all Stokes parameters.
 - Use the accepted burst frequency range excluding RFI for peak flux and fluence.
 - RM reliability is decided from the RM search significance/error outputs. If no reliable RM is found, report that the RM search result is reliable as a non-detection and do not interpret linear/circular polarization fractions as trustworthy physical measurements.
 
+Common-RM stacking from multiple calibrated bursts:
+
+- When the user asks to combine several labeled calibrated H5 bursts to search
+  for a common RM, run `python -m after.burst_sync_rm` on the calibrated-H5
+  directory. It must not require an existing `burst_results.csv`.
+- The script treats every accepted region in H5 `attrs["bursts"]` as one
+  component, selects strong time samples from Stokes I alone, and uses the
+  union of stored and recalculated channel-level RFI masks. Do not apply a
+  time-frequency pixel mask.
+- Keep both requested PA-independent products: the per-time-sample normalized
+  Faraday-power sum (`time_pa_power`) and the fixed-weight stack of robustly
+  standardized per-burst RM-versus-linear-degree curves
+  (`linear_degree_stack`). Keep the burst-internal coherent-time power
+  (`burst_pa_power`) as a diagnostic for weak per-sample signals whose PA is
+  approximately constant within each burst.
+- Calibrate detection significance with off-pulse samples using the same
+  component time-sample counts and channel masks. Report which RM window the
+  empirical p-value corrects; do not compare an uncorrected local peak with a
+  full-range null.
+- For very large absolute RM, use calibrated H5 saved at sufficiently fine
+  frequency resolution to avoid within-channel Faraday depolarization. A
+  plot-friendly downsampled H5 is not automatically suitable for the joint
+  search.
+- Do not ask for or pass an RM step or RM point count. Record the automatically
+  selected RMSF FWHM, RM spacing, and grid size from the output manifest/table.
+
 Verify:
 
 - `burst_results.csv` exists and has one row per analyzed burst.
 - Report row count, SNR range, DM range, RM range, and rows with NaN or non-significant RM.
 - Spot-check at least one DM/RM/polarization plot when possible.
+- For `after.burst_sync_rm`, verify `burst_sync_rm_summary.csv`,
+  `selected_bursts.csv`, `burst_sync_rm_curves.npz`, `run_manifest.json`, and
+  `burst_sync_rm.png`; compare the two requested methods and the
+  `burst_pa_power` diagnostic before interpreting a peak.
 
 ## 9. Build Observation Dashboard or Summary
 
@@ -335,7 +373,7 @@ Run this stage after `burst_results.csv` exists when the user asks for a summary
 Preferred command shape:
 
 ```bash
-python burst_dashboard.py \
+python -m after.burst_dashboard \
   --csv /path/to/analysis/burst_results.csv \
   --output /path/to/analysis/burst_dashboard.html \
   --analysis-dir /path/to/analysis \
@@ -349,9 +387,9 @@ python burst_dashboard.py \
 Dashboard rules:
 
 - Use `burst_results.csv` as the source. Do not re-run analysis just to build the dashboard.
-- If the user says only the dashboard script changed, first compile or otherwise sanity-check `burst_dashboard.py`, then regenerate from the existing CSV.
+- If the user says only the dashboard module changed, first compile or otherwise sanity-check `after/burst_dashboard.py`, then regenerate from the existing CSV.
 - Pass `--analysis-dir` when diagnostic asset folders live beside the CSV; the dashboard may need it to embed script-defined supporting assets.
-- Let `burst_dashboard.py` define and render the dashboard metrics, chart set, and polarization display. Do not manually recompute, rename, or restyle script-defined summary values in the skill workflow.
+- Let `after.burst_dashboard` define and render the dashboard metrics, chart set, and polarization display. Do not manually recompute, rename, or restyle module-defined summary values in the skill workflow.
 - If no reliable RM exists, report it as a non-detection and avoid interpreting polarization quantities as trustworthy physical measurements.
 - Verify the dashboard output exists, embeds its expected assets, represents the analyzed burst rows, and opens locally without obvious layout overflow.
 
@@ -419,7 +457,7 @@ End each completed observation with:
 ```text
 Processed observation:
   FRB/date/beam:
-  AFTER script root:
+  AFTER repository root:
   Python environment:
   start stage:
   cut outputs:

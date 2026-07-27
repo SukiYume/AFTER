@@ -6,7 +6,7 @@
 
   1. 加载 IQUV + freq + bursts。
   2. 用非 burst 时段作为 noise_mask, 先按通道减噪声区中值基线。
-  3. 在减完基线的全部 Stokes 上调用 rfi_utils.cal_rfi, 再叠加局部鲁棒通道
+  3. 在减完基线的全部 Stokes 上调用 after.rfi.cal_rfi, 再叠加局部鲁棒通道
      统计和 H5 已保存的 calibration/detection 通道 mask。默认只应用通道级 RFI,
      不把逐像素 mask 用到信号上；需要复现旧行为时才显式启用 pixel mask。
   4. 在每个检测框内用 Stokes I 自动选取超过主峰分数阈值且超过噪声阈值的
@@ -29,14 +29,37 @@ import h5py
 import pandas as pd
 import matplotlib
 matplotlib.use('Agg')
-import seaborn as sns
+import seaborn as sns  # noqa: F401 - registers seaborn colormaps such as mako
 import matplotlib.pyplot as plt
 from matplotlib import gridspec
 
-from rfi_utils       import cal_rfi, robust_channel_mask
-from burst_properties import calc_burst_properties
-from burst_dm         import analyze_dm
-from burst_pol        import analyze_pol, plot_polarization
+from .rfi import cal_rfi, robust_channel_mask
+from .burst_properties import calc_burst_properties
+from .burst_dm import analyze_dm
+from .burst_pol import analyze_pol, plot_polarization
+
+
+def _pol_failure_result(freq, error):
+    """Return an explicit failed measurement row without scientific zeros."""
+    finite_freq = np.asarray(freq)[np.isfinite(freq)]
+    center_freq = (
+        float(np.mean(finite_freq)) if finite_freq.size else np.nan)
+    return {
+        'rm': np.nan,
+        'rm_err': np.nan,
+        'rm_significance': np.nan,
+        'rm_grid_size': np.nan,
+        'rm_grid_step': np.nan,
+        'rm_rmsf_fwhm': np.nan,
+        'rm_grid_samples_per_fwhm': np.nan,
+        'linear_frac': np.nan,
+        'linear_frac_err': np.nan,
+        'circular_frac': np.nan,
+        'circular_frac_err': np.nan,
+        'center_freq': center_freq,
+        'pol_status': 'failed',
+        'pol_error_reason': f'{type(error).__name__}: {error}',
+    }
 
 
 # ============================================================
@@ -256,7 +279,7 @@ def analyze_one_file(cal_h5_path, output_dir,
                      rfi_channel_window=31,
                      rfi_channel_grow=1,
                      dm_range=10.0, dm_step=0.1, dm_snr_threshold=5.0,
-                     rm_min=-50000, rm_max=50000, n_rm=20000,
+                     rm_min=-50000, rm_max=50000,
                      rm_peak_fraction=0.5, rm_min_time_snr=5.0,
                      rm_freq_min=None, rm_freq_max=None,
                      strongest_burst_only=False,
@@ -446,7 +469,6 @@ def analyze_one_file(cal_h5_path, output_dir,
     for bi, region in indexed_regions:
         print(f'  [{basename}] 分析爆发 {bi}...')
 
-        ts, te = region['time_start'], region['time_end']
         fs, fe = region['freq_start'], region['freq_end']
 
         # 该爆发的有效频率通道 = 指定频率范围 ∩ 非 RFI
@@ -495,15 +517,14 @@ def analyze_one_file(cal_h5_path, output_dir,
                 I, Q, U, V, freq, time_reso,
                 rm_time_mask, rm_freq_index, noise_mask,
                 burst_dir, bi,
-                rm_min=rm_min, rm_max=rm_max, n_rm=n_rm)
+                rm_min=rm_min, rm_max=rm_max)
+            pol_out.update({
+                'pol_status': 'ok',
+                'pol_error_reason': '',
+            })
         except Exception as e:
             print(f'    偏振分析失败: {e}')
-            pol_out = {
-                'rm': 0.0, 'rm_err': np.nan, 'rm_significance': 0.0,
-                'linear_frac': 0.0, 'linear_frac_err': 0.0,
-                'circular_frac': 0.0, 'circular_frac_err': 0.0,
-                'center_freq': float(np.mean(freq)),
-            }
+            pol_out = _pol_failure_result(freq, e)
             pa_arrays = None
 
         # 跨爆发合并 PDF 所需的 PA 数组 + 最后一个 burst 的轮廓
@@ -566,14 +587,15 @@ def analyze_all(cal_dir, output_dir,
                 rfi_channel_window=31,
                 rfi_channel_grow=1,
                 dm_range=10.0, dm_step=0.1, dm_snr_threshold=5.0,
-                rm_min=-50000, rm_max=50000, n_rm=20000,
+                rm_min=-50000, rm_max=50000,
                 rm_peak_fraction=0.5, rm_min_time_snr=5.0,
                 rm_freq_min=None, rm_freq_max=None,
                 strongest_burst_only=False,
                 n_boot=200,
                 target_down_time=None, target_down_freq=None):
-    """批量分析 cal_dir 下所有 _cal.h5, 汇总写 CSV。"""
-    h5_files = sorted(glob.glob(os.path.join(cal_dir, '*_cal.h5')))
+    """递归分析 cal_dir 下所有 _cal.h5，并汇总写 CSV。"""
+    h5_files = sorted(glob.glob(
+        os.path.join(cal_dir, '**', '*_cal.h5'), recursive=True))
     if not h5_files:
         print(f'未找到 _cal.h5: {cal_dir}')
         return pd.DataFrame()
@@ -590,7 +612,7 @@ def analyze_all(cal_dir, output_dir,
             rfi_channel_grow=rfi_channel_grow,
             dm_range=dm_range, dm_step=dm_step,
             dm_snr_threshold=dm_snr_threshold,
-            rm_min=rm_min, rm_max=rm_max, n_rm=n_rm,
+            rm_min=rm_min, rm_max=rm_max,
             rm_peak_fraction=rm_peak_fraction,
             rm_min_time_snr=rm_min_time_snr,
             rm_freq_min=rm_freq_min, rm_freq_max=rm_freq_max,
@@ -624,7 +646,6 @@ if __name__ == '__main__':
     DM_SNR_THRESHOLD  = 5.0
     RM_MIN            = -50000
     RM_MAX            = 50000
-    N_RM              = 20000
     RM_PEAK_FRACTION  = 0.5
     RM_MIN_TIME_SNR   = 5.0
     N_BOOT            = 200
@@ -649,9 +670,10 @@ if __name__ == '__main__':
     parser.add_argument('--dm-range',         default=DM_RANGE,         type=float, help='DM 搜索范围')
     parser.add_argument('--dm-step',          default=DM_STEP,          type=float, help='DM 搜索步长')
     parser.add_argument('--dm-snr-threshold', default=DM_SNR_THRESHOLD, type=float, help='DM 低SNR压制阈值')
-    parser.add_argument('--rm-min',           default=RM_MIN,           type=float, help='RM 下限')
-    parser.add_argument('--rm-max',           default=RM_MAX,           type=float, help='RM 上限')
-    parser.add_argument('--n-rm',             default=N_RM,             type=int,   help='RM 试验点数')
+    parser.add_argument('--rm-min',           default=RM_MIN,
+                        type=float, help='RM 下限；网格步长由有效 lambda^2 覆盖自动计算')
+    parser.add_argument('--rm-max',           default=RM_MAX,
+                        type=float, help='RM 上限；网格步长由有效 lambda^2 覆盖自动计算')
     parser.add_argument('--rm-peak-fraction', default=RM_PEAK_FRACTION,
                         type=float, help='RM 时间门的主峰分数阈值 (默认 0.5)')
     parser.add_argument('--rm-min-time-snr', default=RM_MIN_TIME_SNR,
@@ -678,7 +700,7 @@ if __name__ == '__main__':
         rfi_channel_grow=args.rfi_channel_grow,
         dm_range=args.dm_range, dm_step=args.dm_step,
         dm_snr_threshold=args.dm_snr_threshold,
-        rm_min=args.rm_min, rm_max=args.rm_max, n_rm=args.n_rm,
+        rm_min=args.rm_min, rm_max=args.rm_max,
         rm_peak_fraction=args.rm_peak_fraction,
         rm_min_time_snr=args.rm_min_time_snr,
         rm_freq_min=args.rm_freq_min, rm_freq_max=args.rm_freq_max,
@@ -688,7 +710,7 @@ if __name__ == '__main__':
         target_down_freq=args.target_down_freq)
 
     if not df.empty:
-        print(f'\n汇总:')
+        print('\n汇总:')
         print(f'  爆发总数: {len(df)}')
         print(f'  SNR 范围: {df["snr"].min():.1f} – {df["snr"].max():.1f}')
         print(f'  DM 范围: {df["dm"].min():.3f} – {df["dm"].max():.3f}')

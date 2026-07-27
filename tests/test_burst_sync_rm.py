@@ -1,0 +1,207 @@
+import json
+
+import h5py
+import numpy as np
+import pandas as pd
+
+from after import burst_sync_rm
+from after.burst_pol import RM_GRID_OVERSAMPLE, build_automatic_rm_grid
+
+
+def _write_synthetic_cal_h5(path, rm, pa_offset_deg, seed):
+    rng = np.random.default_rng(seed)
+    nsamp = 80
+    nchan = 128
+    freq = np.linspace(1200.0, 1500.0, nchan)
+    wave2 = (burst_sync_rm.C_M_S / (freq * 1e6)) ** 2
+    wave2 -= np.mean(wave2)
+
+    data = rng.normal(0.0, 0.15, size=(4, nsamp, nchan))
+    signal_times = np.array([36, 37, 38])
+    data[0, signal_times, :] += 12.0
+    pa_deg = np.array([0.0, 60.0, 120.0]) + pa_offset_deg
+    for time_index, pa in zip(signal_times, pa_deg, strict=True):
+        phase = 2.0 * (np.deg2rad(pa) + rm * wave2)
+        polarization = 3.0 * np.exp(1j * phase)
+        data[1, time_index, :] += polarization.real
+        data[2, time_index, :] += polarization.imag
+
+    region = {
+        "time_start": 33,
+        "time_end": 42,
+        "freq_start": 0,
+        "freq_end": nchan,
+        "confidence": 1.0,
+    }
+    with h5py.File(path, "w") as handle:
+        handle.create_dataset("data", data=data)
+        handle.create_dataset("freq", data=freq)
+        handle.create_dataset("rfi_channel", data=np.zeros(nchan, dtype=bool))
+        handle.create_dataset(
+            "burst_rfi_channel", data=np.zeros(nchan, dtype=bool)
+        )
+        # Deliberately mark every pixel. The joint-RM script must never read it.
+        handle.create_dataset(
+            "rfi_mask", data=np.ones((nsamp, nchan), dtype=bool)
+        )
+        handle.attrs["bursts"] = json.dumps([region])
+        handle.attrs["time_reso"] = 0.001
+        handle.attrs["down_time"] = 1
+        handle.attrs["down_freq"] = 1
+
+
+def _load_synthetic_components(cal_dir):
+    components = []
+    for path in sorted(cal_dir.glob("*_cal.h5")):
+        loaded, warnings = burst_sync_rm.load_file_components(
+            path,
+            freq_min=None,
+            freq_max=None,
+            time_peak_fraction=0.5,
+            min_time_snr=3.0,
+            min_channels=32,
+            stored_masks_only=True,
+            rfi_fft=False,
+            rfi_channel_sigma=6.0,
+            rfi_channel_window=31,
+            rfi_channel_grow=1,
+        )
+        assert not warnings
+        components.extend(loaded)
+    return components
+
+
+def test_two_pa_independent_methods_recover_common_rm(tmp_path):
+    cal_dir = tmp_path / "cal"
+    cal_dir.mkdir()
+    expected_rm = 1500.0
+    _write_synthetic_cal_h5(
+        cal_dir / "FRBTEST-20260726-M01-0001-000000001_cal.h5",
+        expected_rm,
+        0.0,
+        1,
+    )
+    _write_synthetic_cal_h5(
+        cal_dir / "FRBTEST-20260726-M01-0002-000000002_cal.h5",
+        expected_rm,
+        37.0,
+        2,
+    )
+
+    bursts = _load_synthetic_components(cal_dir)
+    assert len(bursts) == 2
+    assert all(burst.n_time == 3 for burst in bursts)
+
+    rm_grid = np.linspace(-3000.0, 3000.0, 1201)
+    individual = {
+        burst.component_id: burst_sync_rm.individual_rm_curves(
+            burst, rm_grid, chunk_size=128
+        )
+        for burst in bursts
+    }
+    weights = burst_sync_rm.curve_weights(bursts, "equal", 4.0)
+    combined = burst_sync_rm.combine_curves(bursts, individual, weights)
+
+    for method in burst_sync_rm.PRIMARY_METHODS:
+        recovered = rm_grid[int(np.argmax(combined[method]))]
+        assert abs(recovered - expected_rm) <= 10.0
+
+    true_index = int(np.argmin(np.abs(rm_grid - expected_rm)))
+    assert (
+        combined["burst_pa_power"][true_index]
+        < 0.2 * combined["time_pa_power"][true_index]
+    )
+
+
+def test_automatic_rm_grid_uses_rmsf_resolution():
+    lambda2_wide = np.linspace(0.04, 0.09, 128)
+    lambda2_narrow = np.linspace(0.05, 0.07, 64)
+    rm_grid, info = build_automatic_rm_grid(
+        -50_000.0,
+        50_000.0,
+        [lambda2_narrow, lambda2_wide],
+    )
+
+    expected_fwhm = 2.0 * np.sqrt(3.0) / 0.05
+    assert rm_grid[0] == -50_000.0
+    assert rm_grid[-1] == 50_000.0
+    assert np.isclose(info["rmsf_fwhm"], expected_fwhm)
+    assert info["rm_step"] <= expected_fwhm / RM_GRID_OVERSAMPLE
+    assert info["samples_per_fwhm"] >= RM_GRID_OVERSAMPLE
+    assert info["n_rm"] == rm_grid.size
+
+
+def test_sync_cli_has_no_manual_rm_sampling_parameter():
+    parser_args = burst_sync_rm.parse_args(
+        [
+            "--cal-dir",
+            ".",
+            "--output-dir",
+            "output",
+        ]
+    )
+    assert not hasattr(parser_args, "n_rm")
+    assert not hasattr(parser_args, "rm_step")
+    assert not hasattr(parser_args, "null_rm_step")
+
+
+def test_main_writes_reproducible_direct_h5_products(tmp_path):
+    cal_dir = tmp_path / "cal"
+    cal_dir.mkdir()
+    _write_synthetic_cal_h5(
+        cal_dir / "FRBTEST-20260726-M01-0001-000000001_cal.h5",
+        1500.0,
+        0.0,
+        3,
+    )
+    _write_synthetic_cal_h5(
+        cal_dir / "FRBTEST-20260726-M01-0002-000000002_cal.h5",
+        1500.0,
+        25.0,
+        4,
+    )
+    output_dir = tmp_path / "output"
+
+    result = burst_sync_rm.main(
+        [
+            "--cal-dir",
+            str(cal_dir),
+            "--output-dir",
+            str(output_dir),
+            "--rm-min",
+            "-3000",
+            "--rm-max",
+            "3000",
+            "--test-window",
+            "full:-3000:3000",
+            "--n-null",
+            "20",
+            "--null-pool-size",
+            "32",
+            "--min-time-snr",
+            "3",
+            "--min-peak-snr",
+            "3",
+            "--stored-masks-only",
+        ]
+    )
+    assert result == 0
+
+    summary = pd.read_csv(output_dir / "burst_sync_rm_summary.csv")
+    assert set(summary["method"]) == set(burst_sync_rm.ALL_METHODS)
+    for method in burst_sync_rm.PRIMARY_METHODS:
+        row = summary[summary["method"] == method].iloc[0]
+        assert abs(float(row["fine_grid_peak_rm"]) - 1500.0) <= 20.0
+        assert int(row["n_null"]) == 20
+
+    selected = pd.read_csv(output_dir / "selected_bursts.csv")
+    assert len(selected) == 2
+    assert (selected["n_time_samples"] == 3).all()
+
+    manifest = json.loads(
+        (output_dir / "run_manifest.json").read_text(encoding="utf-8")
+    )
+    assert manifest["pixel_mask"] == "not read or applied"
+    assert set(manifest["methods"]) == set(burst_sync_rm.ALL_METHODS)
+    assert (output_dir / "burst_sync_rm.png").is_file()
+    assert (output_dir / "burst_sync_rm_curves.npz").is_file()

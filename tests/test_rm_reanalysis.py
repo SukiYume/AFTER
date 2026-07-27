@@ -1,13 +1,19 @@
-import sys
-from pathlib import Path
-
+import inspect
 import numpy as np
 
-sys.path.insert(0, str(Path(__file__).resolve().parent))
+from after import burst_analysis, burst_pol
+from after.rfi import robust_channel_mask
 
-import burst_analysis
-import burst_pol
-from rfi_utils import robust_channel_mask
+
+def test_analysis_rm_interfaces_have_no_manual_grid_size():
+    assert 'n_rm' not in inspect.signature(
+        burst_pol.rm_synthesis).parameters
+    assert 'n_rm' not in inspect.signature(
+        burst_pol.analyze_pol).parameters
+    assert 'n_rm' not in inspect.signature(
+        burst_analysis.analyze_one_file).parameters
+    assert 'n_rm' not in inspect.signature(
+        burst_analysis.analyze_all).parameters
 
 
 def test_robust_channel_mask_finds_persistent_qu_rfi_and_grows_neighbors():
@@ -84,6 +90,6 @@ def test_analyze_pol_uses_noncontiguous_boolean_time_gate(monkeypatch, tmp_path)
     burst_pol.analyze_pol(
         base, base, base, base, np.linspace(1000.0, 1500.0, 4),
         0.001, burst_mask, np.ones(4, dtype=bool),
-        ~burst_mask, str(tmp_path), 0, n_rm=3)
+        ~burst_mask, str(tmp_path), 0)
 
     np.testing.assert_array_equal(captured['samples'], np.array([2.0, 5.0]))

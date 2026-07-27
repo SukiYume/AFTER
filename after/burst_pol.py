@@ -11,7 +11,7 @@ import matplotlib
 matplotlib.use('Agg')
 import matplotlib.pyplot as plt
 from matplotlib import gridspec
-import seaborn as sns   # Registers seaborn colormaps such as "mako".
+import seaborn as sns  # noqa: F401 - registers seaborn colormaps such as mako
 from numba import njit, prange
 from astropy import constants as const
 
@@ -20,32 +20,98 @@ from astropy import constants as const
 # RM 合成
 # ============================================================
 
-@njit(parallel=True)
-def rm_synthesis(I, Q, U, wave, rm_min=-10000, rm_max=10000, n_rm=20000):
-    """Numba 并行化的 RM 合成。
+RM_GRID_OVERSAMPLE = 8.0
+MAX_AUTOMATIC_RM_POINTS = 2_000_001
 
-    对每个试验 RM 值，将 Q/U 反旋转后频率求和，
-    得到线偏振度随 RM 的变化曲线。
+
+def _lambda2_span(lambda2_sets):
+    """返回多组有效 λ² 覆盖中的最大跨度。"""
+    if isinstance(lambda2_sets, np.ndarray):
+        arrays = [lambda2_sets]
+    else:
+        values = list(lambda2_sets)
+        if values and np.isscalar(values[0]):
+            arrays = [np.asarray(values)]
+        else:
+            arrays = values
+
+    spans = []
+    for values in arrays:
+        finite = np.asarray(values, dtype=np.float64)
+        finite = finite[np.isfinite(finite)]
+        if finite.size >= 2:
+            span = float(np.max(finite) - np.min(finite))
+            if np.isfinite(span) and span > 0:
+                spans.append(span)
+    if not spans:
+        raise ValueError('自动 RM 网格至少需要两个不同的有效 λ² 频道')
+    return max(spans)
+
+
+def build_automatic_rm_grid(rm_min, rm_max, lambda2_sets,
+                            oversample=RM_GRID_OVERSAMPLE):
+    """根据 RMSF FWHM 自动生成 RM 网格。
+
+    使用 ``FWHM_RMSF = 2√3 / Δλ²``，并让一个 RMSF FWHM 至少包含
+    ``oversample`` 个网格间隔。多组频率覆盖（例如多个 burst）取最大的
+    Δλ²，也就是最窄的 RMSF，避免联合搜索欠采样。
 
     Parameters
     ----------
-    I, Q, U : ndarray (nsamp, nchan)
-        Stokes 参量。
-    wave : ndarray (nchan,)
-        波长 (米)。
     rm_min, rm_max : float
         RM 搜索范围 (rad/m²)。
-    n_rm : int
-        RM 试验点数。
+    lambda2_sets : ndarray or iterable of ndarray
+        一组或多组有效频道的 λ² (m²)。
+    oversample : float
+        RMSF 每个 FWHM 的目标采样间隔数；这是内部算法参数，不暴露为 CLI。
 
     Returns
     -------
-    rm_list : ndarray (n_rm,)
-        试验 RM 值。
-    linear_pol : ndarray (n_rm,)
-        归一化线偏振度（0–1）。
+    rm_grid : ndarray
+        包含两个范围端点的自动 RM 网格。
+    info : dict
+        实际步长、点数、RMSF FWHM、Δλ² 和实际过采样数。
     """
-    rm_list = np.linspace(rm_min, rm_max, n_rm)
+    rm_min = float(rm_min)
+    rm_max = float(rm_max)
+    oversample = float(oversample)
+    if not np.isfinite(rm_min) or not np.isfinite(rm_max):
+        raise ValueError('RM 搜索范围必须是有限数值')
+    if rm_max <= rm_min:
+        raise ValueError('rm_max 必须大于 rm_min')
+    if not np.isfinite(oversample) or oversample <= 0:
+        raise ValueError('RM 网格 oversample 必须为正数')
+
+    delta_lambda2 = _lambda2_span(lambda2_sets)
+    fwhm_rmsf = 2.0 * np.sqrt(3.0) / delta_lambda2
+    target_step = fwhm_rmsf / oversample
+    rm_range = rm_max - rm_min
+    n_intervals = max(2, int(np.ceil(rm_range / target_step)))
+    n_points = n_intervals + 1
+    if n_points > MAX_AUTOMATIC_RM_POINTS:
+        raise ValueError(
+            f'自动 RM 网格需要 {n_points} 点，超过安全上限 '
+            f'{MAX_AUTOMATIC_RM_POINTS}；请缩小 RM 范围')
+
+    rm_grid = np.linspace(rm_min, rm_max, n_points, dtype=np.float64)
+    actual_step = float(rm_grid[1] - rm_grid[0])
+    info = {
+        'rm_min': rm_min,
+        'rm_max': rm_max,
+        'n_rm': int(n_points),
+        'rm_step': actual_step,
+        'delta_lambda2': float(delta_lambda2),
+        'rmsf_fwhm': float(fwhm_rmsf),
+        'oversample_target': oversample,
+        'samples_per_fwhm': float(fwhm_rmsf / actual_step),
+    }
+    return rm_grid, info
+
+
+@njit(parallel=True)
+def _rm_synthesis_on_grid(I, Q, U, wave, rm_list):
+    """在给定 RM 网格上执行 Numba 并行合成。"""
+    n_rm = rm_list.size
     linear = np.zeros(n_rm)
 
     I_total = np.sum(I)
@@ -64,6 +130,17 @@ def rm_synthesis(I, Q, U, wave, rm_min=-10000, rm_max=10000, n_rm=20000):
                                np.sum(U_C, axis=1) ** 2))
         linear[i] = Lsum / I_total
 
+    return linear
+
+
+def rm_synthesis(I, Q, U, wave, rm_min=-10000, rm_max=10000):
+    """在根据有效 λ² 覆盖自动计算的 RM 网格上做合成。
+
+    用户只指定 RM 范围；网格步长固定按 RMSF FWHM 的八分之一自动选择。
+    """
+    rm_list, _ = build_automatic_rm_grid(
+        rm_min, rm_max, np.asarray(wave, dtype=np.float64) ** 2)
+    linear = _rm_synthesis_on_grid(I, Q, U, wave, rm_list)
     return rm_list, linear
 
 
@@ -329,11 +406,14 @@ def calc_pa_profile(I, Q, U, V, burst_mask, freq_mask, noise_mask):
     PAV[burst_idx != 1] = np.nan
     PAE[burst_idx != 1] = np.nan
 
-    # PA 误差阈值: 用爆发区域内有限值的 nanstd
+    # PA 误差阈值: 爆发区误差中心 + 2σ。仅用 2σ 会在误差近似常量时
+    # 得到接近零的阈值，从而误删所有有效 PA 点。
     burst_PAE = PAE[burst_idx == 1]
     if np.any(np.isfinite(burst_PAE)):
-        thres = np.nanstd(burst_PAE)
-        bad = PAE > thres * 2
+        pae_center = np.nanmedian(burst_PAE)
+        pae_spread = np.nanstd(burst_PAE)
+        thres = pae_center + 2 * pae_spread
+        bad = PAE > thres
         PAV[bad] = np.nan
         PAE[bad] = np.nan
 
@@ -479,7 +559,7 @@ def plot_rm_synthesis(rm_list, linear_pol, rm_best, save_path):
 
 def analyze_pol(I, Q, U, V, freq, time_reso, burst_mask, freq_index, noise_mask,
                 output_dir, burst_idx,
-                rm_min=-50000, rm_max=50000, n_rm=20000):
+                rm_min=-50000, rm_max=50000):
     """对单个爆发做完整的偏振分析并画图。
 
     上游 (burst_analysis.py) 已经把 RFI 和基线处理好, 这里只关心偏振本身:
@@ -498,7 +578,7 @@ def analyze_pol(I, Q, U, V, freq, time_reso, burst_mask, freq_index, noise_mask,
     noise_mask : ndarray (nsamp,) bool   True = 噪声时段
     output_dir : str         图片保存目录
     burst_idx : int          爆发编号, 用于命名
-    rm_min, rm_max, n_rm     RM 搜索参数
+    rm_min, rm_max           RM 搜索范围；步长由有效 λ² 覆盖自动计算
 
     Returns
     -------
@@ -526,7 +606,13 @@ def analyze_pol(I, Q, U, V, freq, time_reso, burst_mask, freq_index, noise_mask,
     # RM 合成
     rm_list_out, linear_pol = rm_synthesis(
         burst_I, burst_Q, burst_U, burst_wave,
-        rm_min=rm_min, rm_max=rm_max, n_rm=n_rm)
+        rm_min=rm_min, rm_max=rm_max)
+    _, rm_grid_info = build_automatic_rm_grid(
+        rm_min, rm_max, burst_wave ** 2)
+    print(
+        f'    自动 RM 网格: {rm_grid_info["n_rm"]} 点, '
+        f'步长={rm_grid_info["rm_step"]:.3f} rad/m², '
+        f'RMSF FWHM={rm_grid_info["rmsf_fwhm"]:.3f} rad/m²')
 
     # 偏振 SNR / 中心频率
     noise_I = np.nan_to_num(I[noise_mask][:, freq_index], nan=0.0)
@@ -561,6 +647,11 @@ def analyze_pol(I, Q, U, V, freq, time_reso, burst_mask, freq_index, noise_mask,
         'rm':                rm_best,
         'rm_err':            rm_err,
         'rm_significance':   rm_significance,
+        'rm_grid_size':      rm_grid_info['n_rm'],
+        'rm_grid_step':      rm_grid_info['rm_step'],
+        'rm_rmsf_fwhm':      rm_grid_info['rmsf_fwhm'],
+        'rm_grid_samples_per_fwhm':
+                             rm_grid_info['samples_per_fwhm'],
         'linear_frac':       lin_frac,
         'linear_frac_err':   lin_err,
         'circular_frac':     circ_frac,

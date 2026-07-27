@@ -454,8 +454,8 @@ def analyze_dm(stokes_I, freq, time_reso, dm_zero, burst_region,
                dm_range=10.0, dm_step=0.1, snr_threshold=5.0):
     """对单个爆发做 DM 精化搜索并画图。
 
-    提取 burst 区间 + padding 的 Stokes I 片段交给 dm_phase_search,
-    失败或搜索不稳时回退到 dm_zero。
+    提取 burst 区间 + padding 的 Stokes I 片段交给 dm_phase_search。
+    搜索失败时返回 NaN 和显式失败状态，避免把名义 DM 伪装成测量结果。
 
     Parameters
     ----------
@@ -471,7 +471,7 @@ def analyze_dm(stokes_I, freq, time_reso, dm_zero, burst_region,
     Returns
     -------
     dm : dict
-        dm, dm_err  (失败时 dm=dm_zero, dm_err=0.0)
+        dm, dm_err, dm_status, dm_error_reason。失败时测量值为 NaN。
     """
     ts, te = burst_region['time_start'], burst_region['time_end']
     nsamp  = stokes_I.shape[0]
@@ -487,10 +487,24 @@ def analyze_dm(stokes_I, freq, time_reso, dm_zero, burst_region,
             dm_data, freq, time_reso, dm_zero,
             dm_range=dm_range, dm_step=dm_step,
             snr_threshold=snr_threshold)
+        if not (np.isfinite(dm_best) and np.isfinite(dm_err)):
+            raise ValueError(
+                f'DM search returned non-finite values: dm={dm_best}, '
+                f'dm_err={dm_err}')
         plot_dm_search(dm_list_out, dm_curve_out, dm_best, dm_err,
                        os.path.join(output_dir, f'burst{burst_idx}_dm.png'))
     except Exception as e:
         print(f'    DM 搜索失败: {e}')
-        dm_best, dm_err = dm_zero, 0.0
+        return {
+            'dm': np.nan,
+            'dm_err': np.nan,
+            'dm_status': 'failed',
+            'dm_error_reason': f'{type(e).__name__}: {e}',
+        }
 
-    return {'dm': dm_best, 'dm_err': dm_err}
+    return {
+        'dm': float(dm_best),
+        'dm_err': float(dm_err),
+        'dm_status': 'ok',
+        'dm_error_reason': '',
+    }
