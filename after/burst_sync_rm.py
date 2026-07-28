@@ -17,10 +17,6 @@ Two complementary common-RM statistics are reported:
     weights.  This is convenient for cached/batch processing and is kept as an
     independent validation of the primary statistic.
 
-``burst_pa_power`` is also saved as a diagnostic.  It coherently combines time
-samples inside each burst before adding burst powers, so it is only optimal
-when PA is approximately constant across the selected samples of a burst.
-
 Off-pulse time samples, with the same per-burst sample counts and channel
 masks, provide a search-window-corrected empirical null distribution.  Pixel
 masks are deliberately never read or applied.
@@ -54,8 +50,7 @@ import matplotlib.pyplot as plt  # noqa: E402
 C_M_S = 299_792_458.0
 NULL_RM_GRID_OVERSAMPLE = 4.0
 PRIMARY_METHODS = ("time_pa_power", "linear_degree_stack")
-DIAGNOSTIC_METHODS = ("burst_pa_power",)
-ALL_METHODS = PRIMARY_METHODS + DIAGNOSTIC_METHODS
+ALL_METHODS = PRIMARY_METHODS
 
 
 @dataclass
@@ -390,6 +385,26 @@ def component_id(file_name: str, burst_idx: int) -> str:
     return f"{short_file_id(file_name)}b{int(burst_idx)}"
 
 
+def unique_file_id(file_name: str) -> str:
+    stem = Path(file_name).stem
+    return stem[:-4] if stem.lower().endswith("_cal") else stem
+
+
+def disambiguate_component_ids(bursts: list[BurstRMData]) -> None:
+    """Expand colliding short IDs with the full observation filename."""
+    counts: dict[str, int] = {}
+    for burst in bursts:
+        counts[burst.component_id] = counts.get(burst.component_id, 0) + 1
+    for burst in bursts:
+        if counts[burst.component_id] > 1:
+            burst.component_id = (
+                f"{unique_file_id(burst.file_name)}b{int(burst.burst_idx)}"
+            )
+    resolved = [burst.component_id for burst in bursts]
+    if len(resolved) != len(set(resolved)):
+        raise ValueError("Component IDs remain non-unique after disambiguation")
+
+
 def complex_faraday_transform(
     p_data: np.ndarray,
     wave2_m2: np.ndarray,
@@ -651,13 +666,9 @@ def individual_rm_curves(
         abs(burst.i_total), np.finfo(float).tiny
     )
     time_pa_power = np.sum(np.abs(faraday) ** 2, axis=0) / variance
-    burst_pa_power = np.abs(np.sum(faraday, axis=0)) ** 2 / (
-        max(burst.n_time, 1) * variance
-    )
     return {
         "linear_degree": linear_degree,
         "time_pa_power": time_pa_power,
-        "burst_pa_power": burst_pa_power,
     }
 
 
@@ -669,9 +680,6 @@ def combine_curves(
     time_pa_power = sum(
         curves[burst.component_id]["time_pa_power"] for burst in bursts
     )
-    burst_pa_power = sum(
-        curves[burst.component_id]["burst_pa_power"] for burst in bursts
-    )
     denominator = math.sqrt(float(np.sum(weights**2)))
     linear_degree_stack = sum(
         weight * standardized_curve(curves[burst.component_id]["linear_degree"])
@@ -680,7 +688,6 @@ def combine_curves(
     return {
         "time_pa_power": np.asarray(time_pa_power, dtype=np.float64),
         "linear_degree_stack": np.asarray(linear_degree_stack, dtype=np.float64),
-        "burst_pa_power": np.asarray(burst_pa_power, dtype=np.float64),
     }
 
 
@@ -694,9 +701,6 @@ def observed_curves_on_grid(
 ) -> dict[str, np.ndarray]:
     time_pa_power = np.interp(
         target_grid, fine_grid, fine_combined["time_pa_power"]
-    )
-    burst_pa_power = np.interp(
-        target_grid, fine_grid, fine_combined["burst_pa_power"]
     )
     denominator = math.sqrt(float(np.sum(weights**2)))
     linear_degree_stack = sum(
@@ -713,7 +717,6 @@ def observed_curves_on_grid(
     return {
         "time_pa_power": time_pa_power,
         "linear_degree_stack": linear_degree_stack,
-        "burst_pa_power": burst_pa_power,
     }
 
 
@@ -783,7 +786,6 @@ def null_trial_curves(
     rng: np.random.Generator,
 ) -> dict[str, np.ndarray]:
     time_pa_power: np.ndarray | None = None
-    burst_pa_power: np.ndarray | None = None
     linear_stack: np.ndarray | None = None
     for burst, weight in zip(bursts, weights, strict=True):
         pool = noise_transforms[burst.component_id]
@@ -791,24 +793,15 @@ def null_trial_curves(
         faraday = pool[chosen]
         variance = max(burst.noise_variance_one_time, np.finfo(float).tiny)
         time_curve = np.sum(np.abs(faraday) ** 2, axis=0) / variance
-        burst_curve = np.abs(np.sum(faraday, axis=0)) ** 2 / (
-            max(burst.n_time, 1) * variance
-        )
         linear_curve = np.sum(np.abs(faraday), axis=0)
         linear_z = weight * standardized_curve(linear_curve)
         time_pa_power = (
             time_curve if time_pa_power is None else time_pa_power + time_curve
         )
-        burst_pa_power = (
-            burst_curve
-            if burst_pa_power is None
-            else burst_pa_power + burst_curve
-        )
         linear_stack = (
             linear_z if linear_stack is None else linear_stack + linear_z
         )
     assert time_pa_power is not None
-    assert burst_pa_power is not None
     assert linear_stack is not None
     linear_stack /= max(
         math.sqrt(float(np.sum(weights**2))), np.finfo(float).tiny
@@ -816,7 +809,6 @@ def null_trial_curves(
     return {
         "time_pa_power": np.asarray(time_pa_power, dtype=np.float64),
         "linear_degree_stack": np.asarray(linear_stack, dtype=np.float64),
-        "burst_pa_power": np.asarray(burst_pa_power, dtype=np.float64),
     }
 
 
@@ -916,9 +908,7 @@ def fine_grid_summary(
             rows.append(
                 {
                     "method": method,
-                    "method_role": (
-                        "requested" if method in PRIMARY_METHODS else "diagnostic"
-                    ),
+                    "method_role": "requested",
                     "window": window.name,
                     "fine_grid_peak_rm": rm,
                     "fine_grid_peak_statistic": statistic,
@@ -954,7 +944,6 @@ def write_plot(
     colors = {
         "time_pa_power": "C2",
         "linear_degree_stack": "C1",
-        "burst_pa_power": "C0",
     }
     for method in PRIMARY_METHODS:
         axes[0, 1].plot(
@@ -968,59 +957,43 @@ def write_plot(
     axes[0, 1].set_ylabel("Robust z")
     axes[0, 1].legend(fontsize=8)
 
-    axes[1, 0].plot(
-        rm_grid,
-        standardized_curve(combined["time_pa_power"]),
-        color=colors["time_pa_power"],
-        label="time_pa_power (independent PA per sample)",
-    )
-    axes[1, 0].plot(
-        rm_grid,
-        standardized_curve(combined["burst_pa_power"]),
-        color=colors["burst_pa_power"],
-        label="burst_pa_power (coherent time sum)",
-        alpha=0.85,
-    )
-    axes[1, 0].set_title("PA-evolution diagnostic")
-    axes[1, 0].set_xlabel(r"RM (rad m$^{-2}$)")
-    axes[1, 0].set_ylabel("Robust z")
-    axes[1, 0].legend(fontsize=8)
-
     primary_window = windows[0]
-    if null_table is not None and null_maxima is not None:
-        row = null_table[
-            (null_table["method"] == "time_pa_power")
-            & (null_table["window"] == primary_window.name)
-        ].iloc[0]
-        values = null_maxima[f"time_pa_power__{primary_window.name}"]
-        axes[1, 1].hist(values, bins=40, color="0.5", alpha=0.75)
-        axes[1, 1].axvline(
-            float(row["observed_null_grid_peak_statistic"]),
-            color="C3",
-            lw=2,
-            label=(
-                f"RM={float(row['null_grid_peak_rm']):.0f}, "
-                f"p={float(row['empirical_p']):.4g}"
-            ),
-        )
-        axes[1, 1].set_title(
-            f"Off-pulse maximum null: {primary_window.name}"
-        )
-        axes[1, 1].set_xlabel("Maximum normalized time-PA power")
-        axes[1, 1].set_ylabel("Trials")
-        axes[1, 1].legend(fontsize=8)
-    else:
-        axes[1, 1].axis("off")
-        axes[1, 1].text(
-            0.5,
-            0.5,
-            "Empirical null disabled (--n-null 0)",
-            ha="center",
-            va="center",
-            transform=axes[1, 1].transAxes,
-        )
+    for axis, method in zip(axes[1], PRIMARY_METHODS, strict=True):
+        if null_table is not None and null_maxima is not None:
+            row = null_table[
+                (null_table["method"] == method)
+                & (null_table["window"] == primary_window.name)
+            ].iloc[0]
+            values = null_maxima[f"{method}__{primary_window.name}"]
+            axis.hist(values, bins=40, color=colors[method], alpha=0.65)
+            axis.axvline(
+                float(row["observed_null_grid_peak_statistic"]),
+                color="C3",
+                lw=2,
+                label=(
+                    f"RM={float(row['null_grid_peak_rm']):.0f}, "
+                    f"p={float(row['empirical_p']):.4g}"
+                ),
+            )
+            axis.set_title(
+                f"Off-pulse maximum null: {method} / "
+                f"{primary_window.name}"
+            )
+            axis.set_xlabel("Maximum search statistic")
+            axis.set_ylabel("Trials")
+            axis.legend(fontsize=8)
+        else:
+            axis.axis("off")
+            axis.text(
+                0.5,
+                0.5,
+                f"{method}\nEmpirical null disabled (--n-null 0)",
+                ha="center",
+                va="center",
+                transform=axis.transAxes,
+            )
 
-    for axis in axes.flat[:3]:
+    for axis in axes[0]:
         for window in windows:
             axis.axvspan(window.low, window.high, color="0.8", alpha=0.08)
     fig.tight_layout()
@@ -1075,6 +1048,7 @@ def main(argv: list[str] | None = None) -> int:
         bursts = bursts[: args.max_bursts]
     if not bursts:
         raise RuntimeError("No components survived the I-only selection criteria")
+    disambiguate_component_ids(bursts)
 
     print(f"Selected {len(bursts)} burst components:", flush=True)
     for burst in bursts:
@@ -1259,10 +1233,6 @@ def main(argv: list[str] | None = None) -> int:
             "linear_degree_stack": (
                 "fixed-weight sum of robustly standardized per-burst "
                 "RM-versus-linear-degree curves"
-            ),
-            "burst_pa_power": (
-                "diagnostic coherent time sum within each burst, followed by "
-                "incoherent burst-power sum"
             ),
         },
         "curve_weighting": args.curve_weighting,

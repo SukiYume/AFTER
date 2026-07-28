@@ -102,15 +102,17 @@ def test_two_pa_independent_methods_recover_common_rm(tmp_path):
     weights = burst_sync_rm.curve_weights(bursts, "equal", 4.0)
     combined = burst_sync_rm.combine_curves(bursts, individual, weights)
 
+    assert set(combined) == {
+        "time_pa_power",
+        "linear_degree_stack",
+    }
+    assert all(
+        set(curves) == {"linear_degree", "time_pa_power"}
+        for curves in individual.values()
+    )
     for method in burst_sync_rm.PRIMARY_METHODS:
         recovered = rm_grid[int(np.argmax(combined[method]))]
         assert abs(recovered - expected_rm) <= 10.0
-
-    true_index = int(np.argmin(np.abs(rm_grid - expected_rm)))
-    assert (
-        combined["burst_pa_power"][true_index]
-        < 0.2 * combined["time_pa_power"][true_index]
-    )
 
 
 def test_automatic_rm_grid_uses_rmsf_resolution():
@@ -143,6 +145,57 @@ def test_sync_cli_has_no_manual_rm_sampling_parameter():
     assert not hasattr(parser_args, "n_rm")
     assert not hasattr(parser_args, "rm_step")
     assert not hasattr(parser_args, "null_rm_step")
+
+
+def test_component_ids_expand_collisions_and_distinguish_beams(tmp_path):
+    first_path = tmp_path / "FRBTEST-20260718-M01-0211-027549018_cal.h5"
+    second_path = tmp_path / "FRBTEST-20260718-M01-0211-027600287_cal.h5"
+    third_path = tmp_path / "FRBTEST-20260718-M02-0211-027549018_cal.h5"
+    common = {
+        "burst_idx": 0,
+        "peak_snr": 10.0,
+        "time_indices": np.array([1]),
+        "freq_mhz": np.array([1400.0]),
+        "wave2_m2": np.array([0.04]),
+        "p_on": np.array([[1.0j]]),
+        "p_noise": np.array([[0.0j]]),
+        "i_total": 1.0,
+        "noise_variance_one_time": 1.0,
+        "stored_cal_rfi_count": 0,
+        "stored_burst_rfi_count": 0,
+        "recalculated_rfi_count": 0,
+        "robust_rfi_count": 0,
+        "nonfinite_rfi_count": 0,
+        "final_rfi_count": 0,
+    }
+    bursts = [
+        burst_sync_rm.BurstRMData(
+            component_id="0211b0",
+            file_name=first_path.name,
+            file_path=first_path,
+            **common,
+        ),
+        burst_sync_rm.BurstRMData(
+            component_id="0211b0",
+            file_name=second_path.name,
+            file_path=second_path,
+            **common,
+        ),
+        burst_sync_rm.BurstRMData(
+            component_id="0211b0",
+            file_name=third_path.name,
+            file_path=third_path,
+            **common,
+        ),
+    ]
+
+    burst_sync_rm.disambiguate_component_ids(bursts)
+
+    assert [burst.component_id for burst in bursts] == [
+        "FRBTEST-20260718-M01-0211-027549018b0",
+        "FRBTEST-20260718-M01-0211-027600287b0",
+        "FRBTEST-20260718-M02-0211-027549018b0",
+    ]
 
 
 def test_main_writes_reproducible_direct_h5_products(tmp_path):
@@ -203,5 +256,13 @@ def test_main_writes_reproducible_direct_h5_products(tmp_path):
     )
     assert manifest["pixel_mask"] == "not read or applied"
     assert set(manifest["methods"]) == set(burst_sync_rm.ALL_METHODS)
+    assert set(manifest["methods"]) == {
+        "time_pa_power",
+        "linear_degree_stack",
+    }
+    with np.load(output_dir / "burst_sync_rm_curves.npz") as curves:
+        assert all("burst_pa" not in name for name in curves.files)
+    with np.load(output_dir / "offpulse_null_maxima.npz") as null_maxima:
+        assert all("burst_pa" not in name for name in null_maxima.files)
     assert (output_dir / "burst_sync_rm.png").is_file()
     assert (output_dir / "burst_sync_rm_curves.npz").is_file()

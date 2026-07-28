@@ -283,7 +283,7 @@ def analyze_one_file(cal_h5_path, output_dir,
                      rm_peak_fraction=0.5, rm_min_time_snr=5.0,
                      rm_freq_min=None, rm_freq_max=None,
                      strongest_burst_only=False,
-                     n_boot=200,
+                     n_boot=200, rng=None,
                      target_down_time=None, target_down_freq=None):
     """分析一个 _cal.h5 文件中的所有爆发, 返回结果行列表。
 
@@ -501,9 +501,9 @@ def analyze_one_file(cal_h5_path, output_dir,
         # 传入 gain/gain_err 以计算流量/能量的系统误差.
         props = calc_burst_properties(I, freq, time_reso, file_mjd,
                                       region, noise_mask, rfi_mask,
-                                      freq_index,
-                                      gain=gain, gain_err=gain_err,
-                                      n_boot=n_boot)
+                                       freq_index,
+                                       gain=gain, gain_err=gain_err,
+                                       n_boot=n_boot, rng=rng)
 
         # DM 精化
         dm_out = analyze_dm(I, freq, time_reso, dm_zero, region,
@@ -591,7 +591,7 @@ def analyze_all(cal_dir, output_dir,
                 rm_peak_fraction=0.5, rm_min_time_snr=5.0,
                 rm_freq_min=None, rm_freq_max=None,
                 strongest_burst_only=False,
-                n_boot=200,
+                n_boot=200, seed=42,
                 target_down_time=None, target_down_freq=None):
     """递归分析 cal_dir 下所有 _cal.h5，并汇总写 CSV。"""
     h5_files = sorted(glob.glob(
@@ -602,8 +602,9 @@ def analyze_all(cal_dir, output_dir,
 
     os.makedirs(output_dir, exist_ok=True)
     all_results = []
+    rng = np.random.default_rng(seed)
     for h5_path in h5_files:
-        all_results.extend(analyze_one_file(
+        file_results = analyze_one_file(
             h5_path, output_dir,
             rfi_fft=rfi_fft,
             rfi_channel_only=rfi_channel_only,
@@ -617,9 +618,13 @@ def analyze_all(cal_dir, output_dir,
             rm_min_time_snr=rm_min_time_snr,
             rm_freq_min=rm_freq_min, rm_freq_max=rm_freq_max,
             strongest_burst_only=strongest_burst_only,
-            n_boot=n_boot,
+            n_boot=n_boot, rng=rng,
             target_down_time=target_down_time,
-            target_down_freq=target_down_freq))
+            target_down_freq=target_down_freq)
+        for row in file_results:
+            row['bootstrap_seed'] = int(seed)
+            row['n_boot'] = int(n_boot)
+        all_results.extend(file_results)
 
     if all_results:
         df       = pd.DataFrame(all_results)
@@ -685,6 +690,7 @@ if __name__ == '__main__':
     parser.add_argument('--strongest-burst-only', action='store_true',
                         help='每个 H5 只分析峰值 S/N 最高的检测区域')
     parser.add_argument('--n-boot',           default=N_BOOT,           type=int,   help='Bootstrap 次数')
+    parser.add_argument('--seed',             default=42,               type=int,   help='Bootstrap 随机种子')
     parser.add_argument('--target-down-time', default=None, type=int,
                         help='相对原始数据的目标时间下采样倍率, 必须是 _cal.h5 已存倍率的整数倍')
     parser.add_argument('--target-down-freq', default=None, type=int,
@@ -706,6 +712,7 @@ if __name__ == '__main__':
         rm_freq_min=args.rm_freq_min, rm_freq_max=args.rm_freq_max,
         strongest_burst_only=args.strongest_burst_only,
         n_boot=args.n_boot,
+        seed=args.seed,
         target_down_time=args.target_down_time,
         target_down_freq=args.target_down_freq)
 

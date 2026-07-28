@@ -78,23 +78,21 @@ AFTER 可以从已有的最早产物继续，不要求每次都从原始 FITS �
 
 ### 两条科学处理底线
 
-1. **AFTER 不从文件名或 quick-look 图猜测 TOA。** TOA 秒数必须由观测者或上游搜索
-   产品提供。
-2. **自动框只是建议，不是最终测量区域。** 进入能量和偏振分析前必须检查接受的
-   burst 区域。
+1. **使用观测者确认或上游搜索给出的 TOA 秒数。** 每次 burst 裁切以此为准。
+2. **测量前复核自动 burst 框。** analysis 使用 H5 中已接受的区域。
 
 ## 仓库结构
 
 | 路径 | 在 AFTER 中的职责 |
 |---|---|
 | [`after/`](after/) | 可导入的单观测处理包；从仓库根目录使用 `python -m after.<模块>` 运行入口。 |
-| [`calibration.py`](calibration.py) 与 [`cut_burst_data.py`](cut_burst_data.py) | 轻量兼容入口，保留原有的 `python calibration.py`、`python cut_burst_data.py` 命令和旧 import。 |
+| [`calibration.py`](calibration.py) 与 [`cut_burst_data.py`](cut_burst_data.py) | 提供 `python calibration.py` 和 `python cut_burst_data.py` 直接命令的根入口。 |
 | [`after/cut_burst_data.py`](after/cut_burst_data.py) | 根据 TOA、DM 和 beam 从原始 FAST FITS 裁切 burst-centered H5。 |
 | [`after/calibration.py`](after/calibration.py) 与 [`after/calibration_noise.py`](after/calibration_noise.py) | 流量/偏振和噪声管定标、下采样、RFI mask 与定标 H5 输出。 |
 | [`after/burst_detect.py`](after/burst_detect.py) | 自动、半自动或手工标记 burst 区域，写入 H5 `attrs["bursts"]`。 |
 | [`after/burst_analysis.py`](after/burst_analysis.py) | 测量 DM、RM、偏振、flux、fluence、width、bandwidth 和 SNR。 |
 | [`after/burst_sync_rm.py`](after/burst_sync_rm.py) | 从多个已标记的定标 H5 burst 成分合并搜索共同 RM。 |
-| [`after/burst_dashboard.py`](after/burst_dashboard.py) | 从 `burst_results.csv` 生成自包含 HTML 观测面板。 |
+| [`after/burst_dashboard.py`](after/burst_dashboard.py) | 从 `burst_results.csv` 生成单文件 HTML 观测面板；联网时加载 Google Fonts。 |
 | [`after/burst_dm.py`](after/burst_dm.py)、[`after/burst_pol.py`](after/burst_pol.py) 与 [`after/burst_properties.py`](after/burst_properties.py) | analysis 使用的科学测量模块。 |
 | [`after/rfi.py`](after/rfi.py)、[`after/obs_metadata.py`](after/obs_metadata.py) 与 [`after/zenith_angle.py`](after/zenith_angle.py) | 共用的 RFI、观测元数据和 FAST beam gain 工具。 |
 | [`gain_para.csv`](gain_para.csv) | FAST beam gain 参数。 |
@@ -105,16 +103,16 @@ AFTER 可以从已有的最早产物继续，不要求每次都从原始 FITS �
 | [`skills/fast-frb-observation-processing/`](skills/fast-frb-observation-processing/) | Codex 使用 AFTER 的操作协议。 |
 | [`requirements.txt`](requirements.txt) | Python 依赖清单。 |
 
-运行资源继续保留在仓库根目录，并由
-[`after/__init__.py`](after/__init__.py) 根据代码位置解析，不依赖执行命令时的当前目录：
+运行资源保留在仓库根目录，并由 [`after/__init__.py`](after/__init__.py) 根据代码位置
+解析，因此资源查找与执行命令时的工作目录无关：
 
 - gain 定标：`gain_para.csv`；
 - 默认噪声管定标表：`highcal_20201014_psr_tny.npz`；
 - 默认 detector checkpoint：`models/best_model_yolo11n_ema.pth`。
 
-两个兼容入口只负责转发，不复制科学代码。单观测配置常量放在
-`after/calibration.py` 或 `after/cut_burst_data.py` 中；配置后既可以从仓库根目录
-运行原来的命令，也可以使用对应的 `python -m after.<模块>` 命令。
+两个根入口转发到 `after` 包。单观测配置常量放在 `after/calibration.py` 或
+`after/cut_burst_data.py` 中；配置后可使用根命令或对应的
+`python -m after.<模块>` 命令。
 
 ## 安装
 
@@ -215,8 +213,7 @@ profile 或系统环境变量。
 
 ### 1. 裁切原始 FAST FITS
 
-继续使用原来的单观测常量配置方式时，先编辑 `after/cut_burst_data.py` 底部的配置区，
-然后运行：
+使用单观测常量配置时，先编辑 `after/cut_burst_data.py` 底部的配置区，然后运行：
 
 ```bash
 python cut_burst_data.py
@@ -268,8 +265,8 @@ python batch_processing/fits_to_h5.py \
 
 ### 3. 定标
 
-继续使用原来的单观测常量配置方式时，先编辑 `after/calibration.py` 底部的
-`BURST_DIR`、`OUTPUT_DIR`、RA/DEC、分辨率和进程数，然后运行：
+使用单观测常量配置时，先编辑 `after/calibration.py` 底部的 `BURST_DIR`、
+`OUTPUT_DIR`、RA/DEC、分辨率和进程数，然后运行：
 
 ```bash
 python calibration.py
@@ -298,8 +295,8 @@ FRB_name DM RA DEC
 - `--down-time 1`：保留原始时间分辨率，用于 peak-flux 对比；
 - `--down-freq 1`：保留原始频率通道，用于频谱和 RFI 细查。
 
-每个 burst beam 必须有同 beam 的 `Mxx..._0001.fits`。缺少时定标会直接失败，不会
-拿 M01 代替其他 beam。批处理默认使用 FFT RFI；传入 `--no-rfi-fft` 可选择熵方法。
+每个 burst beam 使用同 beam 的 `Mxx..._0001.fits`，缺少时停止该 beam 组。批处理
+默认使用 FFT RFI；传入 `--no-rfi-fft` 可选择熵方法。
 输出写到 `<cal-root>/<FRB>/<date>/`。
 
 ### 4. 检测并复核 burst 区域
@@ -318,7 +315,7 @@ python -m after.burst_detect \
 检测阶段写出：
 
 - H5 `attrs["bursts"]`：analysis 使用的标记来源；
-- `detections.json`：续跑与复核记录；
+- `detections.json`：以相对 `--cal-dir` 的路径为键的续跑与复核记录；
 - `plots/*_det.png`：带已接受区域的复核图。
 
 自动和半自动模式直接使用定标后的 Stokes I 推理一次。确认 burst 框后，AFTER 使用
@@ -341,12 +338,14 @@ python -m after.burst_analysis \
   --dm-range 5 \
   --dm-step 0.1 \
   --rm-min -1000 \
-  --rm-max 1000
+  --rm-max 1000 \
+  --seed 42
 ```
 
 测量内容包括 TOA、peak flux、fluence、width、burst bandwidth、SNR、DM、RM、线偏振、
-圆偏振、总偏振、PA 和 PAV。使用不同 DM/RM 范围重跑时，应写入独立输出目录。
-`--cal-dir` 会递归查找 `*_cal.h5`，因此可以直接指向批量定标产生的 `<cal-root>`。
+圆偏振、总偏振、PA 和 PAV。每行 CSV 保存 bootstrap seed 和次数。使用不同 DM/RM
+范围重跑时，应写入独立输出目录。`--cal-dir` 会递归查找 `*_cal.h5`，因此可以直接
+指向批量定标产生的 `<cal-root>`。
 
 主要输出：
 
@@ -391,7 +390,8 @@ python -m after.burst_dashboard \
   --top-n 10
 ```
 
-生成结果是可以本地打开、也可以打印为 PDF 的自包含 HTML。
+生成结果是可本地打开、也可打印为 PDF 的单文件 HTML。图表内嵌，Google Fonts 联网
+加载，并配置本地字体回退。
 
 ## 数据契约
 
@@ -404,6 +404,9 @@ attrs: start_sample, file_mjd, toa_sec, time_reso, npol, nchan,
        segment_length, obs_start_mjd, beam, dm
 ```
 
+切片延伸到观测起点之前时，`start_sample` 保留负值；文件名使用 `n` 加九位绝对值，
+例如 `n000000002`。
+
 ### 定标 H5
 
 ```text
@@ -414,7 +417,8 @@ rfi_channel: (nchan,), bool
 gain:        (nchan,), K/Jy
 gain_err:    (nchan,), K/Jy
 attrs: time_reso_raw, time_reso, down_time, down_freq,
-       dm, beam, ra, dec
+       dm, beam, ra, dec, calibration_beam,
+       calibration_fits, calibration_npz
 ```
 
 ### 已接受 burst 区域
@@ -452,15 +456,15 @@ detector 时，可以通过 `--model-path` 指定其他兼容 checkpoint。
 
 | 资产 | 已核验内容与 provenance | SHA-256 |
 |---|---|---|
-| `models/best_model_yolo11n_ema.pth` | 与 YOLO11n 兼容、含 499 项的 `OrderedDict` state dict；2026-06-22 由仓库 commit `17511c1` 引入。checkpoint 未嵌入训练集、epoch、命令或 Ultralytics 版本，因此以哈希作为权威版本。 | `9BEEF810651B7B4B793A0DD85DFBB0E0959406BAE4B8D322313C841791E830FA` |
-| `highcal_20201014_psr_tny.npz` | 19 beam 定标表，包含 `freq (4096,) float32` 和 `tcal (4096, 2, 19) float64`；由同一 commit 引入。生成器/来源版本未嵌入，现有 provenance 为文件名日期和哈希。 | `4FC36ACC2E639962B2A10C7F81803FA88C93F4F85B33D07D657ABC40CD410F66` |
+| `models/best_model_yolo11n_ema.pth` | 与 YOLO11n 兼容、含 499 项的 `OrderedDict` state dict；哈希标识准确 checkpoint。 | `9BEEF810651B7B4B793A0DD85DFBB0E0959406BAE4B8D322313C841791E830FA` |
+| `highcal_20201014_psr_tny.npz` | 19 beam 定标表，包含 `freq (4096,) float32` 和 `tcal (4096, 2, 19) float64`。 | `4FC36ACC2E639962B2A10C7F81803FA88C93F4F85B33D07D657ABC40CD410F66` |
 
 一次完整运行可以产生：
 
 - 裁切和定标后的 H5；
 - `detections.json` 和 burst 复核图；
 - `burst_results.csv` 与 DM/RM/偏振诊断图；
-- 自包含的 `burst_dashboard.html`。
+- 单文件 `burst_dashboard.html`。
 
 每个观测或参数重跑都应使用独立输出目录，避免重新标注、DM/RM 扫描或刷新面板时
 无意覆盖旧结果。

@@ -45,6 +45,8 @@ def _fit_gaussian(x, y, snr_min=3.0):
     if np.sum(finite) < 4:
         return nan_result
     xf, yf = x[finite], y[finite]
+    order = np.argsort(xf)
+    xf, yf = xf[order], yf[order]
 
     # 粗略 SNR 检查: 峰值 / MAD 噪声
     med = np.median(yf)
@@ -128,7 +130,7 @@ def _empty_props(file_mjd, freq, fs, fe, nchan):
 
 def calc_burst_properties(stokes_I, freq, time_reso, file_mjd, burst_region,
                           noise_mask, rfi_mask, freq_index,
-                          gain=None, gain_err=None, n_boot=200):
+                          gain=None, gain_err=None, n_boot=200, rng=None):
     """计算单个爆发的基本物理量。
 
     Parameters
@@ -210,13 +212,13 @@ def calc_burst_properties(stokes_I, freq, time_reso, file_mjd, burst_region,
 
     # ---- Bootstrap 误差估计 ----
     n_burst = te - ts
-    n_noise = int(np.sum(noise_mask))
     finite_noise = noise_profile[np.isfinite(noise_profile)]
+    rng = np.random.default_rng() if rng is None else rng
     if finite_noise.size >= n_burst and n_burst > 0:
         boot_peaks    = np.zeros(n_boot)
         boot_fluences = np.zeros(n_boot)
         for b in range(n_boot):
-            idx = np.random.randint(0, finite_noise.size, n_burst)
+            idx = rng.integers(0, finite_noise.size, n_burst)
             boot_prof = finite_noise[idx]
             boot_peaks[b]    = np.max(boot_prof)
             boot_fluences[b] = np.sum(boot_prof - noise_mean) * (time_reso * 1e3)
@@ -275,9 +277,13 @@ def calc_burst_properties(stokes_I, freq, time_reso, file_mjd, burst_region,
         width_gauss_err = np.nan
 
     # ---- 频率范围 ----
-    freq_low  = freq[fs] if fs < nchan else freq[0]
-    freq_high = freq[min(fe, nchan) - 1] if fe > 0 else freq[-1]
-    bandwidth = abs(freq_high - freq_low)
+    freq_edges = (
+        freq[fs] if fs < nchan else freq[0],
+        freq[min(fe, nchan) - 1] if fe > 0 else freq[-1],
+    )
+    freq_low = min(freq_edges)
+    freq_high = max(freq_edges)
+    bandwidth = freq_high - freq_low
 
     # ---- 高斯拟合: 频率带宽 (MHz) ----
     # 对爆发频率谱(时间平均)减去"噪声区逐通道平均谱"做高斯拟合. 逐通道基线

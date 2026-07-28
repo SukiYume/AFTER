@@ -186,6 +186,8 @@ def process_group(group):
             group["ra"],
             group["dec"],
             group["beam"],
+            group["cal_fits_path"],
+            group["cal_npz"],
             group["down_time"],
             group["down_freq"],
             group["rfi_fft"],

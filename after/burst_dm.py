@@ -130,7 +130,7 @@ def _get_dm_curve(power_spectra, dpower_spectra, nchan):
     n = power_spectra.shape[0]    # nbin
     m = power_spectra.shape[1]    # n_dm
 
-    X, Y = np.meshgrid(np.arange(m), np.arange(n))
+    _, Y = np.meshgrid(np.arange(m), np.arange(n))
     num_el = (n - Y).astype(float)
 
     # 逐行累积统计量，用于自适应截断
@@ -175,9 +175,6 @@ def _get_dm_curve(power_spectra, dpower_spectra, nchan):
     Dem      = (2.0 * nchan ** 2 * (I4_sum + 2.0 * I2_sum)) ** 0.5
 
     snr_curve = np.divide((dm_curve - 1.0 * Noise_curve), Dem)
-    SN_Err = (np.divide(Var_dp, Dem ** 2) + 1
-              + np.multiply(np.divide(snr_curve ** 2, idx_c),
-                            (1 + 8 * nchan ** 2 / Dem ** 2)))
     snr_curve[np.isnan(snr_curve)] = 0.
 
     return dm_curve, dm_c_err, snr_curve
@@ -413,7 +410,8 @@ def dm_phase_search(stokes_I_2d, freq, time_reso, dm_zero,
         power_spectra, dpower_spectra, nchan)
     dm_curve[snr_curve < snr_threshold] = dm_curve[snr_curve < snr_threshold] / 1e6
 
-    w = snr_curve
+    snr_peak = np.max(snr_curve)
+    w = snr_curve.copy()
     w[np.isnan(w)] = 0.0
     w[snr_curve < snr_threshold] = 1 / 1e6
     w = w / np.sum(w)
@@ -422,7 +420,7 @@ def dm_phase_search(stokes_I_2d, freq, time_reso, dm_zero,
     dm_best, dm_err, dm_curve_out, dm_snr = _dm_calculation(
         power_spectra, dpower_spectra, low_idx, up_idx,
         nchan, dm_list, dm_curve=dm_curve, weight=w,
-        dstd=dstd, SN=np.max(snr_curve))
+        dstd=dstd, SN=snr_peak)
 
     return dm_best, dm_err, float(dm_snr), dm_list, dm_curve_out
 

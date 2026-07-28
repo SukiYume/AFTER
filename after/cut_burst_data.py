@@ -155,40 +155,52 @@ def cut_one_burst(data_path, save_path, file_list, info, dm, toa_sec,
     file_nsamp = info['file_nsamp']
     total_obs  = file_nsamp * len(file_list)
 
-    # 若起点已超出观测范围则跳过（负数由 extract_segment 补零处理）
-    actual_start = max(start_sample, 0)
-    if actual_start >= total_obs:
+    # TOA 必须落在观测内；切片起点为负时由 extract_segment 在左侧补零。
+    if B < 0 or B >= total_obs:
         print(f'  [跳过] TOA={toa_sec:.6f}s (采样点 {B}) 超出观测范围')
         return
 
-    # 文件命名: {frb}-{date}-M{beam:02d}-{fits_num:04d}-{start:09d}.h5
+    # 文件命名: 起点非负时为 9 位数字，负值为 n + 9 位绝对值。
     fits_number = B // file_nsamp + 1
-    h5_name     = f'{frb_name}-{date}-M{beam:02d}-{fits_number:04d}-{actual_start:09d}.h5'
+    start_token = f'n{abs(start_sample):09d}' if start_sample < 0 else f'{start_sample:09d}'
+    h5_name     = f'{frb_name}-{date}-M{beam:02d}-{fits_number:04d}-{start_token}.h5'
     h5_path     = os.path.join(save_path, h5_name)
     if os.path.exists(h5_path):
-        print(f'  [跳过] {h5_name} 已存在')
-        return
+        try:
+            with h5py.File(h5_path, 'r') as existing:
+                if 'data' in existing and 'freq' in existing:
+                    print(f'  [跳过] {h5_name} 已存在')
+                    return
+        except OSError:
+            pass
+        print(f'  [重写] {h5_name} 文件不完整')
 
     segment          = extract_segment(data_path, file_list, info, start_sample, total_length)
     data_dedispersed = dedisperse(segment, shifts, A)
 
     # file_mjd = 观测起始 MJD + 该 h5 起点到观测起点的时间差
-    file_mjd = info['start_mjd'] + actual_start * time_reso / 86400.0
+    file_mjd = info['start_mjd'] + start_sample * time_reso / 86400.0
 
     os.makedirs(save_path, exist_ok=True)
-    with h5py.File(h5_path, 'w') as f:
-        f.create_dataset('data', data=data_dedispersed, compression='gzip', compression_opts=4)
-        f.create_dataset('freq', data=info['freq'])
-        f.attrs['start_sample']   = actual_start         # 从观测开始到本文件起点的采样点数
-        f.attrs['file_mjd']       = file_mjd             # 本文件起点对应的 MJD
-        f.attrs['toa_sec']        = toa_sec              # 原始 toa（秒）
-        f.attrs['time_reso']      = time_reso
-        f.attrs['npol']           = info['npol']
-        f.attrs['nchan']          = info['nchan']
-        f.attrs['segment_length'] = A
-        f.attrs['obs_start_mjd']  = info['start_mjd']
-        f.attrs['beam']           = beam
-        f.attrs['dm']             = dm
+    temp_path = h5_path + '.tmp'
+    try:
+        with h5py.File(temp_path, 'w') as f:
+            f.create_dataset('data', data=data_dedispersed, compression='gzip', compression_opts=4)
+            f.create_dataset('freq', data=info['freq'])
+            f.attrs['start_sample']   = start_sample        # 可为负，表示左侧补零后的逻辑起点
+            f.attrs['file_mjd']       = file_mjd            # 本文件第 0 个采样对应的 MJD
+            f.attrs['toa_sec']        = toa_sec
+            f.attrs['time_reso']      = time_reso
+            f.attrs['npol']           = info['npol']
+            f.attrs['nchan']          = info['nchan']
+            f.attrs['segment_length'] = A
+            f.attrs['obs_start_mjd']  = info['start_mjd']
+            f.attrs['beam']           = beam
+            f.attrs['dm']             = dm
+        os.replace(temp_path, h5_path)
+    finally:
+        if os.path.exists(temp_path):
+            os.remove(temp_path)
 
     print(f'  [完成] {h5_name}')
 

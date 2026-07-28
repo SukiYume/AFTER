@@ -59,7 +59,16 @@ def test_analyze_pol_uses_noncontiguous_boolean_time_gate(monkeypatch, tmp_path)
     def fake_rm_synthesis(I, Q, U, wave, **kwargs):
         del Q, U, wave, kwargs
         captured['samples'] = I[:, 0].copy()
-        return np.array([-1.0, 0.0, 1.0]), np.array([0.0, 1.0, 0.0])
+        return (
+            np.array([-1.0, 0.0, 1.0]),
+            np.array([0.0, 1.0, 0.0]),
+            {
+                'n_rm': 3,
+                'rm_step': 1.0,
+                'rmsf_fwhm': 8.0,
+                'samples_per_fwhm': 8.0,
+            },
+        )
 
     monkeypatch.setattr(burst_pol, 'rm_synthesis', fake_rm_synthesis)
     monkeypatch.setattr(

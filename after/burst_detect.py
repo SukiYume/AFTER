@@ -912,12 +912,8 @@ if __name__ == '__main__':
     plot_dir = os.path.join(args.output_dir, 'plots')
     det_path = os.path.join(args.output_dir, 'detections.json')
 
-    # detections.json 是唯一的 "已处理" 真相: 启动时载入, 已存在 fname 的条目
-    # 直接跳过 (零样本文件也算已标 — entry 是 {'bursts': [], 'has_burst': false}).
-    # 这是有意保留的断点续跑逻辑: 半自动模式中途退出后, 再次使用同一个
-    # output-dir 会从下一个未处理文件继续, 不会覆盖已经人工确认过的 H5 标记.
-    # 想重新标记某个文件: 手动从 detections.json 删掉对应行, 或换一个新的
-    # output-dir 全量重跑。
+    # detections.json 记录已处理文件；键使用相对 cal_dir 的路径，可区分子目录中的
+    # 同名 H5。空 burst 列表同样表示该文件已经完成复核。
     detections = {}
     if os.path.exists(det_path):
         with open(det_path) as f:
@@ -927,7 +923,8 @@ if __name__ == '__main__':
     quit_requested = False
     for h5_path in h5_files:
         fname = os.path.basename(h5_path)
-        if fname in detections:
+        record_key = os.path.relpath(h5_path, args.cal_dir).replace(os.sep, '/')
+        if record_key in detections:
             print(f'  [{fname}] 跳过 (detections.json 中已存在)')
             continue
         result = detect_one_file(
@@ -938,16 +935,20 @@ if __name__ == '__main__':
         if result is None:
             quit_requested = True
             break
-        detections[fname] = result
+        detections[record_key] = result
         # 每文件落盘一次, 中途中断 / Ctrl+C 不会丢已经标好的进度
-        with open(det_path, 'w') as f:
+        temp_det_path = det_path + '.tmp'
+        with open(temp_det_path, 'w') as f:
             json.dump(detections, f, indent=2)
+        os.replace(temp_det_path, det_path)
 
     n_with = sum(1 for value in detections.values() if value['has_burst'])
     if quit_requested:
         # 当前文件不记为已处理，下次从它继续。
-        with open(det_path, 'w') as f:
+        temp_det_path = det_path + '.tmp'
+        with open(temp_det_path, 'w') as f:
             json.dump(detections, f, indent=2)
+        os.replace(temp_det_path, det_path)
         print(f'\n[退出] 当前进度已保存: {det_path}')
         print(f'已处理 {len(detections)}/{len(h5_files)} 个文件，'
               f'其中 {n_with} 个检测到爆发')

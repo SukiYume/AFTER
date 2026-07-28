@@ -130,7 +130,8 @@ def calibrate_to_iquv(data, noise_cal, t_cal, gain, cal_threshold=0.05):
 
 
 def process_one_burst(h5_input_path, output_dir, noise_cal, t_cal,
-                      ra, dec, beam, down_time=None, down_freq=None,
+                      ra, dec, beam, cal_fits_path, cal_npz_path,
+                      down_time=None, down_freq=None,
                       rfi_fft=True):
     """读一个 burst h5, 定标 + 下采样 + RFI 检测, 写 _cal.h5。
 
@@ -146,8 +147,19 @@ def process_one_burst(h5_input_path, output_dir, noise_cal, t_cal,
     basename = os.path.splitext(os.path.basename(h5_input_path))[0]
     out_h5   = os.path.join(output_dir, basename + '_cal.h5')
     if os.path.exists(out_h5):
-        print(f'  [跳过] {out_h5} 已存在')
-        return
+        try:
+            with h5py.File(out_h5, 'r') as existing:
+                required = {'data', 'freq', 'rfi_mask', 'gain', 'gain_err'}
+                provenance = {
+                    'calibration_beam', 'calibration_fits', 'calibration_npz'
+                }
+                if (required.issubset(existing.keys())
+                        and provenance.issubset(existing.attrs.keys())):
+                    print(f'  [跳过] {out_h5} 已存在')
+                    return
+        except OSError:
+            pass
+        print(f'  [重写] {out_h5} 文件不完整')
 
     with h5py.File(h5_input_path, 'r') as f:
         raw_data  = f['data'][:]                 # (nsamp, npol, nchan)
@@ -257,20 +269,29 @@ def process_one_burst(h5_input_path, output_dir, noise_cal, t_cal,
         'nsamp'          : nsamp_ds,
         'dm'             : attrs['dm'],
         'beam'           : beam,
+        'calibration_beam': beam,
+        'calibration_fits': os.path.basename(cal_fits_path),
+        'calibration_npz': os.path.basename(cal_npz_path),
         'ra'             : ra,
         'dec'            : dec,
         'rfi_fraction'   : rfi_frac,
     }
 
-    with h5py.File(out_h5, 'w') as f:
-        f.create_dataset('data',        data=iquv.astype(np.float32), compression='gzip', compression_opts=4)
-        f.create_dataset('freq',        data=freq.astype(np.float64))
-        f.create_dataset('rfi_mask',    data=rfi_mask)
-        f.create_dataset('rfi_channel', data=rfi_channel)
-        # 增益及其系统误差(K/Jy), 下游用于计算 flux / fluence 的系统误差
-        f.create_dataset('gain',        data=gain_ds.astype(np.float32))
-        f.create_dataset('gain_err',    data=gain_err_ds.astype(np.float32))
-        f.attrs.update(out_attrs)
+    temp_path = out_h5 + '.tmp'
+    try:
+        with h5py.File(temp_path, 'w') as f:
+            f.create_dataset('data',        data=iquv.astype(np.float32), compression='gzip', compression_opts=4)
+            f.create_dataset('freq',        data=freq.astype(np.float64))
+            f.create_dataset('rfi_mask',    data=rfi_mask)
+            f.create_dataset('rfi_channel', data=rfi_channel)
+            # 增益及其系统误差(K/Jy), 下游用于计算 flux / fluence 的系统误差
+            f.create_dataset('gain',        data=gain_ds.astype(np.float32))
+            f.create_dataset('gain_err',    data=gain_err_ds.astype(np.float32))
+            f.attrs.update(out_attrs)
+        os.replace(temp_path, out_h5)
+    finally:
+        if os.path.exists(temp_path):
+            os.remove(temp_path)
 
     print(f'  [完成] {out_h5}  (RFI {rfi_frac*100:.1f}%)')
 
@@ -298,11 +319,13 @@ if __name__ == '__main__':
         exit()
     print(f'找到 {len(burst_h5_list)} 个 burst 文件')
 
-    # 文件名中 Mdd 段就是波束编号; 缺省按主波束 M01 处理.
+    # 文件名中的 Mdd 段就是波束编号。
     beam_groups = defaultdict(list)
     for fname in burst_h5_list:
         m    = re.search(r'M(\d{2})', fname)
-        beam = int(m.group(1)) if m else 1
+        if m is None:
+            raise ValueError(f'文件名缺少波束编号 Mxx: {fname}')
+        beam = int(m.group(1))
         beam_groups[beam].append(os.path.join(BURST_DIR, fname))
 
     # 2. 匹配定标文件 / t_cal, 组装任务列表
@@ -325,7 +348,8 @@ if __name__ == '__main__':
 
         for h5_path in h5_list:
             all_args.append((
-                h5_path, OUTPUT_DIR, noise_cal, t_cal, RA, DEC, beam, DOWN_TIME, DOWN_FREQ, RFI_FFT
+                h5_path, OUTPUT_DIR, noise_cal, t_cal, RA, DEC, beam,
+                cal_fits_path, CAL_NPZ, DOWN_TIME, DOWN_FREQ, RFI_FFT
             ))
 
     if not all_args:

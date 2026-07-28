@@ -83,6 +83,8 @@ def test_pipeline():
         )
         assert "FLUENCE × BW" in html
         assert expected_fluence_bw in html
+        assert str(tmp.resolve()) not in html
+        assert "fonts.googleapis.com" in html
         assert "ENERGY FLUENCE" not in html
         # 40 行不触发打印截断（检查真实的行属性/提示文本，而非 CSS 选择器文本）。
         assert 'class="print-hide"' not in html and "打印仅显示" not in html

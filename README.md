@@ -80,23 +80,23 @@ available:
 
 ### Two scientific guardrails
 
-1. **AFTER does not infer TOAs from filenames or quick-look images.** TOA
-   seconds must come from the observer or an upstream search product.
-2. **Automatic boxes are proposals, not final measurements.** Review accepted
-   burst regions before running energy and polarization analysis.
+1. **Use observer-confirmed or upstream-search TOA seconds.** They define every
+   burst cut.
+2. **Review automatic burst boxes before measurement.** Analysis uses the
+   accepted regions stored in H5.
 
 ## Repository layout
 
 | Path | Role in AFTER |
 |---|---|
 | [`after/`](after/) | Importable single-observation package. Run its entry points from the repository root as `python -m after.<module>`. |
-| [`calibration.py`](calibration.py) and [`cut_burst_data.py`](cut_burst_data.py) | Thin compatibility launchers that preserve the historical `python calibration.py` and `python cut_burst_data.py` commands and legacy imports. |
+| [`calibration.py`](calibration.py) and [`cut_burst_data.py`](cut_burst_data.py) | Root launchers for the direct `python calibration.py` and `python cut_burst_data.py` commands. |
 | [`after/cut_burst_data.py`](after/cut_burst_data.py) | Cut burst-centered H5 files from raw FAST FITS using TOA, DM, and beam metadata. |
 | [`after/calibration.py`](after/calibration.py) and [`after/calibration_noise.py`](after/calibration_noise.py) | Flux/polarization and noise-diode calibration, downsampling, RFI masking, and calibrated H5 export. |
 | [`after/burst_detect.py`](after/burst_detect.py) | Automatic, semi-automatic, or manual burst-region labeling; writes H5 `attrs["bursts"]`. |
 | [`after/burst_analysis.py`](after/burst_analysis.py) | Measure DM, RM, polarization, flux, fluence, width, bandwidth, and SNR. |
 | [`after/burst_sync_rm.py`](after/burst_sync_rm.py) | Search a common RM by combining multiple labeled calibrated H5 burst components. |
-| [`after/burst_dashboard.py`](after/burst_dashboard.py) | Build a self-contained HTML observation dashboard from `burst_results.csv`. |
+| [`after/burst_dashboard.py`](after/burst_dashboard.py) | Build a single-file HTML observation dashboard from `burst_results.csv`; Google Fonts load when network access is available. |
 | [`after/burst_dm.py`](after/burst_dm.py), [`after/burst_pol.py`](after/burst_pol.py), and [`after/burst_properties.py`](after/burst_properties.py) | Scientific measurement modules used by the analysis stage. |
 | [`after/rfi.py`](after/rfi.py), [`after/obs_metadata.py`](after/obs_metadata.py), and [`after/zenith_angle.py`](after/zenith_angle.py) | Shared RFI, observation-metadata, and FAST beam-gain helpers. |
 | [`gain_para.csv`](gain_para.csv) | FAST beam gain parameters. |
@@ -108,18 +108,16 @@ available:
 | [`requirements.txt`](requirements.txt) | Python dependencies. |
 
 Runtime assets stay at the repository root and are resolved from
-[`after/__init__.py`](after/__init__.py), not from the caller's current working
-directory:
+[`after/__init__.py`](after/__init__.py), keeping asset lookup independent of
+the caller's working directory:
 
 - gain calibration: `gain_para.csv`;
 - default noise-calibration table: `highcal_20201014_psr_tny.npz`;
 - default detector checkpoint: `models/best_model_yolo11n_ema.pth`.
 
-The two compatibility launchers delegate to the package without duplicating
-scientific code. Configure single-observation constants in
-`after/calibration.py` or `after/cut_burst_data.py`, then run either the
-historical root command or the equivalent `python -m after.<module>` command
-from the repository root.
+The two root launchers delegate to the package. Configure single-observation
+constants in `after/calibration.py` or `after/cut_burst_data.py`, then use the
+root command or the equivalent `python -m after.<module>` command.
 
 ## Installation
 
@@ -223,8 +221,8 @@ options are documented together in
 
 ### 1. Cut raw FAST FITS
 
-For the historical constant-configured single-observation workflow, edit the
-configuration block at the bottom of `after/cut_burst_data.py`, then run:
+For a constant-configured single observation, edit the configuration block at
+the bottom of `after/cut_burst_data.py`, then run:
 
 ```bash
 python cut_burst_data.py
@@ -280,9 +278,9 @@ compatible with `after.cut_burst_data`.
 
 ### 3. Calibrate
 
-For the historical constant-configured single-observation workflow, edit
-`BURST_DIR`, `OUTPUT_DIR`, RA/DEC, resolution, and worker settings at the bottom
-of `after/calibration.py`, then run:
+For a constant-configured single observation, edit `BURST_DIR`, `OUTPUT_DIR`,
+RA/DEC, resolution, and worker settings at the bottom of
+`after/calibration.py`, then run:
 
 ```bash
 python calibration.py
@@ -313,8 +311,8 @@ Useful saved-resolution choices:
 - use `--down-freq 1` to preserve raw frequency channels for detailed spectral
   and RFI inspection.
 
-Each burst beam requires its own matching `Mxx..._0001.fits`. Calibration fails
-if that exact beam file is absent; it never substitutes M01 for another beam.
+Each burst beam uses its matching `Mxx..._0001.fits`; calibration stops that
+beam group when the file is absent.
 FFT RFI detection is the batch default. Pass `--no-rfi-fft` to select entropy
 mode. Outputs are written below `<cal-root>/<FRB>/<date>/`.
 
@@ -334,7 +332,8 @@ python -m after.burst_detect \
 Detection writes:
 
 - H5 `attrs["bursts"]`, the label source used by analysis;
-- `detections.json`, the resume and review ledger;
+- `detections.json`, the resume and review ledger keyed by paths relative to
+  `--cal-dir`;
 - `plots/*_det.png`, review images with the accepted regions.
 
 Automatic and semi-automatic modes infer once from calibrated Stokes I. After
@@ -360,12 +359,14 @@ python -m after.burst_analysis \
   --dm-range 5 \
   --dm-step 0.1 \
   --rm-min -1000 \
-  --rm-max 1000
+  --rm-max 1000 \
+  --seed 42
 ```
 
 Measured quantities include TOA, peak flux, fluence, width, burst bandwidth,
-SNR, DM, RM, linear/circular/total polarization, PA, and PAV. Write reruns with
-different DM/RM ranges to separate output directories. `--cal-dir` is scanned
+SNR, DM, RM, linear/circular/total polarization, PA, and PAV. The bootstrap
+seed and sample count are stored in each CSV row. Write reruns with different
+DM/RM ranges to separate output directories. `--cal-dir` is scanned
 recursively, so it can point directly at the `<cal-root>` produced by batch
 calibration.
 
@@ -414,8 +415,8 @@ python -m after.burst_dashboard \
   --top-n 10
 ```
 
-The dashboard is a self-contained HTML report that can be opened locally or
-printed to PDF.
+The dashboard is a single HTML file that can be opened locally or printed to
+PDF. Figures are embedded; Google Fonts load online with local font fallbacks.
 
 ## Data contracts
 
@@ -428,6 +429,10 @@ attrs: start_sample, file_mjd, toa_sec, time_reso, npol, nchan,
        segment_length, obs_start_mjd, beam, dm
 ```
 
+For a cut extending before the observation start, `start_sample` remains
+negative and the filename uses `n` plus its nine-digit absolute value, for
+example `n000000002`.
+
 ### Calibrated H5
 
 ```text
@@ -438,7 +443,8 @@ rfi_channel: (nchan,), bool
 gain:        (nchan,), K/Jy
 gain_err:    (nchan,), K/Jy
 attrs: time_reso_raw, time_reso, down_time, down_freq,
-       dm, beam, ra, dec
+       dm, beam, ra, dec, calibration_beam,
+       calibration_fits, calibration_npz
 ```
 
 ### Accepted burst region
@@ -480,15 +486,15 @@ Bundled binary assets are identified by content hash:
 
 | Artifact | Verified contents and provenance | SHA-256 |
 |---|---|---|
-| `models/best_model_yolo11n_ema.pth` | YOLO11n-compatible `OrderedDict` state dict with 499 entries; introduced in repository commit `17511c1` on 2026-06-22. The checkpoint does not embed the training dataset, epoch, command, or Ultralytics version, so the hash is its authoritative version. | `9BEEF810651B7B4B793A0DD85DFBB0E0959406BAE4B8D322313C841791E830FA` |
-| `highcal_20201014_psr_tny.npz` | 19-beam calibration table with `freq (4096,) float32` and `tcal (4096, 2, 19) float64`; introduced in the same commit. The generator/source version is not embedded, so the filename date and hash are the available provenance. | `4FC36ACC2E639962B2A10C7F81803FA88C93F4F85B33D07D657ABC40CD410F66` |
+| `models/best_model_yolo11n_ema.pth` | YOLO11n-compatible `OrderedDict` state dict with 499 entries; the hash identifies the exact checkpoint. | `9BEEF810651B7B4B793A0DD85DFBB0E0959406BAE4B8D322313C841791E830FA` |
+| `highcal_20201014_psr_tny.npz` | 19-beam calibration table with `freq (4096,) float32` and `tcal (4096, 2, 19) float64. | `4FC36ACC2E639962B2A10C7F81803FA88C93F4F85B33D07D657ABC40CD410F66` |
 
 A complete run can produce:
 
 - cut and calibrated H5 files;
 - `detections.json` and burst review figures;
 - `burst_results.csv` and DM/RM/polarization diagnostics;
-- a self-contained `burst_dashboard.html`.
+- a single-file `burst_dashboard.html`.
 
 Keep each observation or parameter rerun in a dedicated output directory so
 relabeling, DM/RM sweeps, and dashboard refreshes do not silently overwrite

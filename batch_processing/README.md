@@ -209,9 +209,8 @@ FRB_name DM RA DEC
 
 RA and DEC may use colon notation or another Astropy-readable unit format. DM
 is retained as source metadata; each cut H5 should also carry its own DM.
-Every beam group must have a matching `Mxx..._0001.fits` in the same date
-directory. Missing calibration data is a hard error; M01 is never substituted
-for another beam.
+Every beam group uses its matching `Mxx..._0001.fits` in the same date
+directory. Processing stops for a group whose calibration file is missing.
 
 ### Run
 
@@ -253,8 +252,9 @@ Output layout:
   *.jpg
 ```
 
-`batch_calibration.py` does not expose an `--overwrite` option. Use a separate
-`--cal-root` when comparing calibration or downsampling settings.
+Each H5 records `calibration_beam`, `calibration_fits`, and `calibration_npz`
+attrs. Use a separate `--cal-root` when comparing calibration or downsampling
+settings.
 
 ## Hand off to detection and analysis
 

@@ -138,10 +138,10 @@ def rm_synthesis(I, Q, U, wave, rm_min=-10000, rm_max=10000):
 
     用户只指定 RM 范围；网格步长固定按 RMSF FWHM 的八分之一自动选择。
     """
-    rm_list, _ = build_automatic_rm_grid(
+    rm_list, info = build_automatic_rm_grid(
         rm_min, rm_max, np.asarray(wave, dtype=np.float64) ** 2)
     linear = _rm_synthesis_on_grid(I, Q, U, wave, rm_list)
-    return rm_list, linear
+    return rm_list, linear, info
 
 
 # ============================================================
@@ -604,11 +604,9 @@ def analyze_pol(I, Q, U, V, freq, time_reso, burst_mask, freq_index, noise_mask,
     burst_wave  = wave[freq_index]
 
     # RM 合成
-    rm_list_out, linear_pol = rm_synthesis(
+    rm_list_out, linear_pol, rm_grid_info = rm_synthesis(
         burst_I, burst_Q, burst_U, burst_wave,
         rm_min=rm_min, rm_max=rm_max)
-    _, rm_grid_info = build_automatic_rm_grid(
-        rm_min, rm_max, burst_wave ** 2)
     print(
         f'    自动 RM 网格: {rm_grid_info["n_rm"]} 点, '
         f'步长={rm_grid_info["rm_step"]:.3f} rad/m², '

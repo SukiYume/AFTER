@@ -150,7 +150,7 @@ Before each stage, perform only the checks needed to prevent a wrong run:
 3. Check input counts and one representative file:
    - Raw FITS: count beam-matched `*Mxx*.fits`; inspect one FITS header for timing/channel metadata.
    - Cut H5: count `.h5` excluding `_cal.h5`; verify matching `_0001.fits`.
-   - Calibrated H5: count `*_cal.h5`; inspect one H5 for `data`, `freq`, `rfi_mask`, `gain`, `gain_err`, and attrs.
+   - Calibrated H5: count `*_cal.h5`; inspect one H5 for `data`, `freq`, `rfi_mask`, `gain`, `gain_err`, and calibration provenance attrs.
 4. Check output directories and existing products.
 5. Check whether a previous `detections.json` exists.
 6. Preserve existing outputs and request overwrite confirmation when needed. If cleanup is requested, resolve the target path first and keep it within the intended observation output tree.
@@ -192,7 +192,7 @@ Remote/direct-script rule:
 Verify:
 
 - Cut H5 count matches the in-range valid TOA count.
-- Filenames follow `{frb}-{date}-M{beam:02d}-{fits_number:04d}-{start_sample:09d}.h5`.
+- Filenames use a nine-digit start sample; a negative logical start uses `n` plus the nine-digit absolute value.
 - One sample H5 has `data`, `freq`, `toa_sec`, `time_reso`, `obs_start_mjd`, and `dm`.
 - `obs_info.json` exists.
 
@@ -208,7 +208,7 @@ Recommended implementation:
 
 1. Import `find_cal_fits`, `fold_noise_cal`, `load_t_cal`, and `process_one_burst` from `after.calibration`.
 2. Group cut H5 files by beam from the `Mxx` filename token.
-3. For each beam, find matching `_0001.fits`, fold `noise_cal`, load `t_cal`, and process each H5.
+3. For each beam, find matching `_0001.fits`, fold `noise_cal`, load `t_cal`, and pass the selected FITS and NPZ paths to `process_one_burst`.
 4. Use `rfi_fft=True` for standard calibration RFI, or use the user's requested calibration-time RFI strategy.
 
 Downsample policy:
@@ -230,7 +230,7 @@ Verify:
 - Each input H5 has a matching `*_cal.h5`.
 - Quick-look `.jpg` plots exist when plotting is enabled.
 - One calibrated H5 has `data`, `freq`, `rfi_mask`, `rfi_channel`, `gain`, and `gain_err`.
-- Check attrs `down_time`, `down_freq`, `time_reso_raw`, `time_reso`, `nchan_raw`, `nchan`, `dm`, `beam`, `ra`, and `dec`.
+- Check attrs `down_time`, `down_freq`, `time_reso_raw`, `time_reso`, `nchan_raw`, `nchan`, `dm`, `beam`, `ra`, `dec`, `calibration_beam`, `calibration_fits`, and `calibration_npz`.
 
 ## 7. Detect and Review Burst Labels
 
@@ -251,7 +251,7 @@ Detection behavior:
 
 - Recursively finds `*_cal.h5` below `--cal-dir`.
 - Writes H5 `attrs["bursts"]`.
-- Writes `detections.json` and `plots/*_det.png`.
+- Writes `detections.json`, keyed by paths relative to `--cal-dir`, and `plots/*_det.png`.
 - Skips existing entries in `detections.json`, including zero-burst entries.
 - Recomputes detection-stage RFI from non-burst noise and writes `burst_rfi_mask` / `burst_rfi_channel`.
 
@@ -267,7 +267,7 @@ If the user asks for a semi-auto/manual command, provide the exact `python -m af
 
 Use semi-auto for bad auto labels:
 
-1. Remove only bad filenames from that output directory's `detections.json`.
+1. Remove only the bad relative-path keys from that output directory's `detections.json`.
 2. Rerun `python -m after.burst_detect --mode semi-auto` with the same `--cal-dir` and `--output-dir`.
 3. The script skips files still listed in `detections.json` and opens only removed files.
 
@@ -311,7 +311,8 @@ python -m after.burst_analysis \
   --dm-range 5 \
   --dm-step 0.1 \
   --rm-min -1000 \
-  --rm-max 1000
+  --rm-max 1000 \
+  --seed 42
 ```
 
 Treat these values as examples. Confirm DM/RM ranges against source knowledge before long runs.
@@ -323,7 +324,8 @@ Analysis rules:
 - `--dm-range` is centered on the cut DM stored in each H5.
 - `--rm-min` and `--rm-max` control the RM search range; the code derives the
   grid spacing automatically from the effective lambda-squared coverage and
-  RMSF FWHM. `--n-boot` controls uncertainty work.
+  RMSF FWHM. `--n-boot` controls uncertainty work and `--seed` makes bootstrap
+  results reproducible.
 - Pass `--target-down-time` and `--target-down-freq` only for coarser analysis than the saved calibrated H5. Target factors must be integer multiples of saved `down_time/down_freq`.
 - Pass `--rfi-fft` when FFT RFI is requested in analysis.
 - Rebuild the noise mask from accepted burst labels, subtract per-channel baseline, derive RFI from Stokes I and V, and apply the union mask to all Stokes parameters.
@@ -342,9 +344,9 @@ Common-RM stacking from multiple calibrated bursts:
 - Keep both requested PA-independent products: the per-time-sample normalized
   Faraday-power sum (`time_pa_power`) and the fixed-weight stack of robustly
   standardized per-burst RM-versus-linear-degree curves
-  (`linear_degree_stack`). Keep the burst-internal coherent-time power
-  (`burst_pa_power`) as a diagnostic for weak per-sample signals whose PA is
-  approximately constant within each burst.
+  (`linear_degree_stack`). Do not add a burst-internal coherent-time statistic;
+  the production workflow deliberately retains only these two PA-independent
+  methods.
 - Calibrate detection significance with off-pulse samples using the same
   component time-sample counts and channel masks. Report which RM window the
   empirical p-value corrects; do not compare an uncorrected local peak with a
@@ -363,8 +365,8 @@ Verify:
 - Spot-check at least one DM/RM/polarization plot when possible.
 - For `after.burst_sync_rm`, verify `burst_sync_rm_summary.csv`,
   `selected_bursts.csv`, `burst_sync_rm_curves.npz`, `run_manifest.json`, and
-  `burst_sync_rm.png`; compare the two requested methods and the
-  `burst_pa_power` diagnostic before interpreting a peak.
+  `burst_sync_rm.png`; compare both retained methods before interpreting a
+  peak.
 
 ## 9. Build Observation Dashboard or Summary
 
@@ -411,6 +413,9 @@ attrs: start_sample, file_mjd, toa_sec, time_reso, npol, nchan,
        segment_length, obs_start_mjd, dm
 ```
 
+For a cut extending before the observation start, preserve the negative
+`start_sample` and use an `n#########` filename token.
+
 Calibrated H5:
 
 ```text
@@ -420,7 +425,8 @@ rfi_mask: (nsamp, nchan)
 rfi_channel: (nchan,)
 gain, gain_err: (nchan,)
 attrs: time_reso_raw, time_reso, down_time, down_freq,
-       plot_down_time, plot_down_freq, dm, beam, ra, dec
+       plot_down_time, plot_down_freq, dm, beam, ra, dec,
+       calibration_beam, calibration_fits, calibration_npz
 ```
 
 After detection:
