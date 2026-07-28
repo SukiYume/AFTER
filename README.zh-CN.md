@@ -101,10 +101,12 @@ AFTER 可以从已有的最早产物继续，不要求每次都从原始 FITS �
 | [`gain_para.csv`](gain_para.csv) | FAST beam gain 参数。 |
 | [`highcal_20201014_psr_tny.npz`](highcal_20201014_psr_tny.npz) | 默认噪声管定标参考。 |
 | [`models/`](models/) | 当前生产使用的 burst-region detector checkpoint。 |
+| [`training/`](training/README.md) | 生产 burst detector 的训练、验证和预览代码。 |
 | [`batch_processing/`](batch_processing/README.zh-CN.md) | 批量裁切、长周期候选裁切、旧 FITS 转换和批量定标。 |
 | [`tests/`](tests/) | 覆盖定标、检测、RM 分析和 dashboard 的回归测试。 |
 | [`skills/fast-frb-observation-processing/`](skills/fast-frb-observation-processing/) | Codex 使用 AFTER 的操作协议。 |
 | [`requirements.txt`](requirements.txt) | Python 依赖清单。 |
+| [`requirements-training.txt`](requirements-training.txt) | detector 训练所需的附加依赖。 |
 
 运行资源保留在仓库根目录，并由 [`after/__init__.py`](after/__init__.py) 根据代码位置
 解析，因此资源查找与执行命令时的工作目录无关：
@@ -454,6 +456,8 @@ rm, rm_err, ..., pol_status, pol_error_reason
 
 AFTER 默认使用 `models/best_model_yolo11n_ema.pth` 进行 burst 检测。比较或更新
 detector 时，可以通过 `--model-path` 指定其他兼容 checkpoint。
+对应的训练和验证流程见 [`training/README.md`](training/README.md)。本地训练数据和
+数据准备辅助文件统一放在被忽略的 `training/data/` 中。
 
 仓库内二进制资产使用内容哈希标识：
 

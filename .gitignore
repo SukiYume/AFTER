@@ -36,6 +36,16 @@ detections.json
 burst_results.csv
 burst_dashboard.html
 
+# Entire local detector-data workspace, including helper Python scripts
+/training/data/
+
+# Generated training checkpoints
+training/logs/**/*.pth
+training/logs/**/*.pt
+training/logs/**/*.ckpt
+training/logs/**/*.onnx
+training/logs/**/*.safetensors
+
 # Local observation catalogs and batch input tables
 batch_processing/*.txt
 !batch_processing/*.example.txt

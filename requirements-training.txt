@@ -1,0 +1,5 @@
+-r requirements.txt
+
+albumentations
+timm
+tqdm

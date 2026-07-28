@@ -105,10 +105,12 @@ available:
 | [`gain_para.csv`](gain_para.csv) | FAST beam gain parameters. |
 | [`highcal_20201014_psr_tny.npz`](highcal_20201014_psr_tny.npz) | Default noise-calibration reference. |
 | [`models/`](models/) | Current production burst-region detector checkpoint. |
+| [`training/`](training/README.md) | Training, validation, and preview code for the production burst detector. |
 | [`batch_processing/`](batch_processing/README.md) | Batch cutting, selected long-period cutting, legacy FITS conversion, and calibration wrappers. |
 | [`tests/`](tests/) | Regression tests for calibration, detection, RM analysis, and dashboard generation. |
 | [`skills/fast-frb-observation-processing/`](skills/fast-frb-observation-processing/) | Codex operating protocol for AFTER. |
 | [`requirements.txt`](requirements.txt) | Python dependencies. |
+| [`requirements-training.txt`](requirements-training.txt) | Additional dependencies for detector training. |
 
 Runtime assets stay at the repository root and are resolved from
 [`after/__init__.py`](after/__init__.py), keeping asset lookup independent of
@@ -484,6 +486,9 @@ the nominal cut DM.
 AFTER includes the default burst detector at
 `models/best_model_yolo11n_ema.pth`. Select another compatible checkpoint with
 `--model-path` when comparing or updating detectors.
+The matching training and validation workflow is documented in
+[`training/README.md`](training/README.md). Local datasets and data-preparation
+helpers stay under the ignored `training/data/` directory.
 
 Bundled binary assets are identified by content hash:
 
