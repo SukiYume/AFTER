@@ -6,9 +6,12 @@
 
 从已确认 burst TOA 到可复核的 FAST FRB 定标测量
 
+[![AFTER](https://img.shields.io/badge/FAST%20FRB-AFTER-1f6feb)](https://github.com/SukiYume/AFTER)
+[![GitHub Stars](https://img.shields.io/github/stars/SukiYume/AFTER.svg?label=Stars&logo=github)](https://github.com/SukiYume/AFTER/stargazers)
 [![Python](https://img.shields.io/badge/Python-3.9%2B-blue.svg)](https://www.python.org/)
 [![License](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
 [![Codex Skill](https://img.shields.io/badge/Codex%20Skill-%E5%B7%B2%E5%8C%85%E5%90%AB-2ea44f)](skills/fast-frb-observation-processing/SKILL.md)
+[![Related](https://img.shields.io/badge/Search-DRAFTS-da282a)](https://github.com/SukiYume/DRAFTS)
 
 [项目概览](#项目概览) ·
 [处理流程](#after-处理流程) ·

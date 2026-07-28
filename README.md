@@ -6,9 +6,12 @@
 
 From confirmed burst TOAs to calibrated, reviewable FAST FRB measurements
 
+[![AFTER](https://img.shields.io/badge/FAST%20FRB-AFTER-1f6feb)](https://github.com/SukiYume/AFTER)
+[![GitHub Stars](https://img.shields.io/github/stars/SukiYume/AFTER.svg?label=Stars&logo=github)](https://github.com/SukiYume/AFTER/stargazers)
 [![Python](https://img.shields.io/badge/Python-3.9%2B-blue.svg)](https://www.python.org/)
 [![License](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
 [![Codex Skill](https://img.shields.io/badge/Codex%20Skill-included-2ea44f)](skills/fast-frb-observation-processing/SKILL.md)
+[![Related](https://img.shields.io/badge/Search-DRAFTS-da282a)](https://github.com/SukiYume/DRAFTS)
 
 [Overview](#overview) ·
 [Workflow](#after-workflow) ·
