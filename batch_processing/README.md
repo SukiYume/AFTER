@@ -258,24 +258,8 @@ settings.
 
 ## Hand off to detection and analysis
 
-Continue with the repository-root entry points:
-
-```bash
-python -m after.burst_detect \
-  --mode auto \
-  --cal-dir /path/to/after_runs/calibrated \
-  --model-path models/best_model_yolo11n_ema.pth \
-  --model-name yolo11n \
-  --output-dir /path/to/after_runs/detections
-
-python -m after.burst_analysis \
-  --cal-dir /path/to/after_runs/calibrated \
-  --output-dir /path/to/after_runs/analysis
-```
-
-Both root-level commands recursively discover `*_cal.h5`, so the shown
-`--cal-dir` can be the batch `<cal-root>` rather than one date directory.
-
-Automatic boxes are review proposals, not final scientific measurement
-regions. Check or correct the regions written to H5 `attrs["bursts"]` before
+Continue with **Detect and review burst regions** and **Analyze physical
+properties** in the [main README](../README.md#quick-start). Both entry points
+recursively discover `*_cal.h5`, so `--cal-dir` can be the batch `<cal-root>`.
+Review or correct the proposed regions written to H5 `attrs["bursts"]` before
 running energy and polarization analysis.

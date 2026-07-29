@@ -245,22 +245,7 @@ python batch_processing/batch_calibration.py \
 
 ## 输出交接
 
-定标完成后，使用仓库根目录的入口继续处理：
-
-```bash
-python -m after.burst_detect \
-  --mode auto \
-  --cal-dir /path/to/after_runs/calibrated \
-  --model-path models/best_model_yolo11n_ema.pth \
-  --model-name yolo11n \
-  --output-dir /path/to/after_runs/detections
-
-python -m after.burst_analysis \
-  --cal-dir /path/to/after_runs/calibrated \
-  --output-dir /path/to/after_runs/analysis
-```
-
-两个根目录入口都会递归查找 `*_cal.h5`，因此这里的 `--cal-dir` 可以直接是批处理
-`<cal-root>`，不必逐日期运行。
-
-运行能量和偏振分析前，先复核写入 H5 `attrs["bursts"]` 的自动检测区域。
+定标完成后，按[主 README 的快速开始](../README.zh-CN.md#快速开始)继续执行“检测并
+复核 burst 区域”和“分析物理量”。两个入口都会递归查找 `*_cal.h5`，因此
+`--cal-dir` 可以直接使用批处理 `<cal-root>`。运行能量和偏振分析前，先复核或修正
+写入 H5 `attrs["bursts"]` 的候选区域。

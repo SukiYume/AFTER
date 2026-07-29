@@ -5,7 +5,13 @@ description: "Use when a user asks an agent to install AFTER from its public rep
 
 # AFTER FAST FRB Observation Processing
 
-AFTER is the AI-assisted FAST Transient End-to-end Reduction workflow for post-search FAST FRB burst processing. Use this skill as the agent operating protocol. Locate the repository root before running commands because the skill can be installed separately from the processing package.
+AFTER is the AI-assisted FAST Transient End-to-end Reduction workflow for post-search FAST FRB burst processing. Locate the repository root before running commands because the skill can be installed separately from the processing package.
+
+Keep the documentation roles separate:
+
+- Treat the repository `README.md` as the canonical user-facing source for installation commands, CLI examples, and data schemas.
+- Use this skill for agent decisions, preflight checks, human-review gates, stage verification, recovery, and final reporting.
+- Read only the relevant README section for the active stage.
 
 Normal AFTER sequence:
 
@@ -38,7 +44,7 @@ Use this interaction policy:
 
 1. Ask for missing blocking inputs in one compact message before the stage that needs them. Do not ask stage-by-stage if the whole chain is requested.
 2. Discover cheap local facts yourself: file counts, representative H5 attrs, existing outputs, model file existence, script help, and CSV columns.
-3. Ask the user directly for non-discoverable or expensive-risk inputs: source/date/beam, raw FITS path, TOA source, DM, RA/DEC, segment length, remote host/script root, remote output root, local pull target, analysis DM/RM ranges, and overwrite/delete permission.
+3. Ask the user directly for non-discoverable or high-risk inputs such as confirmed TOAs, scientific search ranges, remote targets, and overwrite or deletion permission.
 4. Treat user corrections about host, path, script choice, segment length, or workflow scope as authoritative for the rest of the observation.
 5. If the user asks only for a command, give the command only. Do not create helper files, runners, manifests, or dashboards unless they are explicitly requested or required by the current pipeline stage.
 6. In the current checkout, prefer `python -m after.<module>` for single-observation stages. Treat the root `calibration.py` and `cut_burst_data.py` files as supported compatibility launchers for the historical direct commands and imports. Use `batch_processing/*` only when the user explicitly asks for batch mode or provides a batch catalog.
@@ -54,12 +60,12 @@ Need before cutting:
   source/date/beam:
   search-plot folder or TOA txt:
   raw FITS directory:
-  remote host and AFTER repository/script root:
+  remote host and AFTER repository/script root (remote runs only):
   cut output root:
   DM:
   RA/DEC:
   segment length:
-  local calibrated-data target:
+  local calibrated-data target (remote runs only):
 Optional before analysis:
   DM search half-range / step:
   RM min/max (grid spacing is automatic):
@@ -106,38 +112,24 @@ Script capability check:
 
 ## 2. Install or Validate AFTER
 
-When the user asks to install AFTER on another machine:
+When installation or validation is requested:
 
-1. Verify Git, network access, 64-bit Python 3.10+ with `venv` and `pip`, and
-   a local CJK font when dashboards require Chinese chart labels.
-2. Clone the complete public repository from
-   `https://github.com/SukiYume/AFTER.git`; do not substitute a script-only
-   bundle because the tracked model and calibration assets are required.
-3. Create and activate a repository-local virtual environment.
-4. For CPU, install `requirements.txt`. For CUDA or ROCm, install the
-   hardware-appropriate `torch` and `torchvision` build first, then install
-   `requirements.txt`.
-5. Verify `gain_para.csv`, `highcal_20201014_psr_tny.npz`, and
-   `models/best_model_yolo11n_ema.pth`.
-6. Copy `skills/fast-frb-observation-processing/` into the Codex skills
-   directory, verify `SKILL.md` and `agents/openai.yaml`, and read `SKILL.md`
-   directly for the current installation task.
-7. Set and persist `DATA_PROCESSING_ROOT` as the absolute repository root.
-   Explain that this variable is for agent discovery; code assets resolve from
-   the checkout itself.
-8. Run every README post-install validation command and validate the skill
-   structure. Report each result before processing observation data.
-9. Tell the user to start a new Codex task for automatic skill discovery and
-   restart the Codex app or CLI before relying on a newly persisted
-   `DATA_PROCESSING_ROOT`.
-
-One-line user-facing install request:
-
-```text
-Install AFTER from https://github.com/SukiYume/AFTER.git on this computer: verify Git and 64-bit Python 3.10+, clone the complete repository, create and activate a virtual environment, install the CPU or hardware-appropriate PyTorch build and the dependencies from requirements.txt, verify the bundled runtime assets, copy skills/fast-frb-observation-processing into the current Codex skills directory (and read its SKILL.md directly for this task), persist DATA_PROCESSING_ROOT as the absolute repository root, run every command under “Validate the installation,” and report each result before processing observation data.
-```
-
-Keep the skill folder limited to `SKILL.md` plus `agents/openai.yaml` during installation.
+1. Clone `https://github.com/SukiYume/AFTER.git` if no complete checkout
+   exists, then work from its root.
+2. Follow the current `README.md` sections **Installation** and
+   **Validate the installation**. Use the complete checkout because its model
+   and calibration assets are runtime inputs.
+3. Install the bundled skill when requested, verify `SKILL.md` and
+   `agents/openai.yaml`, and read the installed `SKILL.md` directly during the
+   current installation task.
+4. Set and persist `DATA_PROCESSING_ROOT` as the absolute repository root.
+   This variable supports agent discovery; AFTER resolves assets from its
+   source checkout.
+5. Run every README validation command and the skill validator. On Windows,
+   set `PYTHONUTF8=1` if the validator encounters the system encoding.
+6. Report each result before processing observation data. Start a new Codex
+   task after skill installation, and restart the app or CLI before relying on
+   a newly persisted environment variable.
 
 ## 3. Choose the Starting Point
 
@@ -256,16 +248,10 @@ Verify:
 
 Run this stage when starting from calibrated H5 or after successful calibration.
 
-Auto detection example:
-
-```bash
-python -m after.burst_detect \
-  --mode auto \
-  --cal-dir /path/to/cal_date \
-  --model-path /path/to/detector_checkpoint.pth \
-  --model-name MODEL_NAME \
-  --output-dir /path/to/detections_auto
-```
+Use the current automatic-detection command in `README.md` under **Quick
+start → Detect and review burst regions**. Replace only the per-run paths and
+model selection, then verify the active CLI with
+`python -m after.burst_detect --help`.
 
 Detection behavior:
 
@@ -322,20 +308,9 @@ Remember: `attrs["bursts"]` is the source of truth for analysis. Update H5 attrs
 
 Run this stage after burst labels are accepted.
 
-Example:
-
-```bash
-python -m after.burst_analysis \
-  --cal-dir /path/to/cal_date \
-  --output-dir /path/to/analysis_output \
-  --dm-range 5 \
-  --dm-step 0.1 \
-  --rm-min -1000 \
-  --rm-max 1000 \
-  --seed 42
-```
-
-Treat these values as examples. Confirm DM/RM ranges against source knowledge before long runs.
+Use the current analysis command in `README.md` under **Quick start → Analyze
+physical properties**. Treat its DM/RM values as examples and confirm the
+ranges against source knowledge before long runs.
 
 Analysis rules:
 
@@ -392,19 +367,8 @@ Verify:
 
 Run this stage after `burst_results.csv` exists when the user asks for a summary, dashboard, visualization panel, or observation overview.
 
-Preferred command shape:
-
-```bash
-python -m after.burst_dashboard \
-  --csv /path/to/analysis/burst_results.csv \
-  --output /path/to/analysis/burst_dashboard.html \
-  --analysis-dir /path/to/analysis \
-  --source FRBNAME \
-  --date YYYYMMDD \
-  --reference-dm DM \
-  --rm-significance-threshold 5 \
-  --top-n 10
-```
+Use the current dashboard command in `README.md` under **Quick start → Build
+the observation dashboard**, replacing its example metadata and paths.
 
 Dashboard rules:
 
@@ -415,53 +379,17 @@ Dashboard rules:
 - If no reliable RM exists, report it as a non-detection and avoid interpreting polarization quantities as trustworthy physical measurements.
 - Verify the dashboard output exists, embeds its expected assets, represents the analyzed burst rows, and opens locally without obvious layout overflow.
 
-## 10. Data Contracts
+## 10. Enforce Data Contracts
 
-Raw FAST directory:
+Treat `README.md` section **Data contracts** as the canonical public schema and
+use each stage's verification list above against the actual files. Preserve
+these workflow invariants:
 
-- Contains many FITS files for one observation date.
-- Beam is identified by `Mxx` in filenames.
-- A calibration/noise FITS for the beam should be in the same directory and usually ends with `_0001.fits`.
-- Burst TOA uses seconds from observation start.
-
-Cut H5:
-
-```text
-data: (nsamp, npol, nchan)
-freq: (nchan,), MHz
-attrs: start_sample, file_mjd, toa_sec, time_reso, npol, nchan,
-       segment_length, obs_start_mjd, dm
-```
-
-For a cut extending before the observation start, preserve the negative
-`start_sample` and use an `n#########` filename token.
-
-Calibrated H5:
-
-```text
-data: (4, nsamp, nchan), Stokes I/Q/U/V in Jy
-freq: (nchan,), MHz
-rfi_mask: (nsamp, nchan)
-rfi_channel: (nchan,)
-gain, gain_err: (nchan,)
-attrs: time_reso_raw, time_reso, down_time, down_freq,
-       plot_down_time, plot_down_freq, dm, beam, ra, dec,
-       calibration_beam, calibration_fits, calibration_npz
-```
-
-After detection:
-
-```text
-attrs["bursts"] = JSON list of regions
-burst_rfi_mask, burst_rfi_channel = detection-stage RFI from non-burst noise
-burst_rfi_method = "entropy" by default, or "fft" with --rfi-fft
-```
-
-Each burst region uses calibrated-H5 saved indices:
-
-```json
-{"time_start": 120, "time_end": 180, "freq_start": 40, "freq_end": 500, "confidence": 0.82}
-```
+- Keep a negative cut `start_sample` and its `n#########` filename token.
+- Retain calibration provenance, including the selected beam, FITS, and NPZ.
+- Treat H5 `attrs["bursts"]` as the analysis label source.
+- Record a reviewed no-burst file with an empty burst list.
+- Keep detection-stage RFI products aligned with the accepted labels.
 
 ## 11. Recovery Patterns
 

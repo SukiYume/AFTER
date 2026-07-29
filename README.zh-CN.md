@@ -7,7 +7,7 @@
 从已确认 burst TOA 到可复核的 FAST FRB 定标测量
 
 [![AFTER](https://img.shields.io/badge/FAST%20FRB-AFTER-1f6feb)](https://github.com/SukiYume/AFTER)
-[![GitHub Stars](https://img.shields.io/github/stars/SukiYume/AFTER.svg?label=Stars&logo=github)](https://github.com/SukiYume/AFTER/stargazers)
+[![GitHub Stars](https://img.shields.io/github/stars/SukiYume/AFTER.svg?label=Stars&logo=github)](https://github.com/SukiYume/AFTER)
 [![Python](https://img.shields.io/badge/Python-3.10%2B-blue.svg)](https://www.python.org/)
 [![License](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
 [![Codex Skill](https://img.shields.io/badge/Codex%20Skill-%E5%B7%B2%E5%8C%85%E5%90%AB-2ea44f)](skills/fast-frb-observation-processing/SKILL.md)
@@ -101,19 +101,15 @@ AFTER 可以从已有的最早产物继续，不要求每次都从原始 FITS �
 | [`gain_para.csv`](gain_para.csv) | FAST beam gain 参数。 |
 | [`highcal_20201014_psr_tny.npz`](highcal_20201014_psr_tny.npz) | 默认噪声管定标参考。 |
 | [`models/`](models/) | 当前生产使用的 burst-region detector checkpoint。 |
-| [`training/`](training/README.md) | 生产 burst detector 的训练、验证和预览代码。 |
+| [`training/`](training/README.zh-CN.md) | 生产 burst detector 的训练、验证和预览代码。 |
 | [`batch_processing/`](batch_processing/README.zh-CN.md) | 批量裁切、长周期候选裁切、旧 FITS 转换和批量定标。 |
 | [`tests/`](tests/) | 覆盖定标、检测、RM 分析和 dashboard 的回归测试。 |
 | [`skills/fast-frb-observation-processing/`](skills/fast-frb-observation-processing/) | Codex 使用 AFTER 的操作协议。 |
 | [`requirements.txt`](requirements.txt) | Python 依赖清单。 |
 | [`requirements-training.txt`](requirements-training.txt) | detector 训练所需的附加依赖。 |
 
-运行资源保留在仓库根目录，并由 [`after/__init__.py`](after/__init__.py) 根据代码位置
-解析，因此资源查找与执行命令时的工作目录无关：
-
-- gain 定标：`gain_para.csv`；
-- 默认噪声管定标表：`highcal_20201014_psr_tny.npz`；
-- 默认 detector checkpoint：`models/best_model_yolo11n_ema.pth`。
+仓库自带的运行资源由 [`after/__init__.py`](after/__init__.py) 根据仓库位置解析，
+因此资源查找与执行命令时的工作目录无关。
 
 两个根入口转发到 `after` 包。单观测配置常量放在 `after/calibration.py` 或
 `after/cut_burst_data.py` 中；配置后可使用根命令或对应的
@@ -129,9 +125,6 @@ AFTER 可以从已有的最早产物继续，不要求每次都从原始 FITS �
 - 带 `venv` 和 `pip` 的 64 位 [Python](https://www.python.org/downloads/)
   3.10 或更高版本；
 - 安装期间能够访问 GitHub 和 Python 软件包索引的网络。
-
-生成含中文图表标签的 dashboard 时，还应安装 Noto Sans SC 等本地 CJK 字体。
-Matplotlib 内嵌 PNG 使用系统字体，Google Fonts 用于浏览器中的 HTML。
 
 AFTER 支持 CPU 运行；只有需要加速 detection 时才需要匹配硬件的 GPU 版 PyTorch。
 先确认新系统可以执行：
@@ -176,9 +169,6 @@ python -m pip install -r requirements.txt
 完整 Git clone 已包含默认 detector checkpoint、噪声管定标参考和 beam gain 表，
 不需要 Git LFS，也不需要另行下载模型。
 
-核心依赖包括 NumPy、SciPy、h5py、Astropy、Matplotlib、pandas、Seaborn、Numba、
-OpenCV、PyTorch、torchvision 和 Ultralytics。
-
 ### 安装后自检
 
 ```bash
@@ -204,7 +194,7 @@ AFTER 自带一份可供 Codex 和其他能够读取仓库的 coding agent 使�
 一整句直接发给 agent：
 
 ```text
-请在这台电脑上从 https://github.com/SukiYume/AFTER.git 安装 AFTER：确认 Git 和 64 位 Python 3.10+ 可用，克隆完整仓库，创建并激活虚拟环境，安装适合 CPU 或当前硬件的 PyTorch 以及 requirements.txt 中的依赖，检查仓库自带的运行资源，把 skills/fast-frb-observation-processing 复制到当前 Codex 的 skills 目录并在本次任务中直接读取其 SKILL.md，将 DATA_PROCESSING_ROOT 持久化为仓库根目录的绝对路径，执行“安装后自检”中的全部命令并逐项报告结果；完成自检后再处理观测数据。
+请按首次用户的方式从 https://github.com/SukiYume/AFTER.git 安装 AFTER。克隆后执行 README 的“安装”和“安装后自检”，安装仓库自带的 fast-frb-observation-processing skill，将 DATA_PROCESSING_ROOT 持久化为仓库根目录的绝对路径，并在处理观测数据前逐项报告自检结果。
 ```
 
 Codex 使用的 skill 位于：
@@ -439,7 +429,8 @@ python -m after.burst_dashboard \
 ```
 
 生成结果是可本地打开、也可打印为 PDF 的单文件 HTML。图表内嵌，Google Fonts 联网
-加载，并配置本地字体回退。
+加载，并配置本地字体回退。内嵌图需要中文标签时，请安装 Noto Sans SC 等本地 CJK
+字体；Matplotlib 使用系统字体渲染这些图。
 
 ## 数据契约
 
@@ -481,7 +472,7 @@ attrs: time_reso_raw, time_reso, down_time, down_freq,
 }
 ```
 
-明确判定为无 burst 的页面使用空列表记录，而不是缺失复核状态。
+明确判定为无 burst 的页面使用空列表作为已完成的复核记录。
 
 ### 分析 CSV
 
@@ -493,13 +484,14 @@ rm, rm_err, ..., pol_status, pol_error_reason
 ```
 
 成功行使用 `ok` 和空原因；搜索失败则使用 `failed`、保存异常类型/消息，并把科学量
-写为 NaN。因此，失败拟合不会再伪装成测得的零值或裁切时的名义 DM。
+写为 NaN。这样可以明确区分失败拟合、测得的零值和裁切时的名义 DM。
 
 ## 模型与运行结果
 
 AFTER 默认使用 `models/best_model_yolo11n_ema.pth` 进行 burst 检测。比较或更新
 detector 时，可以通过 `--model-path` 指定其他兼容 checkpoint。
-对应的训练和验证流程见 [`training/README.md`](training/README.md)。本地训练数据和
+对应的训练和验证流程见
+[`training/README.zh-CN.md`](training/README.zh-CN.md)。本地训练数据和
 数据准备辅助文件统一放在被忽略的 `training/data/` 中。
 
 仓库内二进制资产使用内容哈希标识：
@@ -522,17 +514,6 @@ detector 时，可以通过 `--model-path` 指定其他兼容 checkpoint。
 ## 许可
 
 AFTER 采用 [MIT License](LICENSE)。
-
-## DRAFTS 与 AFTER
-
-```text
-DRAFTS：暂现源搜索与候选筛选
-    -> 已确认 source / date / beam / TOA / DM
-AFTER：裁切、定标、复核、测量和出表
-```
-
-需要从观测数据中寻找候选时使用 DRAFTS；候选列表已经确定、目标是做 FAST
-定标和物理量分析时使用 AFTER。
 
 ---
 

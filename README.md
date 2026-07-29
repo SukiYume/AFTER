@@ -7,7 +7,7 @@
 From confirmed burst TOAs to calibrated, reviewable FAST FRB measurements
 
 [![AFTER](https://img.shields.io/badge/FAST%20FRB-AFTER-1f6feb)](https://github.com/SukiYume/AFTER)
-[![GitHub Stars](https://img.shields.io/github/stars/SukiYume/AFTER.svg?label=Stars&logo=github)](https://github.com/SukiYume/AFTER/stargazers)
+[![GitHub Stars](https://img.shields.io/github/stars/SukiYume/AFTER.svg?label=Stars&logo=github)](https://github.com/SukiYume/AFTER)
 [![Python](https://img.shields.io/badge/Python-3.10%2B-blue.svg)](https://www.python.org/)
 [![License](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
 [![Codex Skill](https://img.shields.io/badge/Codex%20Skill-included-2ea44f)](skills/fast-frb-observation-processing/SKILL.md)
@@ -112,13 +112,9 @@ available:
 | [`requirements.txt`](requirements.txt) | Python dependencies. |
 | [`requirements-training.txt`](requirements-training.txt) | Additional dependencies for detector training. |
 
-Runtime assets stay at the repository root and are resolved from
-[`after/__init__.py`](after/__init__.py), keeping asset lookup independent of
-the caller's working directory:
-
-- gain calibration: `gain_para.csv`;
-- default noise-calibration table: `highcal_20201014_psr_tny.npz`;
-- default detector checkpoint: `models/best_model_yolo11n_ema.pth`.
+Bundled runtime assets are resolved from
+[`after/__init__.py`](after/__init__.py) relative to the repository, keeping
+asset lookup independent of the caller's working directory.
 
 The two root launchers delegate to the package. Configure single-observation
 constants in `after/calibration.py` or `after/cut_burst_data.py`, then use the
@@ -134,10 +130,6 @@ Install these before cloning AFTER:
 - a 64-bit [Python](https://www.python.org/downloads/) 3.10 or newer with
   `venv` and `pip`;
 - internet access to GitHub and the Python package index during installation.
-
-Install a local CJK font such as Noto Sans SC when dashboards need Chinese
-chart labels. Matplotlib uses system fonts for embedded PNG figures, while
-Google Fonts style the surrounding HTML in the browser.
 
 CPU execution is supported. A compatible GPU build of PyTorch is optional and
 only needed for accelerated detection. Verify the commands available on the
@@ -185,9 +177,6 @@ The complete Git clone already contains the default detector checkpoint,
 noise-calibration reference, and beam-gain table; Git LFS and separate model
 downloads are not required.
 
-Core dependencies include NumPy, SciPy, h5py, Astropy, Matplotlib, pandas,
-Seaborn, Numba, OpenCV, PyTorch, torchvision, and Ultralytics.
-
 ### Validate the installation
 
 ```bash
@@ -213,7 +202,7 @@ AFTER ships with an operating skill for Codex and other repository-aware
 coding agents. Copy the following single instruction into the agent:
 
 ```text
-Install AFTER from https://github.com/SukiYume/AFTER.git on this computer: verify Git and 64-bit Python 3.10+, clone the complete repository, create and activate a virtual environment, install the CPU or hardware-appropriate PyTorch build and the dependencies from requirements.txt, verify the bundled runtime assets, copy skills/fast-frb-observation-processing into the current Codex skills directory (and read its SKILL.md directly for this task), persist DATA_PROCESSING_ROOT as the absolute repository root, run every command under “Validate the installation,” and report each result before processing observation data.
+Install AFTER from https://github.com/SukiYume/AFTER.git for a first-time user. After cloning, follow the README “Installation” and “Validate the installation” sections, install the bundled fast-frb-observation-processing skill, persist DATA_PROCESSING_ROOT as the absolute repository root, and report every validation result before processing observation data.
 ```
 
 For Codex, the bundled skill lives at:
@@ -471,6 +460,8 @@ python -m after.burst_dashboard \
 
 The dashboard is a single HTML file that can be opened locally or printed to
 PDF. Figures are embedded; Google Fonts load online with local font fallbacks.
+Install a local CJK font such as Noto Sans SC when the embedded figures need
+Chinese labels; Matplotlib renders those figures with system fonts.
 
 ## Data contracts
 
@@ -513,8 +504,8 @@ attrs: time_reso_raw, time_reso, down_time, down_freq,
 }
 ```
 
-An intentionally rejected page is represented by an empty burst list rather
-than a missing review record.
+An intentionally rejected page uses an empty burst list as its completed
+review record.
 
 ### Analysis CSV
 
@@ -527,8 +518,8 @@ rm, rm_err, ..., pol_status, pol_error_reason
 
 Successful rows use status `ok` and an empty reason. Failed searches use status
 `failed`, preserve the exception type/message, and store scientific outputs as
-NaN. A failed fit is therefore never indistinguishable from a measured zero or
-the nominal cut DM.
+NaN. This keeps failed fits distinct from a measured zero or the nominal cut
+DM.
 
 ## Models and outputs
 
@@ -560,18 +551,6 @@ earlier results.
 ## License
 
 AFTER is released under the [MIT License](LICENSE).
-
-## DRAFTS and AFTER
-
-```text
-DRAFTS: transient search and candidate selection
-    -> confirmed source / date / beam / TOA / DM
-AFTER: cut, calibrate, review, measure, and report
-```
-
-Use DRAFTS when the task is to find candidates in observation data. Use AFTER
-after the candidate list is known
-and the goal is calibrated physical characterization.
 
 ---
 
