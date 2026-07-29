@@ -108,7 +108,8 @@ Script capability check:
 
 When the user asks to install AFTER on another machine:
 
-1. Verify Git, network access, and 64-bit Python 3.10+ with `venv` and `pip`.
+1. Verify Git, network access, 64-bit Python 3.10+ with `venv` and `pip`, and
+   a local CJK font when dashboards require Chinese chart labels.
 2. Clone the complete public repository from
    `https://github.com/SukiYume/AFTER.git`; do not substitute a script-only
    bundle because the tracked model and calibration assets are required.

@@ -135,6 +135,10 @@ Install these before cloning AFTER:
   `venv` and `pip`;
 - internet access to GitHub and the Python package index during installation.
 
+Install a local CJK font such as Noto Sans SC when dashboards need Chinese
+chart labels. Matplotlib uses system fonts for embedded PNG figures, while
+Google Fonts style the surrounding HTML in the browser.
+
 CPU execution is supported. A compatible GPU build of PyTorch is optional and
 only needed for accelerated detection. Verify the commands available on the
 new system before continuing:

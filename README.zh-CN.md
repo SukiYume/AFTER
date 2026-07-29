@@ -130,6 +130,9 @@ AFTER 可以从已有的最早产物继续，不要求每次都从原始 FITS �
   3.10 或更高版本；
 - 安装期间能够访问 GitHub 和 Python 软件包索引的网络。
 
+生成含中文图表标签的 dashboard 时，还应安装 Noto Sans SC 等本地 CJK 字体。
+Matplotlib 内嵌 PNG 使用系统字体，Google Fonts 用于浏览器中的 HTML。
+
 AFTER 支持 CPU 运行；只有需要加速 detection 时才需要匹配硬件的 GPU 版 PyTorch。
 先确认新系统可以执行：
 
