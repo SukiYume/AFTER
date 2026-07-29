@@ -8,7 +8,7 @@
 
 [![AFTER](https://img.shields.io/badge/FAST%20FRB-AFTER-1f6feb)](https://github.com/SukiYume/AFTER)
 [![GitHub Stars](https://img.shields.io/github/stars/SukiYume/AFTER.svg?label=Stars&logo=github)](https://github.com/SukiYume/AFTER/stargazers)
-[![Python](https://img.shields.io/badge/Python-3.9%2B-blue.svg)](https://www.python.org/)
+[![Python](https://img.shields.io/badge/Python-3.10%2B-blue.svg)](https://www.python.org/)
 [![License](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
 [![Codex Skill](https://img.shields.io/badge/Codex%20Skill-%E5%B7%B2%E5%8C%85%E5%90%AB-2ea44f)](skills/fast-frb-observation-processing/SKILL.md)
 [![Related](https://img.shields.io/badge/Search-DRAFTS-da282a)](https://github.com/SukiYume/DRAFTS)
@@ -121,15 +121,32 @@ AFTER 可以从已有的最早产物继续，不要求每次都从原始 FITS �
 
 ## 安装
 
+### 前置条件
+
+克隆 AFTER 前需要准备：
+
+- [Git](https://git-scm.com/downloads)；
+- 带 `venv` 和 `pip` 的 64 位 [Python](https://www.python.org/downloads/)
+  3.10 或更高版本；
+- 安装期间能够访问 GitHub 和 Python 软件包索引的网络。
+
+AFTER 支持 CPU 运行；只有需要加速 detection 时才需要匹配硬件的 GPU 版 PyTorch。
+先确认新系统可以执行：
+
+```text
+git --version
+python3 --version    # Linux/macOS
+python --version     # Windows
+```
+
 Linux/macOS：
 
 ```bash
 git clone https://github.com/SukiYume/AFTER.git AFTER
 cd AFTER
-python -m venv .venv
+python3 -m venv .venv
 source .venv/bin/activate
 python -m pip install -U pip
-python -m pip install -r requirements.txt
 ```
 
 Windows PowerShell：
@@ -140,13 +157,21 @@ cd AFTER
 python -m venv .venv
 .\.venv\Scripts\Activate.ps1
 python -m pip install -U pip
+```
+
+只使用 CPU 时直接安装全部依赖：
+
+```bash
 python -m pip install -r requirements.txt
 ```
 
-需要 GPU detection 时，应根据目标 CUDA 驱动安装匹配的 `torch` 和
-`torchvision`。AFTER 不绑定特定主机、GPU 型号或驱动版本；应在目标环境验证 import
-和 CUDA tensor 运算，并把实际运行环境随结果保存。`requirements.txt` 有意不锁定
-GPU wheel。
+需要 NVIDIA CUDA 或 AMD ROCm 加速时，先在
+[PyTorch 官方安装页面](https://pytorch.org/get-started/locally/)根据操作系统和计算
+平台生成并执行 `torch`、`torchvision` 安装命令，再执行同一条 requirements 命令。
+`requirements.txt` 中未限定版本的 `torch` 条目会保留已经选好的硬件版本。
+
+完整 Git clone 已包含默认 detector checkpoint、噪声管定标参考和 beam gain 表，
+不需要 Git LFS，也不需要另行下载模型。
 
 核心依赖包括 NumPy、SciPy、h5py、Astropy、Matplotlib、pandas、Seaborn、Numba、
 OpenCV、PyTorch、torchvision 和 Ultralytics。
@@ -154,12 +179,18 @@ OpenCV、PyTorch、torchvision 和 Ultralytics。
 ### 安装后自检
 
 ```bash
+python -c "import numpy, scipy, h5py, astropy, matplotlib, pandas, seaborn, numba, cv2, torch, torchvision, ultralytics; print('dependency imports OK')"
+python -c "import torch; device = 'cuda' if torch.cuda.is_available() else 'cpu'; print(f'torch={torch.__version__}, device={device}'); print(torch.rand(1, device=device))"
+python -c "from after import DEFAULT_GAIN_CSV, DEFAULT_CAL_NPZ, DEFAULT_DETECTOR_MODEL; paths = (DEFAULT_GAIN_CSV, DEFAULT_CAL_NPZ, DEFAULT_DETECTOR_MODEL); assert all(p.is_file() for p in paths), paths; print('runtime assets OK')"
 python -m compileall -q after batch_processing tests calibration.py cut_burst_data.py
 python -c "from calibration import process_one_burst; from cut_burst_data import cut_one_burst; print('compatibility imports OK')"
 python batch_processing/batch_cut_burst_data.py --help
+python batch_processing/batch_cut_selected_long_period.py --help
+python batch_processing/fits_to_h5.py --help
 python batch_processing/batch_calibration.py --help
 python -m after.burst_detect --help
 python -m after.burst_analysis --help
+python -m after.burst_sync_rm --help
 python -m after.burst_dashboard --help
 python -m pytest -q
 ```
@@ -170,7 +201,7 @@ AFTER 自带一份可供 Codex 和其他能够读取仓库的 coding agent 使�
 一整句直接发给 agent：
 
 ```text
-请安装并配置 AFTER 仓库：克隆或打开该仓库，把 skills/fast-frb-observation-processing 安装到当前 agent 的 skills 目录（如果不支持自定义 skill，就直接读取其中的 SKILL.md 作为操作协议），将 DATA_PROCESSING_ROOT 设置为仓库根目录，执行 README 中的安装后自检，并在处理真实观测数据前逐项报告自检结果。
+请在这台电脑上从 https://github.com/SukiYume/AFTER.git 安装 AFTER：确认 Git 和 64 位 Python 3.10+ 可用，克隆完整仓库，创建并激活虚拟环境，安装适合 CPU 或当前硬件的 PyTorch 以及 requirements.txt 中的依赖，检查仓库自带的运行资源，把 skills/fast-frb-observation-processing 复制到当前 Codex 的 skills 目录并在本次任务中直接读取其 SKILL.md，将 DATA_PROCESSING_ROOT 持久化为仓库根目录的绝对路径，执行“安装后自检”中的全部命令并逐项报告结果；完成自检后再处理观测数据。
 ```
 
 Codex 使用的 skill 位于：
@@ -185,7 +216,9 @@ Bash 手动安装：
 mkdir -p "${CODEX_HOME:-$HOME/.codex}/skills"
 cp -R skills/fast-frb-observation-processing \
   "${CODEX_HOME:-$HOME/.codex}/skills/"
-export DATA_PROCESSING_ROOT="$(pwd)"
+export DATA_PROCESSING_ROOT="$(pwd -P)"
+test -f "${CODEX_HOME:-$HOME/.codex}/skills/fast-frb-observation-processing/SKILL.md"
+test -f "${CODEX_HOME:-$HOME/.codex}/skills/fast-frb-observation-processing/agents/openai.yaml"
 ```
 
 Windows PowerShell：
@@ -200,11 +233,20 @@ New-Item -ItemType Directory -Force (Join-Path $codexRoot "skills") | Out-Null
 Copy-Item -Recurse -Force `
   .\skills\fast-frb-observation-processing `
   (Join-Path $codexRoot "skills")
-$env:DATA_PROCESSING_ROOT = (Get-Location).Path
+$afterRepoRoot = (Get-Location).Path
+$env:DATA_PROCESSING_ROOT = $afterRepoRoot
+[Environment]::SetEnvironmentVariable("DATA_PROCESSING_ROOT", $afterRepoRoot, "User")
+Test-Path (Join-Path $codexRoot "skills\fast-frb-observation-processing\SKILL.md")
+Test-Path (Join-Path $codexRoot "skills\fast-frb-observation-processing\agents\openai.yaml")
 ```
 
-如果后续任务也要让 agent 自动定位 AFTER，应把 `DATA_PROCESSING_ROOT` 持久化到 shell
-profile 或系统环境变量。
+Bash 用户可把 `export DATA_PROCESSING_ROOT="/absolute/path/to/AFTER"` 添加到 shell
+profile，使后续会话也能定位仓库。这个变量用于帮助 agent 找到 checkout；AFTER
+代码仍然根据自身源码位置解析随仓库提供的资源。
+
+复制完成后应新建一个 Codex 任务，让安装好的 skill 被自动发现。本次安装任务中，
+agent 应直接读取复制后的 `SKILL.md` 并完成自检。如果需要 Codex 继承刚写入系统的
+`DATA_PROCESSING_ROOT`，还应重启 Codex 应用或 CLI。
 
 ## 快速开始
 

@@ -1,6 +1,6 @@
 ---
 name: fast-frb-observation-processing
-description: "Use when a user asks an agent to install, validate, or run AFTER for FAST FRB post-search processing, including raw FAST FITS with user-provided TOAs, cut H5, calibrated H5, burst label review, detections.json, H5 attrs['bursts'], energy/polarization/DM/RM analysis, results-table export, or observation dashboard summary."
+description: "Use when a user asks an agent to install AFTER from its public repository on a new computer, validate the installation, or run FAST FRB post-search processing, including raw FAST FITS with user-provided TOAs, cut H5, calibrated H5, burst label review, detections.json, H5 attrs['bursts'], energy/polarization/DM/RM analysis, results-table export, or observation dashboard summary."
 ---
 
 # AFTER FAST FRB Observation Processing
@@ -73,6 +73,9 @@ Before any processing command, verify the complete AFTER repository root. Use th
 2. `DATA_PROCESSING_ROOT`, if set.
 3. A path the user gives, such as a cloned AFTER or `data_processing` checkout.
 
+If no checkout exists and installation was requested, clone the complete
+public repository from `https://github.com/SukiYume/AFTER.git`.
+
 Sentinel files:
 
 ```text
@@ -105,16 +108,32 @@ Script capability check:
 
 When the user asks to install AFTER on another machine:
 
-1. Clone or copy the AFTER repository or script bundle.
-2. Install Python dependencies from `requirements.txt`; choose CUDA-specific PyTorch packages for GPU inference when needed.
-3. Copy `skills/fast-frb-observation-processing/` into the Codex skills directory.
-4. Set `DATA_PROCESSING_ROOT` to the complete AFTER repository root when the package is available.
-5. Run README post-install validation: syntax compile, dependency imports in the intended environment, CLI help for true argparse scripts, source/constant checks for constant-configured scripts, and skill validation.
+1. Verify Git, network access, and 64-bit Python 3.10+ with `venv` and `pip`.
+2. Clone the complete public repository from
+   `https://github.com/SukiYume/AFTER.git`; do not substitute a script-only
+   bundle because the tracked model and calibration assets are required.
+3. Create and activate a repository-local virtual environment.
+4. For CPU, install `requirements.txt`. For CUDA or ROCm, install the
+   hardware-appropriate `torch` and `torchvision` build first, then install
+   `requirements.txt`.
+5. Verify `gain_para.csv`, `highcal_20201014_psr_tny.npz`, and
+   `models/best_model_yolo11n_ema.pth`.
+6. Copy `skills/fast-frb-observation-processing/` into the Codex skills
+   directory, verify `SKILL.md` and `agents/openai.yaml`, and read `SKILL.md`
+   directly for the current installation task.
+7. Set and persist `DATA_PROCESSING_ROOT` as the absolute repository root.
+   Explain that this variable is for agent discovery; code assets resolve from
+   the checkout itself.
+8. Run every README post-install validation command and validate the skill
+   structure. Report each result before processing observation data.
+9. Tell the user to start a new Codex task for automatic skill discovery and
+   restart the Codex app or CLI before relying on a newly persisted
+   `DATA_PROCESSING_ROOT`.
 
 One-line user-facing install request:
 
 ```text
-Install and configure the AFTER repository: clone or open it, install skills/fast-frb-observation-processing in your agent's skills directory (or read its SKILL.md directly if custom skills are unsupported), set DATA_PROCESSING_ROOT to the repository root, run the README post-install validation, and report every result before processing observation data.
+Install AFTER from https://github.com/SukiYume/AFTER.git on this computer: verify Git and 64-bit Python 3.10+, clone the complete repository, create and activate a virtual environment, install the CPU or hardware-appropriate PyTorch build and the dependencies from requirements.txt, verify the bundled runtime assets, copy skills/fast-frb-observation-processing into the current Codex skills directory (and read its SKILL.md directly for this task), persist DATA_PROCESSING_ROOT as the absolute repository root, run every command under “Validate the installation,” and report each result before processing observation data.
 ```
 
 Keep the skill folder limited to `SKILL.md` plus `agents/openai.yaml` during installation.
