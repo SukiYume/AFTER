@@ -124,8 +124,7 @@ AFTER 可以从已有的最早产物继续，不要求每次都从原始 FITS �
 Linux/macOS：
 
 ```bash
-: "${AFTER_REPOSITORY_URL:?请设置代码仓库地址}"
-git clone "$AFTER_REPOSITORY_URL" AFTER
+git clone https://github.com/SukiYume/AFTER.git AFTER
 cd AFTER
 python -m venv .venv
 source .venv/bin/activate
@@ -136,8 +135,7 @@ python -m pip install -r requirements.txt
 Windows PowerShell：
 
 ```powershell
-if (-not $env:AFTER_REPOSITORY_URL) { throw "请先设置 AFTER_REPOSITORY_URL" }
-git clone $env:AFTER_REPOSITORY_URL AFTER
+git clone https://github.com/SukiYume/AFTER.git AFTER
 cd AFTER
 python -m venv .venv
 .\.venv\Scripts\Activate.ps1

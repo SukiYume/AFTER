@@ -129,8 +129,7 @@ root command or the equivalent `python -m after.<module>` command.
 Linux/macOS:
 
 ```bash
-: "${AFTER_REPOSITORY_URL:?set the repository URL}"
-git clone "$AFTER_REPOSITORY_URL" AFTER
+git clone https://github.com/SukiYume/AFTER.git AFTER
 cd AFTER
 python -m venv .venv
 source .venv/bin/activate
@@ -141,8 +140,7 @@ python -m pip install -r requirements.txt
 Windows PowerShell:
 
 ```powershell
-if (-not $env:AFTER_REPOSITORY_URL) { throw "Set AFTER_REPOSITORY_URL first" }
-git clone $env:AFTER_REPOSITORY_URL AFTER
+git clone https://github.com/SukiYume/AFTER.git AFTER
 cd AFTER
 python -m venv .venv
 .\.venv\Scripts\Activate.ps1
