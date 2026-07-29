@@ -286,6 +286,58 @@ def parse_search_windows(
     return windows
 
 
+def select_primary_plot_window(
+    windows: list[SearchWindow],
+    rm_grid: np.ndarray,
+) -> SearchWindow:
+    """Choose the widest blind-search window, independent of CLI order.
+
+    Search windows may be supplied in any order and can include narrow
+    diagnostics such as an RM≈0 leakage check.  The primary plot must not let
+    the first such diagnostic replace the full-range blind-search result.
+    Prefer a window covering the entire RM grid; otherwise use the window with
+    the largest overlap with the grid.
+    """
+    if not windows:
+        raise ValueError("At least one search window is required for plotting")
+    grid = np.asarray(rm_grid, dtype=np.float64)
+    if grid.ndim != 1 or grid.size < 2:
+        raise ValueError("RM grid must contain at least two points")
+
+    grid_low = float(grid[0])
+    grid_high = float(grid[-1])
+    tolerance = 0.51 * abs(float(np.median(np.diff(grid))))
+    covering = [
+        window
+        for window in windows
+        if window.low <= grid_low + tolerance
+        and window.high >= grid_high - tolerance
+    ]
+    if covering:
+        return min(
+            covering,
+            key=lambda window: (
+                abs(window.low - grid_low) + abs(window.high - grid_high),
+                window.name,
+            ),
+        )
+
+    def overlap(window: SearchWindow) -> float:
+        return max(
+            0.0,
+            min(window.high, grid_high) - max(window.low, grid_low),
+        )
+
+    return max(
+        windows,
+        key=lambda window: (
+            overlap(window),
+            window.high - window.low,
+            window.name,
+        ),
+    )
+
+
 def discover_h5_files(
     cal_dir: Path,
     file_list: Path | None = None,
@@ -927,77 +979,396 @@ def write_plot(
     windows: list[SearchWindow],
     null_table: pd.DataFrame | None,
     null_maxima: dict[str, np.ndarray] | None,
+    rm_rmsf_fwhm: float,
 ) -> None:
-    fig, axes = plt.subplots(2, 2, figsize=(14, 10))
-    for burst in bursts:
-        axes[0, 0].plot(
-            rm_grid,
-            standardized_curve(individual[burst.component_id]["linear_degree"]),
-            lw=0.8,
-            label=f"{burst.component_id} I-S/N={burst.peak_snr:.1f}",
-        )
-    axes[0, 0].set_title("Individual RM–linear-degree curves")
-    axes[0, 0].set_xlabel(r"RM (rad m$^{-2}$)")
-    axes[0, 0].set_ylabel("Robust z")
-    axes[0, 0].legend(fontsize=7, ncol=2)
-
     colors = {
-        "time_pa_power": "C2",
-        "linear_degree_stack": "C1",
+        "time_pa_power": "#11845B",
+        "linear_degree_stack": "#E76F2E",
     }
-    for method in PRIMARY_METHODS:
-        axes[0, 1].plot(
-            rm_grid,
-            standardized_curve(combined[method]),
-            color=colors[method],
-            label=method,
-        )
-    axes[0, 1].set_title("Requested common-RM methods")
-    axes[0, 1].set_xlabel(r"RM (rad m$^{-2}$)")
-    axes[0, 1].set_ylabel("Robust z")
-    axes[0, 1].legend(fontsize=8)
+    labels = {
+        "time_pa_power": "Time-resolved PA power (primary)",
+        "linear_degree_stack": "Linear-degree stack (validation)",
+    }
+    primary_window = select_primary_plot_window(windows, rm_grid)
+    rm_step = float(np.median(np.diff(rm_grid)))
+    full_width = float(rm_grid[-1] - rm_grid[0])
+    method_z = {
+        method: standardized_curve(combined[method])
+        for method in PRIMARY_METHODS
+    }
+    method_peaks = {
+        method: peak_in_window(rm_grid, combined[method], primary_window)
+        for method in PRIMARY_METHODS
+    }
 
-    primary_window = windows[0]
-    for axis, method in zip(axes[1], PRIMARY_METHODS, strict=True):
-        if null_table is not None and null_maxima is not None:
-            row = null_table[
-                (null_table["method"] == method)
-                & (null_table["window"] == primary_window.name)
-            ].iloc[0]
-            values = null_maxima[f"{method}__{primary_window.name}"]
-            axis.hist(values, bins=40, color=colors[method], alpha=0.65)
-            axis.axvline(
-                float(row["observed_null_grid_peak_statistic"]),
-                color="C3",
-                lw=2,
+    def null_row(method: str) -> pd.Series | None:
+        if null_table is None:
+            return None
+        selected = null_table[
+            (null_table["method"] == method)
+            & (null_table["window"] == primary_window.name)
+        ]
+        return None if selected.empty else selected.iloc[0]
+
+    def p_text(method: str) -> str:
+        row = null_row(method)
+        if row is None:
+            return "null disabled"
+        return (
+            f"p={float(row['empirical_p']):.4g} "
+            f"({int(row['null_exceedances'])}/{int(row['n_null'])} exceed)"
+        )
+
+    match = re.match(r"(?P<source>.+?)-(?P<date>\d{8})-", bursts[0].file_name)
+    observation = (
+        f"{match.group('source')}  {match.group('date')}"
+        if match is not None
+        else Path(bursts[0].file_name).stem
+    )
+    band_min = min(float(burst.freq_mhz.min()) for burst in bursts)
+    band_max = max(float(burst.freq_mhz.max()) for burst in bursts)
+    total_time = sum(burst.n_time for burst in bursts)
+    n_null = (
+        int(null_table["n_null"].iloc[0])
+        if null_table is not None and not null_table.empty
+        else 0
+    )
+
+    with plt.rc_context(
+        {
+            "font.size": 10,
+            "axes.titlesize": 13,
+            "axes.labelsize": 10,
+            "axes.facecolor": "#FAFBFC",
+            "figure.facecolor": "white",
+            "axes.grid": True,
+            "grid.alpha": 0.18,
+            "grid.linewidth": 0.7,
+            "legend.frameon": True,
+            "legend.framealpha": 0.92,
+        }
+    ):
+        fig = plt.figure(figsize=(17, 14), constrained_layout=True)
+        grid = fig.add_gridspec(
+            3,
+            2,
+            height_ratios=(1.15, 1.0, 0.95),
+        )
+        heat_axis = fig.add_subplot(grid[0, :])
+        full_axis = fig.add_subplot(grid[1, 0])
+        zoom_axis = fig.add_subplot(grid[1, 1])
+        null_axes = (
+            fig.add_subplot(grid[2, 0]),
+            fig.add_subplot(grid[2, 1]),
+        )
+
+        fig.suptitle(
+            (
+                f"{observation} — common rotation-measure search\n"
+                f"{len(bursts)} components · {total_time} selected time samples · "
+                f"{band_min:.1f}–{band_max:.1f} MHz · "
+                rf"$\Delta$RM={rm_step:.1f} rad m$^{{-2}}$ · "
+                rf"RMSF FWHM={rm_rmsf_fwhm:.1f} rad m$^{{-2}}$ · "
+                f"{n_null} null trials · channel masks only (pixel mask off)"
+            ),
+            fontsize=17,
+            linespacing=1.45,
+        )
+
+        individual_matrix = np.vstack(
+            [
+                standardized_curve(
+                    individual[burst.component_id]["linear_degree"]
+                )
+                for burst in bursts
+            ]
+        )
+        clipped_low = -2.5
+        clipped_high = 6.0
+        normalization = matplotlib.colors.TwoSlopeNorm(
+            vmin=clipped_low,
+            vcenter=0.0,
+            vmax=clipped_high,
+        )
+        image = heat_axis.imshow(
+            np.clip(individual_matrix, clipped_low, clipped_high),
+            aspect="auto",
+            origin="upper",
+            extent=(
+                float(rm_grid[0]),
+                float(rm_grid[-1]),
+                len(bursts) - 0.5,
+                -0.5,
+            ),
+            cmap="RdBu_r",
+            norm=normalization,
+            interpolation="nearest",
+        )
+        heat_axis.grid(False)
+        heat_axis.set_title(
+            "Per-burst RM–linear-degree response "
+            "(each row standardized independently)"
+        )
+        heat_axis.set_xlabel(r"RM (rad m$^{-2}$)")
+        heat_axis.set_ylabel("Burst component")
+        heat_axis.set_yticks(np.arange(len(bursts)))
+        heat_axis.set_yticklabels(
+            [
+                f"{burst.component_id}   I-S/N={burst.peak_snr:.1f}, "
+                f"$N_t$={burst.n_time}"
+                for burst in bursts
+            ],
+            fontsize=8,
+        )
+        window_mask = (
+            (rm_grid >= primary_window.low)
+            & (rm_grid <= primary_window.high)
+        )
+        window_indices = np.flatnonzero(window_mask)
+        individual_peak_rm = []
+        for row_index, curve in enumerate(individual_matrix):
+            peak_index = window_indices[np.argmax(curve[window_mask])]
+            individual_peak_rm.append(float(rm_grid[peak_index]))
+            heat_axis.scatter(
+                rm_grid[peak_index],
+                row_index,
+                s=18,
+                marker="o",
+                facecolor="none",
+                edgecolor="white",
+                linewidth=0.8,
+                zorder=4,
+            )
+        primary_peak_rm = method_peaks["time_pa_power"][0]
+        heat_axis.axvline(
+            primary_peak_rm,
+            color="#FFE66D",
+            linestyle="--",
+            linewidth=1.6,
+            label=f"Blind-search combined peak: {primary_peak_rm:.0f}",
+        )
+        heat_axis.legend(loc="upper right", fontsize=9)
+        colorbar = fig.colorbar(
+            image,
+            ax=heat_axis,
+            pad=0.01,
+            aspect=35,
+            shrink=0.92,
+        )
+        colorbar.set_label("Per-burst robust z (display clipped at −2.5, 6)")
+
+        for method in PRIMARY_METHODS:
+            peak_rm, _, peak_z = method_peaks[method]
+            full_axis.plot(
+                rm_grid,
+                method_z[method],
+                color=colors[method],
+                linewidth=1.6,
                 label=(
-                    f"RM={float(row['null_grid_peak_rm']):.0f}, "
-                    f"p={float(row['empirical_p']):.4g}"
+                    f"{labels[method]}\n"
+                    f"RM={peak_rm:.0f}, z={peak_z:.2f}, {p_text(method)}"
                 ),
             )
-            axis.set_title(
-                f"Off-pulse maximum null: {method} / "
-                f"{primary_window.name}"
+            full_axis.axvline(
+                peak_rm,
+                color=colors[method],
+                linestyle=":",
+                linewidth=1.1,
+                alpha=0.9,
             )
-            axis.set_xlabel("Maximum search statistic")
-            axis.set_ylabel("Trials")
-            axis.legend(fontsize=8)
-        else:
-            axis.axis("off")
+        if max(float(np.nanmax(curve)) for curve in method_z.values()) > 30:
+            full_axis.set_yscale("symlog", linthresh=3.0, linscale=1.0)
+            full_axis.text(
+                0.99,
+                0.02,
+                "symlog y-scale",
+                transform=full_axis.transAxes,
+                ha="right",
+                va="bottom",
+                fontsize=8,
+                color="0.4",
+            )
+        full_axis.axhline(0.0, color="0.45", linewidth=0.8)
+        full_axis.axhline(
+            3.0, color="0.45", linewidth=0.8, linestyle="--", alpha=0.7
+        )
+        for window in windows:
+            if (window.high - window.low) < 0.98 * full_width:
+                full_axis.axvspan(
+                    window.low,
+                    window.high,
+                    color="#5B8FF9",
+                    alpha=0.06,
+                )
+        full_axis.set_title("Combined search statistics — full RM range")
+        full_axis.set_xlabel(r"RM (rad m$^{-2}$)")
+        full_axis.set_ylabel("Robust z across searched RM")
+        full_axis.legend(loc="best", fontsize=8)
+        peak_separation = abs(
+            method_peaks["time_pa_power"][0]
+            - method_peaks["linear_degree_stack"][0]
+        )
+        full_axis.text(
+            0.02,
+            0.02,
+            (
+                rf"Method peak separation: {peak_separation:.0f} rad m$^{{-2}}$ "
+                f"= {peak_separation / rm_rmsf_fwhm:.2f} RMSF"
+            ),
+            transform=full_axis.transAxes,
+            ha="left",
+            va="bottom",
+            fontsize=8,
+            bbox={
+                "boxstyle": "round,pad=0.3",
+                "facecolor": "white",
+                "edgecolor": "0.8",
+                "alpha": 0.9,
+            },
+        )
+
+        zoom_half_width = max(4.0 * rm_rmsf_fwhm, 10.0 * rm_step)
+        zoom_low = max(float(rm_grid[0]), primary_peak_rm - zoom_half_width)
+        zoom_high = min(float(rm_grid[-1]), primary_peak_rm + zoom_half_width)
+        zoom_mask = (rm_grid >= zoom_low) & (rm_grid <= zoom_high)
+        for method in PRIMARY_METHODS:
+            zoom_axis.plot(
+                rm_grid[zoom_mask],
+                method_z[method][zoom_mask],
+                color=colors[method],
+                linewidth=1.8,
+                label=labels[method],
+            )
+        zoom_axis.axvspan(
+            primary_peak_rm - 0.5 * rm_rmsf_fwhm,
+            primary_peak_rm + 0.5 * rm_rmsf_fwhm,
+            color=colors["time_pa_power"],
+            alpha=0.08,
+            label="One RMSF FWHM",
+        )
+        zoom_axis.axvline(
+            primary_peak_rm,
+            color=colors["time_pa_power"],
+            linestyle="--",
+            linewidth=1.3,
+        )
+        zoom_axis.axhline(0.0, color="0.45", linewidth=0.8)
+        zoom_axis.axhline(
+            3.0, color="0.45", linewidth=0.8, linestyle="--", alpha=0.7
+        )
+        if max(
+            float(np.nanmax(curve[zoom_mask])) for curve in method_z.values()
+        ) > 30:
+            zoom_axis.set_yscale("symlog", linthresh=3.0, linscale=1.0)
+        zoom_axis.set_xlim(zoom_low, zoom_high)
+        zoom_axis.set_title(
+            f"Blind-search peak detail — centered at RM={primary_peak_rm:.0f}"
+        )
+        zoom_axis.set_xlabel(r"RM (rad m$^{-2}$)")
+        zoom_axis.set_ylabel("Robust z across searched RM")
+        zoom_axis.legend(loc="best", fontsize=8)
+
+        for axis, method in zip(null_axes, PRIMARY_METHODS, strict=True):
+            row = null_row(method)
+            if row is None or null_maxima is None:
+                axis.grid(False)
+                axis.text(
+                    0.5,
+                    0.5,
+                    f"{labels[method]}\nEmpirical null disabled (--n-null 0)",
+                    ha="center",
+                    va="center",
+                    transform=axis.transAxes,
+                    fontsize=12,
+                )
+                axis.set_xticks([])
+                axis.set_yticks([])
+                continue
+
+            values = null_maxima[f"{method}__{primary_window.name}"]
+            observed = float(row["observed_null_grid_peak_statistic"])
+            p95 = float(row["null_p95_max_statistic"])
+            p99 = float(row["null_p99_max_statistic"])
+            ratio = observed / max(p99, np.finfo(float).tiny)
+            use_log_x = (
+                observed > 5.0 * p99
+                and np.all(values > 0)
+                and observed > 0
+            )
+            if use_log_x:
+                lower = max(float(np.min(values)) * 0.95, np.finfo(float).tiny)
+                bins = np.geomspace(lower, observed * 1.08, 46)
+                axis.set_xscale("log")
+            else:
+                bins = 42
+            axis.hist(
+                values,
+                bins=bins,
+                color=colors[method],
+                alpha=0.7,
+                edgecolor="white",
+                linewidth=0.35,
+            )
+            axis.axvspan(p95, p99, color="#F3C969", alpha=0.2)
+            axis.axvline(
+                p95,
+                color="#B7791F",
+                linestyle="--",
+                linewidth=1.0,
+                label=f"null p95={p95:.3g}",
+            )
+            axis.axvline(
+                p99,
+                color="#9C4221",
+                linestyle=":",
+                linewidth=1.3,
+                label=f"null p99={p99:.3g}",
+            )
+            axis.axvline(
+                observed,
+                color="#C53030",
+                linewidth=2.0,
+                label=f"observed={observed:.3g} ({ratio:.2f}× p99)",
+            )
+            detected = float(row["empirical_p"]) <= 0.01
+            axis.set_title(
+                f"{labels[method]} — off-pulse maximum null",
+                color="#147D64" if detected else "0.2",
+            )
+            axis.set_xlabel(
+                "Maximum statistic over full blind-search window "
+                f"({primary_window.name!r})"
+                + (" (log scale)" if use_log_x else "")
+            )
+            axis.set_ylabel("Null trials")
+            axis.legend(loc="upper right", fontsize=7)
             axis.text(
-                0.5,
-                0.5,
-                f"{method}\nEmpirical null disabled (--n-null 0)",
-                ha="center",
-                va="center",
+                0.02,
+                0.96,
+                (
+                    f"{'DETECTED' if detected else 'NOT DETECTED'}\n"
+                    f"RM={float(row['null_grid_peak_rm']):.0f} rad m$^{{-2}}$\n"
+                    f"{p_text(method)}"
+                ),
                 transform=axis.transAxes,
+                ha="left",
+                va="top",
+                fontsize=9,
+                color="#147D64" if detected else "0.3",
+                bbox={
+                    "boxstyle": "round,pad=0.35",
+                    "facecolor": "white",
+                    "edgecolor": "#9AE6B4" if detected else "0.8",
+                    "alpha": 0.94,
+                },
             )
 
-    for axis in axes[0]:
-        for window in windows:
-            axis.axvspan(window.low, window.high, color="0.8", alpha=0.08)
-    fig.tight_layout()
-    fig.savefig(output_path, dpi=220)
+        fig.savefig(
+            output_path,
+            dpi=220,
+            bbox_inches="tight",
+            facecolor="white",
+        )
     plt.close(fig)
 
 
@@ -1205,6 +1576,7 @@ def main(argv: list[str] | None = None) -> int:
         windows,
         null_table,
         null_archive,
+        float(rm_grid_info["rmsf_fwhm"]),
     )
 
     script_path = Path(__file__).resolve()

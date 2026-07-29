@@ -147,6 +147,19 @@ def test_sync_cli_has_no_manual_rm_sampling_parameter():
     assert not hasattr(parser_args, "null_rm_step")
 
 
+def test_primary_plot_window_uses_full_blind_search_not_first_window():
+    windows = [
+        burst_sync_rm.SearchWindow("zero", -2000.0, 2000.0),
+        burst_sync_rm.SearchWindow("source", 30000.0, 40000.0),
+        burst_sync_rm.SearchWindow("full", -50000.0, 50000.0),
+    ]
+    rm_grid = np.linspace(-50000.0, 50000.0, 1001)
+
+    selected = burst_sync_rm.select_primary_plot_window(windows, rm_grid)
+
+    assert selected.name == "full"
+
+
 def test_component_ids_expand_collisions_and_distinguish_beams(tmp_path):
     first_path = tmp_path / "FRBTEST-20260718-M01-0211-027549018_cal.h5"
     second_path = tmp_path / "FRBTEST-20260718-M01-0211-027600287_cal.h5"
