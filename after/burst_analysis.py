@@ -641,7 +641,6 @@ if __name__ == '__main__':
 
     # 默认配置
     CAL_DIR           = './cal/'
-    OUTPUT_DIR        = './analysis/'
     RFI_FFT           = False    # True = FFT 法; False = 熵法
     RFI_CHANNEL_SIGMA = 6.0
     RFI_CHANNEL_WINDOW = 31
@@ -657,7 +656,8 @@ if __name__ == '__main__':
 
     parser = argparse.ArgumentParser(description='爆发分析流水线')
     parser.add_argument('--cal-dir',          default=CAL_DIR,          help='定标 h5 目录')
-    parser.add_argument('--output-dir',       default=OUTPUT_DIR,       help='输出目录')
+    parser.add_argument('--output-dir',       default=None,
+                        help='输出目录；默认写到 <cal-dir>/analysis')
     parser.add_argument('--rfi-fft',          default=RFI_FFT,          action='store_true', help='RFI 改用 FFT 法')
     rfi_mode = parser.add_mutually_exclusive_group()
     rfi_mode.add_argument('--rfi-channel-only', dest='rfi_channel_only',
@@ -696,9 +696,10 @@ if __name__ == '__main__':
     parser.add_argument('--target-down-freq', default=None, type=int,
                         help='相对原始数据的目标频率下采样倍率, 必须是 _cal.h5 已存倍率的整数倍')
     args = parser.parse_args()
+    output_dir = args.output_dir or os.path.join(args.cal_dir, 'analysis')
 
     df = analyze_all(
-        args.cal_dir, args.output_dir,
+        args.cal_dir, output_dir,
         rfi_fft=args.rfi_fft,
         rfi_channel_only=args.rfi_channel_only,
         rfi_channel_sigma=args.rfi_channel_sigma,

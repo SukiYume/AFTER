@@ -2,14 +2,16 @@
 爆发检测流水线 (YOLO)
 
 从 calibration.py 输出的 *_cal.h5 中定位爆发。
-支持 auto（全自动）和 semi-auto（模型给初始框、人工确认/修改）两种模式。
+支持 auto（全自动）、semi-auto（模型给初始框、人工确认/修改）和
+manual（纯手工标记）；默认使用 semi-auto。
 
 用法:
-    python -m after.burst_detect                          # 自动模式
-    python -m after.burst_detect --mode semi-auto         # 半自动交互
+    python -m after.burst_detect                          # 半自动交互
+    python -m after.burst_detect --mode auto              # 自动模式
     python -m after.burst_detect --conf 0.3               # 自定义置信度阈值
 
 输出:
+    默认写到 <cal-dir>/detections：
     detections.json  — 每个文件的爆发区域列表
     plots/           — 每个文件的检测诊断图
 """
@@ -874,14 +876,15 @@ if __name__ == '__main__':
     parser.add_argument('--cal-dir',       default='./cal/',                  help='定标 h5 文件目录')
     parser.add_argument('--model-path',    default=str(DEFAULT_DETECTOR_MODEL), help='YOLO 权重文件路径')
     parser.add_argument('--model-name',    default='yolo11n',                          help='YOLO 模型配置名')
-    parser.add_argument('--output-dir',    default='./detections/',           help='输出目录')
+    parser.add_argument('--output-dir',    default=None,
+                        help='输出目录；默认写到 <cal-dir>/detections')
     parser.add_argument('--conf',          default=0.25, type=float,          help='置信度阈值')
     parser.add_argument('--max-horizontal-aspect',
                         default=DEFAULT_MAX_HORIZONTAL_ASPECT, type=float,
                         help='过滤 width/height 超过该值的横向模型框')
-    parser.add_argument('--mode',          default='auto',
+    parser.add_argument('--mode',          default='semi-auto',
                         choices=['auto', 'semi-auto', 'manual'],
-                        help='auto=全自动; semi-auto=YOLO+人工审查; manual=纯手工标记')
+                        help='auto=全自动; semi-auto=YOLO+人工审查（默认）; manual=纯手工标记')
     parser.add_argument('--max-files',     default=None, type=int,
                         help='最多处理多少个文件（调试用）')
     parser.add_argument('--rfi-fft',       action='store_true',
@@ -889,6 +892,8 @@ if __name__ == '__main__':
     args = parser.parse_args()
     if args.max_horizontal_aspect <= 0:
         parser.error('--max-horizontal-aspect 必须大于 0')
+    if args.output_dir is None:
+        args.output_dir = os.path.join(args.cal_dir, 'detections')
 
     if args.mode == 'auto':
         plt.switch_backend('Agg')

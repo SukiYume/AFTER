@@ -361,23 +361,24 @@ mode. Outputs are written below `<cal-root>/<FRB>/<date>/`.
 
 ### 4. Detect and review burst regions
 
-Automatic mode:
+Semi-automatic mode is the default:
 
 ```bash
 python -m after.burst_detect \
-  --mode auto \
   --cal-dir /path/to/after_runs/calibrated \
   --model-path models/best_model_yolo11n_ema.pth \
-  --model-name yolo11n \
-  --output-dir /path/to/after_runs/detections
+  --model-name yolo11n
 ```
 
 Detection writes:
 
 - H5 `attrs["bursts"]`, the label source used by analysis;
-- `detections.json`, the resume and review ledger keyed by paths relative to
-  `--cal-dir`;
+- `<cal-dir>/detections/detections.json` by default, the resume and review
+  ledger keyed by paths relative to `--cal-dir`;
 - `plots/*_det.png`, review images with the accepted regions.
+
+Pass `--mode auto` for non-interactive detection. `--output-dir` overrides the
+default `<cal-dir>/detections` directory.
 
 Automatic and semi-automatic modes infer once from calibrated Stokes I. After
 regions are confirmed, AFTER recomputes the analysis-style Stokes-I/V RFI union
@@ -398,7 +399,6 @@ completed progress and exits without marking the current file complete.
 ```bash
 python -m after.burst_analysis \
   --cal-dir /path/to/after_runs/calibrated \
-  --output-dir /path/to/after_runs/analysis \
   --dm-range 5 \
   --dm-step 0.1 \
   --rm-min -1000 \
@@ -411,7 +411,8 @@ SNR, DM, RM, linear/circular/total polarization, PA, and PAV. The bootstrap
 seed and sample count are stored in each CSV row. Write reruns with different
 DM/RM ranges to separate output directories. `--cal-dir` is scanned
 recursively, so it can point directly at the `<cal-root>` produced by batch
-calibration.
+calibration. Analysis writes to `<cal-dir>/analysis` by default;
+`--output-dir` overrides that location.
 
 Primary outputs:
 
