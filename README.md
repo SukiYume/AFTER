@@ -193,7 +193,6 @@ python -m after.burst_detect --help
 python -m after.burst_analysis --help
 python -m after.burst_sync_rm --help
 python -m after.burst_dashboard --help
-python -m mypy after batch_processing/batch_cut_burst_data.py
 python -m pytest -q
 ```
 
