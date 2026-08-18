@@ -18,7 +18,7 @@ def _gaussian(x, amp, mu, sigma, offset):
 def _fit_gaussian(x, y, snr_min=3.0):
     """对一维轮廓做鲁棒高斯拟合。
 
-    Parameters
+    参数
     ----------
     x : ndarray
         自变量（时间采样索引或频率 MHz）。
@@ -27,7 +27,7 @@ def _fit_gaussian(x, y, snr_min=3.0):
     snr_min : float
         峰值低于 snr_min × MAD 噪声时跳过拟合。
 
-    Returns
+    返回
     -------
     fwhm : float
         高斯 FWHM（与 x 同单位）。拟合失败时返回 NaN。
@@ -133,7 +133,7 @@ def calc_burst_properties(stokes_I, freq, time_reso, file_mjd, burst_region,
                           gain=None, gain_err=None, n_boot=200, rng=None):
     """计算单个爆发的基本物理量。
 
-    Parameters
+    参数
     ----------
     stokes_I : ndarray (nsamp, nchan)
         Stokes I 动态谱（可含 NaN）。
@@ -157,7 +157,7 @@ def calc_burst_properties(stokes_I, freq, time_reso, file_mjd, burst_region,
     n_boot : int
         Bootstrap 重采样次数，用于误差估计。
 
-    Returns
+    返回
     -------
     props : dict
         包含 toa_mjd, flux_peak, flux_err, flux_err_sys, fluence,
@@ -176,8 +176,10 @@ def calc_burst_properties(stokes_I, freq, time_reso, file_mjd, burst_region,
     data = stokes_I.copy()
     data[rfi_mask] = np.nan
 
-    # 时间轮廓: 只在爆发频率范围内平均 (与老代码 cal_energy_burstbw 对齐,
-    # 避免全带宽里 RFI 抹平窄带 burst 导致峰值位置偏移)
+    # 时间轮廓：只在爆发频率范围内做通道平均（与老代码
+    # cal_energy_burstbw 对齐），避免全带宽里的 RFI 或无信号通道稀释窄带爆发。
+    # 动态谱像素若为 Jy，沿频率取平均只是用通道数归一化，因此轮廓每个时间点
+    # 的单位仍为 Jy；这里不是频率积分，所以不会额外带上 MHz。
     if freq_index is not None and np.any(freq_index):
         mean_profile = np.nanmean(data[:, freq_index], axis=1)
     else:
@@ -207,7 +209,10 @@ def calc_burst_properties(stokes_I, freq, time_reso, file_mjd, burst_region,
     # ---- 信噪比 ----
     snr = flux_peak / noise_std if noise_std > 0 else 0.0
 
-    # ---- 积分流量 (Jy·ms) ----
+    # ---- 积分流量（Jy·ms）----
+    # ``nansum`` 只是把各时间采样点的净流量密度相加，结果本身仍以 Jy 表示；
+    # 离散求和要近似时间积分，必须再乘单个采样点宽度 Δt。time_reso 以秒为
+    # 单位，乘 1e3 转成毫秒，因此最终量纲才是 Jy·ms。
     fluence = np.nansum(burst_profile - noise_mean) * (time_reso * 1e3)
 
     # ---- Bootstrap 误差估计 ----
@@ -252,8 +257,9 @@ def calc_burst_properties(stokes_I, freq, time_reso, file_mjd, burst_region,
         fluence_err_sys = 0.0
 
     # ---- 等效宽度 (ms) ----
-    # width_err 公式与老代码 cal_energy_burstbw 对齐, 系统误差与测量误差线性叠加:
-    #   width_err = width * sqrt(((flu_sys+flu_mea)/flu)^2 + ((flux_sys+flux_mea)/flux)^2)
+    # width_err 公式与老代码 cal_energy_burstbw 对齐，系统误差与测量误差线性叠加：
+    # 下式中的变量名与返回字典字段一致。
+    # 计算式：width_err = width * sqrt(((flu_sys+flu_mea)/flu)^2 + ((flux_sys+flux_mea)/flux)^2)
     width = fluence / flux_peak if flux_peak > 0 else 0.0
     if flux_peak > 0 and fluence > 0:
         total_flu_err  = fluence_err + fluence_err_sys

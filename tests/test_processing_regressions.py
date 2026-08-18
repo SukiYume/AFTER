@@ -1,4 +1,6 @@
+import sys
 from pathlib import Path
+from types import SimpleNamespace
 
 import h5py
 import numpy as np
@@ -97,6 +99,40 @@ def test_cut_before_observation_start_keeps_logical_time(monkeypatch, tmp_path):
             reconstructed_toa,
             60000.0 + 2.0 / 86400.0,
         )
+
+
+def test_extract_segment_zero_pads_a_truncated_final_fits(
+        monkeypatch, tmp_path, capsys):
+    first = np.arange(10, dtype=np.uint8).reshape(10, 1, 1)
+    truncated = np.arange(10, 14, dtype=np.uint8).reshape(4, 1, 1)
+
+    def fake_read(path, header=True):
+        values = first if str(path).endswith("0001.fits") else truncated
+        return {"DATA": values}, {
+            "NAXIS2": values.shape[0],
+            "NSBLK": 1,
+            "NPOL": 1,
+            "NCHAN": 1,
+        }
+
+    monkeypatch.setitem(
+        sys.modules,
+        "fitsio",
+        SimpleNamespace(read=fake_read),
+    )
+    segment = cut_burst_data.extract_segment(
+        str(tmp_path),
+        ["M01_0001.fits", "M01_0002.fits"],
+        {"file_nsamp": 10, "npol": 1, "nchan": 1},
+        start_sample=8,
+        total_length=8,
+    )
+
+    np.testing.assert_array_equal(
+        segment[:, 0, 0],
+        np.array([8, 9, 10, 11, 12, 13, 0, 0], dtype=np.uint8),
+    )
+    assert "末尾补零 2 个采样" in capsys.readouterr().out
 
 
 def test_calibration_rewrites_incomplete_output_with_provenance(

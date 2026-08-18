@@ -20,20 +20,20 @@ def z_score_flagger(data, sigma):
 
     MAD 对少量离群点更鲁棒，比标准差合适。
 
-    Parameters
+    参数
     ----------
     data : ndarray
         任意形状的数值数组。
     sigma : float
         偏离中值的 MAD 倍数阈值。
 
-    Returns
+    返回
     -------
     mask : ndarray (与 data 同形) bool
         True = 异常点。
     """
     med = np.nanmedian(data)
-    mad = median_abs_deviation(data, axis=None, nan_policy='omit')
+    mad = median_abs_deviation(np.ravel(data), nan_policy='omit')
     return np.abs(data - med) > sigma * mad
 
 
@@ -45,7 +45,7 @@ def cal_rfi(data, noise_mask, down_time=1, down_freq=1, fft=False):
       2. 下采样：对 (时间, 频率) 做均值下采样以加速并平滑噪声；
       3. 通道级：在噪声区段上用熵或 FFT 方法标记持续污染的通道。
 
-    Parameters
+    参数
     ----------
     data : ndarray (nsamp, nchan)
         Stokes I 或定标后功率谱。函数内部会先复制再处理，不改原数组。
@@ -59,7 +59,7 @@ def cal_rfi(data, noise_mask, down_time=1, down_freq=1, fft=False):
         False（默认）= 熵方法，对 FAST 数据经验最稳。
         True = FFT 最大幅度法，遇到明显周期性 RFI 时可选。
 
-    Returns
+    返回
     -------
     rfi_channel : ndarray (nchan,) bool
         True = 该频率通道被判为 RFI。
@@ -84,7 +84,7 @@ def cal_rfi(data, noise_mask, down_time=1, down_freq=1, fft=False):
     if noise_ds.sum() < 3:
         return np.zeros(nchan, dtype=bool), rfi_pixel
 
-    # 3) 通道级：在噪声段上用熵 or FFT 找持续污染的通道
+    # 3) 通道级：在噪声段上用熵或 FFT 找持续污染的通道
     ds_noise = work_ds[noise_ds]
     if fft:
         mag      = np.max(np.abs(np.fft.fft(ds_noise, axis=0)[1:]), axis=0)
@@ -113,7 +113,7 @@ def robust_channel_mask(data, noise_mask, sigma=6.0,
 
     该函数不会生成或应用逐像素 mask，适合 RM/偏振测量前的通道级清理。
 
-    Parameters
+    参数
     ----------
     data : ndarray (nsamp, nchan) or (npol, nsamp, nchan)
         已按频道减去非 burst 基线的 Stokes 数据。
@@ -126,7 +126,7 @@ def robust_channel_mask(data, noise_mask, sigma=6.0,
     grow : int
         每个坏频道向两侧扩展的频道数。
 
-    Returns
+    返回
     -------
     mask : ndarray (nchan,) bool
         True 表示应在后续分析中整频道屏蔽。

@@ -14,6 +14,9 @@
 
 import os
 import shutil
+from importlib import import_module
+from typing import Any, cast
+
 import numpy as np
 import h5py
 from astropy.io import fits
@@ -25,7 +28,7 @@ from .obs_metadata import write_obs_info_json
 def read_obs_info(data_path, file_list):
     """读取第一个 FITS 文件的观测属性。
 
-    Returns
+    返回
     -------
     info : dict
         time_reso, nsblk, naxis2, file_nsamp (单文件采样点数),
@@ -33,9 +36,13 @@ def read_obs_info(data_path, file_list):
     """
     fpath = os.path.join(data_path, file_list[0])
     with fits.open(fpath) as f:
-        h0   = f[0].header
-        h1   = f[1].header
-        freq = f[1].data['DAT_FREQ'][0, :].astype(np.float64)
+        primary_hdu = cast(Any, f[0])
+        subint_hdu = cast(Any, f[1])
+        if subint_hdu.data is None:
+            raise ValueError(f"FITS SUBINT table has no data: {fpath}")
+        h0 = primary_hdu.header
+        h1 = subint_hdu.header
+        freq = subint_hdu.data['DAT_FREQ'][0, :].astype(np.float64)
 
     return {
         'time_reso'  : h1['TBIN'],
@@ -52,7 +59,7 @@ def read_obs_info(data_path, file_list):
 def calc_dispersion_shift(dm, freq, time_reso):
     """计算每个频率通道的色散延迟采样点数。
 
-    Returns
+    返回
     -------
     shifts : ndarray (nchan,)  每通道需向后偏移的采样点数（最高频率处为 0）。
     max_shift : int            最大偏移量，即消色散所需的额外数据长度 C。
@@ -67,7 +74,7 @@ def extract_segment(data_path, file_list, info, start_sample, total_length):
     start_sample 可以 < 0 或超过观测总长度，超出部分以 0 填充，
     因此信号靠近观测起止时也不会崩。
 
-    Returns
+    返回
     -------
     segment : ndarray (total_length, npol, nchan), uint8
     """
@@ -93,12 +100,15 @@ def extract_segment(data_path, file_list, info, start_sample, total_length):
         fpath = os.path.join(data_path, file_list[fi])
         # 优先用 fitsio（更快），不可用时退回 astropy
         try:
-            import fitsio
+            fitsio = cast(Any, import_module("fitsio"))
             fdata_raw, h = fitsio.read(fpath, header=True)
         except Exception:
             with fits.open(fpath) as f:
-                h         = f[1].header
-                fdata_raw = f[1].data
+                subint_hdu = cast(Any, f[1])
+                if subint_hdu.data is None:
+                    raise ValueError(f"FITS SUBINT table has no data: {fpath}")
+                h = subint_hdu.header
+                fdata_raw = subint_hdu.data
         fdata = fdata_raw['DATA'].reshape(
             h['NAXIS2'] * h['NSBLK'], h['NPOL'], h['NCHAN'])
 
@@ -106,7 +116,19 @@ def extract_segment(data_path, file_list, info, start_sample, total_length):
         local_end   = min(read_end   - fi * file_nsamp, file_nsamp)
         n_copy      = local_end - local_start
 
-        segment[cursor:cursor + n_copy] = fdata[local_start:local_end]
+        # 一场观测的最后一个 PSRFITS 可能比首文件给出的标称 file_nsamp 更短。
+        # 这里仍按标称长度推进整场观测的逻辑时间轴；实际不存在的尾部采样保留为
+        # ``segment`` 初始化时的零填充，避免后续文件的时间位置被错误前移。
+        available_end = min(local_end, fdata.shape[0])
+        available = max(available_end - local_start, 0)
+        if available:
+            segment[cursor:cursor + available] = \
+                fdata[local_start:available_end]
+        if available < n_copy:
+            print(
+                f'  [警告] {file_list[fi]} 截短: 请求 {n_copy} 个采样, '
+                f'实际 {available}; 末尾补零 {n_copy - available} 个采样'
+            )
         cursor += n_copy
 
     return segment
@@ -115,13 +137,13 @@ def extract_segment(data_path, file_list, info, start_sample, total_length):
 def dedisperse(segment, shifts, segment_length):
     """按预计算的 shifts 对每个通道做冷消色散。
 
-    Parameters
+    参数
     ----------
     segment : ndarray (A + C, npol, nchan)
     shifts  : ndarray (nchan,)
     segment_length : int    消色散后保留的采样点数 A
 
-    Returns
+    返回
     -------
     out : ndarray (segment_length, npol, nchan)
     """

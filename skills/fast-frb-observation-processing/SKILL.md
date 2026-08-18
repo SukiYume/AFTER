@@ -333,9 +333,16 @@ Common-RM stacking from multiple calibrated bursts:
   for a common RM, run `python -m after.burst_sync_rm` on the calibrated-H5
   directory. It must not require an existing `burst_results.csv`.
 - The script treats every accepted region in H5 `attrs["bursts"]` as one
-  component, selects strong time samples from Stokes I alone, and uses the
-  union of stored and recalculated channel-level RFI masks. Do not apply a
-  time-frequency pixel mask.
+  component and uses the union of stored and recalculated channel-level RFI
+  masks. Do not apply a time-frequency pixel mask. Form absolute-S/N candidate
+  time samples from Stokes I alone, rank candidates jointly across all
+  components, and retain the prefix that maximizes
+  `sum(I_sample_S/N**2) / sqrt(n_selected)` without inspecting Q, U, or RM
+  curves. The synchronization unit is a selected time sample: the optimized
+  prefix may contain several components or only one exceptionally bright
+  component. Do not reject or relabel a result merely because one component
+  supplies all retained samples; `both_methods` refers to the two RM
+  statistics, not to a minimum number of contributing bursts.
 - Keep both requested PA-independent products: the per-time-sample normalized
   Faraday-power sum (`time_pa_power`) and the fixed-weight stack of robustly
   standardized per-burst RM-versus-linear-degree curves
@@ -359,9 +366,12 @@ Verify:
 - Report row count, SNR range, DM range, RM range, and rows with NaN or non-significant RM.
 - Spot-check at least one DM/RM/polarization plot when possible.
 - For `after.burst_sync_rm`, verify `burst_sync_rm_summary.csv`,
-  `selected_bursts.csv`, `burst_sync_rm_curves.npz`, `run_manifest.json`, and
-  `burst_sync_rm.png`; compare both retained methods before interpreting a
-  peak.
+  `selected_bursts.csv`, `time_sample_selection.csv`,
+  `leave_one_burst_out.csv`, `burst_sync_rm_curves.npz`, `run_manifest.json`,
+  and `burst_sync_rm.png`; compare both retained methods. Interpret
+  leave-one-out stability when at least two components remain; an empty
+  leave-one-out table is expected when all selected samples come from one
+  component.
 
 ## 9. Build Observation Dashboard or Summary
 

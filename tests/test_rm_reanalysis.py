@@ -56,9 +56,9 @@ def test_select_strong_time_samples_keeps_only_main_peak_samples():
 def test_analyze_pol_uses_noncontiguous_boolean_time_gate(monkeypatch, tmp_path):
     captured = {}
 
-    def fake_rm_synthesis(I, Q, U, wave, **kwargs):
+    def fake_rm_synthesis(stokes_i, Q, U, wave, **kwargs):
         del Q, U, wave, kwargs
-        captured['samples'] = I[:, 0].copy()
+        captured['samples'] = stokes_i[:, 0].copy()
         return (
             np.array([-1.0, 0.0, 1.0]),
             np.array([0.0, 1.0, 0.0]),
@@ -80,9 +80,9 @@ def test_analyze_pol_uses_noncontiguous_boolean_time_gate(monkeypatch, tmp_path)
     monkeypatch.setattr(burst_pol, 'plot_rm_synthesis', lambda *args, **kwargs: None)
     monkeypatch.setattr(burst_pol, 'correct_rm', lambda Q, U, freq, rm: (Q, U))
 
-    def fake_pa(I, Q, U, V, burst_mask, freq_mask, noise_mask):
+    def fake_pa(stokes_i, Q, U, V, burst_mask, freq_mask, noise_mask):
         del Q, U, V, freq_mask, noise_mask
-        n = I.shape[0]
+        n = stokes_i.shape[0]
         return (np.arange(n, dtype=float), np.full(n, np.nan),
                 np.full(n, np.nan), np.ones(n), np.ones(n),
                 np.zeros(n), 1.0)

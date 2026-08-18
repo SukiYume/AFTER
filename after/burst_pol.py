@@ -5,15 +5,38 @@
 线偏振 / 圆偏振分数计算，以及 analyze_pol 一体化编排。
 """
 
+# Stokes I 是领域标准符号，保留其大写单字母写法。
+# ruff: noqa: E741
+
 import os
 import numpy as np
 import matplotlib
 matplotlib.use('Agg')
 import matplotlib.pyplot as plt
 from matplotlib import gridspec
-import seaborn as sns  # noqa: F401 - registers seaborn colormaps such as mako
-from numba import njit, prange
-from astropy import constants as const
+import seaborn as sns  # noqa: F401  # 导入后会向 Matplotlib 注册 ``mako`` 等颜色映射
+
+try:
+    from numba import njit, prange
+except ImportError:
+    # RM 网格构建和联合 RM 流程本身不依赖 Numba。若当前 Numba 与 NumPy
+    # 暂时不兼容，仍允许模块正常导入；此时合成内核按普通 Python/NumPy
+    # 执行，计算公式不变，只是速度可能较慢。
+    def njit(*decorator_args, **_decorator_kwargs):
+        """在 Numba 不可用时提供不改变函数的 ``njit`` 兼容装饰器。"""
+        if len(decorator_args) == 1 and callable(decorator_args[0]):
+            return decorator_args[0]
+
+        def decorator(function):
+            """原样返回被装饰函数，使带参数的 ``@njit(...)`` 写法仍可运行。"""
+            return function
+
+        return decorator
+
+    prange = range
+
+
+C_M_S = 299_792_458.0
 
 
 # ============================================================
@@ -29,15 +52,17 @@ def _lambda2_span(lambda2_sets):
     if isinstance(lambda2_sets, np.ndarray):
         arrays = [lambda2_sets]
     else:
-        values = list(lambda2_sets)
-        if values and np.isscalar(values[0]):
-            arrays = [np.asarray(values)]
+        raw_values = list(lambda2_sets)
+        if raw_values and np.isscalar(raw_values[0]):
+            arrays = [np.asarray(raw_values)]
         else:
-            arrays = values
+            # 入口既接受单个一维数组，也接受多组 array-like。这里先统一成
+            # ndarray 列表，避免后续循环同时承担容器类型分支。
+            arrays = [np.asarray(value) for value in raw_values]
 
     spans = []
-    for values in arrays:
-        finite = np.asarray(values, dtype=np.float64)
+    for array in arrays:
+        finite = np.asarray(array, dtype=np.float64)
         finite = finite[np.isfinite(finite)]
         if finite.size >= 2:
             span = float(np.max(finite) - np.min(finite))
@@ -56,7 +81,7 @@ def build_automatic_rm_grid(rm_min, rm_max, lambda2_sets,
     ``oversample`` 个网格间隔。多组频率覆盖（例如多个 burst）取最大的
     Δλ²，也就是最窄的 RMSF，避免联合搜索欠采样。
 
-    Parameters
+    参数
     ----------
     rm_min, rm_max : float
         RM 搜索范围 (rad/m²)。
@@ -65,7 +90,7 @@ def build_automatic_rm_grid(rm_min, rm_max, lambda2_sets,
     oversample : float
         RMSF 每个 FWHM 的目标采样间隔数；这是内部算法参数，不暴露为 CLI。
 
-    Returns
+    返回
     -------
     rm_grid : ndarray
         包含两个范围端点的自动 RM 网格。
@@ -157,7 +182,7 @@ def find_rm(rm_list, linear_pol, snr, wave=None, significance_threshold=5.0):
 
     当峰值显著性低于阈值时，返回的 rm_err 为 NaN，提示结果不可靠。
 
-    Parameters
+    参数
     ----------
     rm_list : ndarray
         试验 RM 值。
@@ -171,7 +196,7 @@ def find_rm(rm_list, linear_pol, snr, wave=None, significance_threshold=5.0):
     significance_threshold : float
         峰值显著性阈值（倍噪声），低于此值标记为不可靠。
 
-    Returns
+    返回
     -------
     rm_best : float
         最优 RM (rad/m²)。
@@ -248,17 +273,17 @@ def _measure_fwhm(rm_list, linear_pol):
 def correct_rm(Q, U, freq, rm):
     """按给定 RM 对 Q, U 做法拉第反旋转。
 
-    Parameters
+    参数
     ----------
     Q, U : ndarray (nsamp, nchan)
     freq : ndarray (nchan,) MHz
     rm : float (rad/m²)
 
-    Returns
+    返回
     -------
     Q_corr, U_corr : ndarray (nsamp, nchan)
     """
-    wave = const.c.value / (freq * 1e6)   # Hz → 波长 (m)
+    wave = C_M_S / (freq * 1e6)   # Hz → 波长 (m)
     PA = 2 * rm * wave ** 2
     Q_C =  np.cos(PA) * Q + np.sin(PA) * U
     U_C = -np.sin(PA) * Q + np.cos(PA) * U
@@ -272,7 +297,7 @@ def correct_rm(Q, U, freq, rm):
 def calc_pol_snr(I_burst, freq, noise_I):
     """计算偏振信噪比、噪声 rms、强度加权中心频率。
 
-    Parameters
+    参数
     ----------
     I_burst : ndarray (nsamp_burst, nchan)
         爆发区域的 Stokes I。
@@ -281,7 +306,7 @@ def calc_pol_snr(I_burst, freq, noise_I):
     noise_I : ndarray (nsamp_noise, nchan)
         噪声区域的 Stokes I。
 
-    Returns
+    返回
     -------
     rms : float
         噪声区域频率平均轮廓的标准差。
@@ -293,7 +318,7 @@ def calc_pol_snr(I_burst, freq, noise_I):
     # 噪声 rms（保护空数组）
     if noise_I.size > 0 and noise_I.shape[0] > 1:
         noise_profile = np.nanmean(noise_I, axis=1)
-        rms = np.nanstd(noise_profile)
+        rms = float(np.nanstd(noise_profile))
     else:
         rms = 0.0
 
@@ -329,7 +354,7 @@ def calc_pa_profile(I, Q, U, V, burst_mask, freq_mask, noise_mask):
     PA = 0.5 * arctan2(U, Q)，误差通过 Q/U 噪声传播计算。
     线偏振 L = sqrt(Q² + U²)，做 Wardle & Kronberg 去偏修正（阈值 1.57σ）。
 
-    Parameters
+    参数
     ----------
     I, Q, U, V : ndarray (nsamp, nchan)
         RM 校正后的 Stokes 参量。
@@ -340,7 +365,7 @@ def calc_pa_profile(I, Q, U, V, burst_mask, freq_mask, noise_mask):
     noise_mask : ndarray (nsamp,) bool
         True = 噪声采样点。
 
-    Returns
+    返回
     -------
     PAT : ndarray (nsamp,)
         时间索引。
@@ -444,7 +469,7 @@ def calc_pa_profile(I, Q, U, V, burst_mask, freq_mask, noise_mask):
 def calc_pol_fractions(profile_I, profile_L, profile_V, burst_mask, rms):
     """计算爆发区域的线偏振和圆偏振百分比。
 
-    Parameters
+    参数
     ----------
     profile_I, profile_L, profile_V : ndarray (nsamp,)
         归一化后的 Stokes 轮廓。
@@ -453,7 +478,7 @@ def calc_pol_fractions(profile_I, profile_L, profile_V, burst_mask, rms):
     rms : float
         归一化后的噪声 rms。
 
-    Returns
+    返回
     -------
     linear_frac, linear_err : float
         线偏振分数及误差 (%)。
@@ -567,7 +592,7 @@ def analyze_pol(I, Q, U, V, freq, time_reso, burst_mask, freq_index, noise_mask,
 
     RM 搜索范围默认对称 ±50000 rad/m² — 部分源 RM 为负, 非对称默认会漏掉.
 
-    Parameters
+    参数
     ----------
     I, Q, U, V : ndarray (nsamp, nchan)
         已减基线、已屏蔽 RFI(置 NaN) 的 Stokes 参量。
@@ -580,7 +605,7 @@ def analyze_pol(I, Q, U, V, freq, time_reso, burst_mask, freq_index, noise_mask,
     burst_idx : int          爆发编号, 用于命名
     rm_min, rm_max           RM 搜索范围；步长由有效 λ² 覆盖自动计算
 
-    Returns
+    返回
     -------
     scalars : dict
         CSV 一行用的标量: rm, rm_err, rm_significance, linear_frac,
@@ -589,7 +614,7 @@ def analyze_pol(I, Q, U, V, freq, time_reso, burst_mask, freq_index, noise_mask,
         供跨爆发合并 PDF 的轮廓数组: PAT, PAV, PAE, profile_I,
         profile_L, profile_V (都是 nsamp 长度, 爆发窗口外为 NaN)。
     """
-    wave = const.c.value / (freq * 1e6)   # 波长 (m)
+    wave = C_M_S / (freq * 1e6)   # 波长 (m)
 
     # 爆发强采样点 × 有效通道: 干净数据, NaN → 0 送入 numba。
     # burst_mask 可以是不连续的布尔门（例如多峰爆发中只保留超过半峰高的
@@ -609,8 +634,8 @@ def analyze_pol(I, Q, U, V, freq, time_reso, burst_mask, freq_index, noise_mask,
         rm_min=rm_min, rm_max=rm_max)
     print(
         f'    自动 RM 网格: {rm_grid_info["n_rm"]} 点, '
-        f'步长={rm_grid_info["rm_step"]:.3f} rad/m², '
-        f'RMSF FWHM={rm_grid_info["rmsf_fwhm"]:.3f} rad/m²')
+        f'步长={rm_grid_info["rm_step"]:.3f} rad/m^2, '
+        f'RMSF FWHM={rm_grid_info["rmsf_fwhm"]:.3f} rad/m^2')
 
     # 偏振 SNR / 中心频率
     noise_I = np.nan_to_num(I[noise_mask][:, freq_index], nan=0.0)

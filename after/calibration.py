@@ -29,9 +29,13 @@ RFI; rfi_mask 与 rfi_channel 作为辅助信息一并保存。下游 burst_anal
 直接用 time_reso, 不再把 down_time 乘进去。
 """
 
+# Stokes I 是领域标准符号，保留其大写单字母写法。
+# ruff: noqa: E741
+
 import os
 import re
 from collections import defaultdict
+from typing import Any, cast
 import numpy as np
 import h5py
 import matplotlib
@@ -93,14 +97,14 @@ def calibrate_to_iquv(data, noise_cal, t_cal, gain, cal_threshold=0.05):
     sqrt(t_cal[0]*t_cal[1])/(2*gain) 作为等效尺度。与 processing_old 的
     `burst_data * intensity_cal / gain * t_cal` 再按偏振平均一致。
 
-    Parameters
+    参数
     ----------
     data      : (nsamp, npol, nchan) uint8 或浮点
     noise_cal : (npol, nchan)
     t_cal     : (2, nchan)
     gain      : 标量或 (nchan,)
 
-    Returns
+    返回
     -------
     iquv : (4, nsamp, nchan) float32, 单位 Jy
     """
@@ -162,13 +166,20 @@ def process_one_burst(h5_input_path, output_dir, noise_cal, t_cal,
         print(f'  [重写] {out_h5} 文件不完整')
 
     with h5py.File(h5_input_path, 'r') as f:
-        raw_data  = f['data'][:]                 # (nsamp, npol, nchan)
-        freq      = f['freq'][:]
-        attrs     = dict(f.attrs)
+        data_dataset = f['data']
+        freq_dataset = f['freq']
+        if not isinstance(data_dataset, h5py.Dataset):
+            raise TypeError(f"H5 'data' is not a dataset: {h5_input_path}")
+        if not isinstance(freq_dataset, h5py.Dataset):
+            raise TypeError(f"H5 'freq' is not a dataset: {h5_input_path}")
+        # 轴顺序: (时间, 偏振, 频率)
+        raw_data = np.asarray(data_dataset[...])
+        freq = np.asarray(freq_dataset[...])
+        attrs = cast(dict[str, Any], dict(f.attrs))
 
-    file_mjd      = attrs['file_mjd']
-    time_reso_raw = attrs['time_reso']
-    nchan_raw     = attrs['nchan']
+    file_mjd      = float(np.asarray(attrs['file_mjd']).item())
+    time_reso_raw = float(np.asarray(attrs['time_reso']).item())
+    nchan_raw     = int(np.asarray(attrs['nchan']).item())
 
     # 画图倍率: 频率 / 时间分别向 PLOT_TARGET_NCHAN / PLOT_TARGET_TIME_RESO 看齐,
     # 并把 plot 对齐到 save 的整数倍 (extra = plot // save 反推).
@@ -241,7 +252,12 @@ def process_one_burst(h5_input_path, output_dir, noise_cal, t_cal,
     vmin, vmax = np.nanpercentile(plot_I, [5, 95])
     ax1.imshow(
         plot_I.T, aspect='auto', origin='lower', cmap='mako', vmin=vmin, vmax=vmax,
-        extent=[0, nsamp_plot * time_reso_eff * 1e3, plot_freq[0], plot_freq[-1]]
+        extent=(
+            0.0,
+            float(nsamp_plot * time_reso_eff * 1e3),
+            float(plot_freq[0]),
+            float(plot_freq[-1]),
+        )
     )
     ax1.set_xlabel('Time (ms)')
     ax1.set_ylabel('Frequency (MHz)')
@@ -338,7 +354,7 @@ if __name__ == '__main__':
                 f'不能定标 {len(h5_list)} 个 burst')
 
         with fits.open(cal_fits_path) as f:
-            nchan = f[1].header['NCHAN']
+            nchan = int(cast(Any, f[1]).header['NCHAN'])
 
         noise_cal = fold_noise_cal(cal_fits_path, diagnostic_dir=OUTPUT_DIR)
         t_cal     = load_t_cal(CAL_NPZ, beam, nchan)

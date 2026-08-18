@@ -15,7 +15,7 @@ PROJECT_DIR = SCRIPT_DIR.parent
 if str(PROJECT_DIR) not in sys.path:
     sys.path.insert(0, str(PROJECT_DIR))
 
-from after.cut_burst_data import (
+from after.cut_burst_data import (  # noqa: E402  # 先把仓库根目录加入 sys.path
     calc_dispersion_shift,
     cut_one_burst,
     read_obs_info,
@@ -57,12 +57,22 @@ def find_file_list(data_path: Path, beam: int):
         for name in os.listdir(data_path)
         if pattern in name
         and name.endswith(".fits")
+        and "_cal" not in name.lower()
         and all(x not in name for x in ["_F_", "_N_", "_W_"])
     )
 
 
 def run_group(args):
-    key, rows, output_root, save_frb_name, segment_length, workers, overwrite = args
+    (
+        key,
+        rows,
+        output_root,
+        save_frb_name,
+        segment_length,
+        workers,
+        overwrite,
+        copy_first_fits,
+    ) = args
     base, project, raw_name, date, beam, dm = key
     data_path = Path(f"/{base}/{project}/{raw_name}/{date}/")
     save_path = Path(output_root) / date
@@ -75,9 +85,10 @@ def run_group(args):
         raise FileNotFoundError(f"No M{beam:02d} FITS under {data_path}")
 
     save_path.mkdir(parents=True, exist_ok=True)
-    cal_dst = save_path / file_list[0]
-    if overwrite or not cal_dst.exists():
-        shutil.copy2(data_path / file_list[0], cal_dst)
+    if copy_first_fits:
+        cal_dst = save_path / file_list[0]
+        if overwrite or not cal_dst.exists():
+            shutil.copy2(data_path / file_list[0], cal_dst)
 
     if overwrite:
         for path in save_path.glob(f"{save_frb_name}-{date}-M{beam:02d}-*.h5"):
@@ -125,6 +136,14 @@ def parse_args():
     parser.add_argument("--segment-length", type=int, default=DEFAULT_SEGMENT_LENGTH)
     parser.add_argument("--workers", type=int, default=8)
     parser.add_argument("--overwrite", action="store_true")
+    parser.add_argument(
+        "--no-copy-first-fits",
+        action="store_true",
+        help=(
+            "Do not copy the first science FITS into each output directory. "
+            "Use this when calibration is supplied from the original raw tree."
+        ),
+    )
     return parser.parse_args()
 
 
@@ -143,7 +162,16 @@ def main():
 
     print(f"Loaded {len(rows)} rows in {len(grouped)} data groups")
     group_args = [
-        (key, group_rows, args.output_root, save_frb_name, args.segment_length, args.workers, args.overwrite)
+        (
+            key,
+            group_rows,
+            args.output_root,
+            save_frb_name,
+            args.segment_length,
+            args.workers,
+            args.overwrite,
+            not args.no_copy_first_fits,
+        )
         for key, group_rows in sorted(grouped.items(), key=lambda item: item[0])
     ]
     results = [run_group(group_arg) for group_arg in group_args]

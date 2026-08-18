@@ -6,6 +6,9 @@ DM 精化搜索 — 基于相干功率谱方法。
 在 ±dm_range 范围内搜索最优 DM。另外提供 analyze_dm 一体化编排。
 """
 
+# Stokes I 是领域标准符号，保留其大写单字母写法。
+# ruff: noqa: E741
+
 import os
 import numpy as np
 from numpy.fft import fft
@@ -22,7 +25,7 @@ import matplotlib.pyplot as plt
 def dedisperse_waterfall(wfall, dm, freq, dt, ref_freq='top'):
     """对 waterfall 做消色散（roll 法）。
 
-    Parameters
+    参数
     ----------
     wfall : ndarray (nchan, nsamp)
         频率—时间矩阵。
@@ -35,7 +38,7 @@ def dedisperse_waterfall(wfall, dm, freq, dt, ref_freq='top'):
     ref_freq : str
         参考频率位置: 'top'、'center' 或 'bottom'。
 
-    Returns
+    返回
     -------
     dedisp : ndarray (nchan, nsamp)
     """
@@ -68,11 +71,11 @@ def coherent_power_spectrum(waterfall):
     对每个频率通道做 FFT，除以幅值仅保留相位信息，
     再对频率求和取模平方，得到相干功率谱。
 
-    Parameters
+    参数
     ----------
     waterfall : ndarray (nchan, nsamp)
 
-    Returns
+    返回
     -------
     power_spectrum : ndarray (nsamp//2,)
     """
@@ -109,7 +112,7 @@ def _get_dm_curve(power_spectra, dpower_spectra, nchan):
     通过自适应截断频率和方差最小化来确定最优的涨落频率范围，
     然后对加权功率求和得到每个试验 DM 的信噪比。
 
-    Parameters
+    参数
     ----------
     power_spectra : ndarray (nbin, n_dm)
         每列是一个试验 DM 对应的相干功率谱。
@@ -118,7 +121,7 @@ def _get_dm_curve(power_spectra, dpower_spectra, nchan):
     nchan : int
         频率通道数。
 
-    Returns
+    返回
     -------
     dm_curve : ndarray (n_dm,)
         加权功率曲线。
@@ -127,8 +130,8 @@ def _get_dm_curve(power_spectra, dpower_spectra, nchan):
     snr_curve : ndarray (n_dm,)
         信噪比曲线。
     """
-    n = power_spectra.shape[0]    # nbin
-    m = power_spectra.shape[1]    # n_dm
+    n = power_spectra.shape[0]    # 傅里叶频率分箱数
+    m = power_spectra.shape[1]    # 待搜索的 DM 网格点数
 
     _, Y = np.meshgrid(np.arange(m), np.arange(n))
     num_el = (n - Y).astype(float)
@@ -187,7 +190,7 @@ def _get_dm_curve(power_spectra, dpower_spectra, nchan):
 def poly_max(x, y, err, w=None):
     """对 DM 曲线做多项式拟合并寻找极值。
 
-    Parameters
+    参数
     ----------
     x, y : ndarray
         DM 值和对应的 SNR 曲线。
@@ -196,7 +199,7 @@ def poly_max(x, y, err, w=None):
     w : ndarray or None
         拟合权重。
 
-    Returns
+    返回
     -------
     best_x : float
         极值对应的 DM。
@@ -245,18 +248,26 @@ def poly_max(x, y, err, w=None):
 
 
 def _get_window(profile):
-    """ACF windowing, copied from processing_old/DM_phase.py."""
+    """用轮廓自相关函数估计 DM 曲线拟合所需的时间窗口。
+
+    先去除轮廓的线性趋势，再计算同长度自相关；相邻负值区间的最大间隔
+    被用作窗口宽度。该算法沿用 ``processing_old/DM_phase.py``，以保证新旧
+    流程对同一数据给出可比结果。
+    """
     smooth_profile = scipy.signal.detrend(profile)
     autocorrelation = np.correlate(smooth_profile, smooth_profile, 'same')
-    window = np.max(np.diff(np.where(autocorrelation < 0)))
+    negative_indices = np.flatnonzero(autocorrelation < 0)
+    window = np.max(np.diff(negative_indices))
     return window
 
 
 def _check_window(profile, window):
     """复刻旧代码的拟合窗口检查。"""
     convolved = np.convolve(1.0 * profile, 1.0 * np.ones(int(window)), 'same')
-    peak_value = np.mean(np.where(convolved == max(convolved)))
-    peak = np.where(profile == np.max(profile))
+    peak_value = float(
+        np.mean(np.flatnonzero(convolved == np.max(convolved)))
+    )
+    peak = int(np.argmax(profile))
 
     if (peak_value - peak) ** 2 > window ** 2:
         window += np.abs(peak_value - peak) / 2
@@ -351,7 +362,7 @@ def dm_phase_search(stokes_I_2d, freq, time_reso, dm_zero,
     以 dm_zero 为零点做差分消色散，在 ±dm_range 内扫描，
     通过相干功率谱 + 多项式拟合确定最优 DM。
 
-    Parameters
+    参数
     ----------
     stokes_I_2d : ndarray (nsamp, nchan)
         已在 dm_zero 处消色散的 Stokes I。
@@ -368,7 +379,7 @@ def dm_phase_search(stokes_I_2d, freq, time_reso, dm_zero,
     snr_threshold : float
         低于此 SNR 的试验 DM 在拟合时被压制。
 
-    Returns
+    返回
     -------
     dm_best : float
         最优 DM (绝对值)。
@@ -422,6 +433,8 @@ def dm_phase_search(stokes_I_2d, freq, time_reso, dm_zero,
         nchan, dm_list, dm_curve=dm_curve, weight=w,
         dstd=dstd, SN=snr_peak)
 
+    if dm_snr is None:
+        raise RuntimeError("DM calculation did not return an S/N value")
     return dm_best, dm_err, float(dm_snr), dm_list, dm_curve_out
 
 
@@ -455,7 +468,7 @@ def analyze_dm(stokes_I, freq, time_reso, dm_zero, burst_region,
     提取 burst 区间 + padding 的 Stokes I 片段交给 dm_phase_search。
     搜索失败时返回 NaN 和显式失败状态，避免把名义 DM 伪装成测量结果。
 
-    Parameters
+    参数
     ----------
     stokes_I : ndarray (nsamp, nchan)
         已减基线、已屏蔽 RFI(NaN) 的 Stokes I。
@@ -466,7 +479,7 @@ def analyze_dm(stokes_I, freq, time_reso, dm_zero, burst_region,
     output_dir : str         图保存目录
     burst_idx : int          爆发编号(用于命名)
 
-    Returns
+    返回
     -------
     dm : dict
         dm, dm_err, dm_status, dm_error_reason。失败时测量值为 NaN。

@@ -11,3 +11,4 @@ torch
 torchvision
 ultralytics
 pytest
+mypy

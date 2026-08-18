@@ -19,7 +19,7 @@ REPOSITORY_ROOT = Path(__file__).resolve().parents[1]
 if str(REPOSITORY_ROOT) not in sys.path:
     sys.path.insert(0, str(REPOSITORY_ROOT))
 
-from after import burst_dashboard as bd
+from after import burst_dashboard as bd  # noqa: E402
 
 
 def _make_csv(path, n=40, reliable_rm=True, seed=1):

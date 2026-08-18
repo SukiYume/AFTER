@@ -185,6 +185,7 @@ python -m after.burst_detect --help
 python -m after.burst_analysis --help
 python -m after.burst_sync_rm --help
 python -m after.burst_dashboard --help
+python -m mypy after batch_processing/batch_cut_burst_data.py
 python -m pytest -q
 ```
 
@@ -407,10 +408,18 @@ python -m after.burst_sync_rm \
 
 `after.burst_sync_rm` 同时输出逐时间采样 PA 无关的主统计量
 `time_pa_power`，以及把每个 burst 的 RM–Linear-Degree 曲线稳健标准化后
-按固定权重合并的 `linear_degree_stack`。脚本直接读取 `attrs["bursts"]`，
-只根据 Stokes I 选最强时间采样，并使用所有通道级 RFI mask 的并集；不会
-应用时间–频率 pixel mask。off-pulse 检验保持每个 burst 的时间采样数和
-通道 mask 不变，并校正每个预先声明 RM 窗口内的 look-elsewhere effect。
+按固定权重合并的 `linear_degree_stack`。脚本直接读取 `attrs["bursts"]`
+并使用所有通道级 RFI mask 的并集；不会应用时间–频率 pixel mask。先只用
+Stokes I 找到超过绝对 `--min-time-snr` 下限的候选采样，再跨所有 burst
+统一排序，保留使 `sum(I_sample_S/N**2) / sqrt(n_selected)` 最大的前缀，
+全程不查看 Q、U 或 RM 曲线。`time_sample_selection.csv` 记录全部候选和
+入选情况，`leave_one_burst_out.csv` 记录逐 burst 影响。off-pulse 检验
+保持每个 burst 最终入选的时间采样数和通道 mask 不变，并校正每个预先声明
+RM 窗口内的 look-elsewhere effect。
+这里同步和叠加的基本单元是入选时间采样点，而不是输入 burst。优化后的前缀
+可以来自多个 burst，也可以全部来自某个格外明亮的 burst，两者都属于有效
+结果。状态名里的 `both_methods` 表示保留的两种 RM 统计量相互一致，并不要求
+必须有两个独立 burst 参与叠加。
 analysis 和联合搜索都根据实际有效 λ² 覆盖对应的最窄 RMSF 自动计算 RM
 步长；用户只指定 `--rm-min` 和 `--rm-max`。
 

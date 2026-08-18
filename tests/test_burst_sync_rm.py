@@ -3,6 +3,7 @@ import json
 import h5py
 import numpy as np
 import pandas as pd
+import pytest
 
 from after import burst_sync_rm
 from after.burst_pol import RM_GRID_OVERSAMPLE, build_automatic_rm_grid
@@ -20,7 +21,7 @@ def _write_synthetic_cal_h5(path, rm, pa_offset_deg, seed):
     signal_times = np.array([36, 37, 38])
     data[0, signal_times, :] += 12.0
     pa_deg = np.array([0.0, 60.0, 120.0]) + pa_offset_deg
-    for time_index, pa in zip(signal_times, pa_deg, strict=True):
+    for time_index, pa in zip(signal_times, pa_deg):
         phase = 2.0 * (np.deg2rad(pa) + rm * wave2)
         polarization = 3.0 * np.exp(1j * phase)
         data[1, time_index, :] += polarization.real
@@ -57,7 +58,6 @@ def _load_synthetic_components(cal_dir):
             path,
             freq_min=None,
             freq_max=None,
-            time_peak_fraction=0.5,
             min_time_snr=3.0,
             min_channels=32,
             stored_masks_only=True,
@@ -89,6 +89,7 @@ def test_two_pa_independent_methods_recover_common_rm(tmp_path):
     )
 
     bursts = _load_synthetic_components(cal_dir)
+    bursts, _, _ = burst_sync_rm.select_global_time_samples(bursts)
     assert len(bursts) == 2
     assert all(burst.n_time == 3 for burst in bursts)
 
@@ -107,8 +108,18 @@ def test_two_pa_independent_methods_recover_common_rm(tmp_path):
         "linear_degree_stack",
     }
     assert all(
-        set(curves) == {"linear_degree", "time_pa_power"}
+        set(curves)
+        == {
+            "linear_degree",
+            "time_pa_power",
+            "time_pa_power_samples",
+        }
         for curves in individual.values()
+    )
+    assert all(
+        curves["time_pa_power_samples"].shape
+        == (burst.n_time, rm_grid.size)
+        for burst, curves in zip(bursts, individual.values())
     )
     for method in burst_sync_rm.PRIMARY_METHODS:
         recovered = rm_grid[int(np.argmax(combined[method]))]
@@ -145,6 +156,7 @@ def test_sync_cli_has_no_manual_rm_sampling_parameter():
     assert not hasattr(parser_args, "n_rm")
     assert not hasattr(parser_args, "rm_step")
     assert not hasattr(parser_args, "null_rm_step")
+    assert not hasattr(parser_args, "time_peak_fraction")
 
 
 def test_primary_plot_window_uses_full_blind_search_not_first_window():
@@ -168,10 +180,12 @@ def test_component_ids_expand_collisions_and_distinguish_beams(tmp_path):
         "burst_idx": 0,
         "peak_snr": 10.0,
         "time_indices": np.array([1]),
+        "time_snr": np.array([10.0]),
         "freq_mhz": np.array([1400.0]),
         "wave2_m2": np.array([0.04]),
         "p_on": np.array([[1.0j]]),
         "p_noise": np.array([[0.0j]]),
+        "i_time_total": np.array([1.0]),
         "i_total": 1.0,
         "noise_variance_one_time": 1.0,
         "stored_cal_rfi_count": 0,
@@ -211,6 +225,98 @@ def test_component_ids_expand_collisions_and_distinguish_beams(tmp_path):
     ]
 
 
+def test_global_i_selection_keeps_bright_shoulder_over_weak_peak(tmp_path):
+    common = {
+        "burst_idx": 0,
+        "freq_mhz": np.array([1400.0, 1401.0]),
+        "wave2_m2": np.array([0.04, 0.0399]),
+        "p_noise": np.zeros((8, 2), dtype=np.complex128),
+        "noise_variance_one_time": 1.0,
+        "stored_cal_rfi_count": 0,
+        "stored_burst_rfi_count": 0,
+        "recalculated_rfi_count": 0,
+        "robust_rfi_count": 0,
+        "nonfinite_rfi_count": 0,
+        "final_rfi_count": 0,
+    }
+    bright = burst_sync_rm.BurstRMData(
+        component_id="brightb0",
+        file_name="FRBTEST-20260718-M01-0001-000000001_cal.h5",
+        file_path=tmp_path / "bright.h5",
+        peak_snr=30.0,
+        time_indices=np.array([10, 11]),
+        time_snr=np.array([30.0, 20.0]),
+        p_on=np.ones((2, 2), dtype=np.complex128),
+        i_time_total=np.array([30.0, 20.0]),
+        i_total=50.0,
+        **common,
+    )
+    weak = burst_sync_rm.BurstRMData(
+        component_id="weakb0",
+        file_name="FRBTEST-20260718-M01-0002-000000002_cal.h5",
+        file_path=tmp_path / "weak.h5",
+        peak_snr=8.0,
+        time_indices=np.array([20]),
+        time_snr=np.array([8.0]),
+        p_on=np.ones((1, 2), dtype=np.complex128),
+        i_time_total=np.array([8.0]),
+        i_total=8.0,
+        **common,
+    )
+
+    selected, info, table = burst_sync_rm.select_global_time_samples(
+        [bright, weak]
+    )
+
+    assert [burst.component_id for burst in selected] == ["brightb0"]
+    assert selected[0].time_indices.tolist() == [10, 11]
+    assert info["candidate_sample_count"] == 3
+    assert info["selected_sample_count"] == 2
+    assert info["selected_component_count"] == 1
+    assert table.loc[table["selected"], "i_sample_snr"].tolist() == [
+        30.0,
+        20.0,
+    ]
+
+
+def test_nonfinite_iqu_samples_mask_whole_channels_before_rm(tmp_path):
+    path = tmp_path / "FRBTEST-20260818-M01-0001-000000001_cal.h5"
+    _write_synthetic_cal_h5(path, 1500.0, 0.0, 19)
+    with h5py.File(path, "a") as handle:
+        data = handle["data"]
+        data[1, 37, 10] = np.inf
+        data[2, 0, 11] = -np.inf
+
+    components, warnings = burst_sync_rm.load_file_components(
+        path,
+        freq_min=None,
+        freq_max=None,
+        min_time_snr=3.0,
+        min_channels=32,
+        stored_masks_only=True,
+        rfi_fft=False,
+        rfi_channel_sigma=6.0,
+        rfi_channel_window=31,
+        rfi_channel_grow=1,
+    )
+
+    assert not warnings
+    assert len(components) == 1
+    component = components[0]
+    assert component.nonfinite_rfi_count == 2
+    assert component.final_rfi_count == 2
+    assert component.n_channel == 126
+    assert np.all(np.isfinite(component.p_on))
+    assert np.all(np.isfinite(component.p_noise))
+
+    selected, _, _ = burst_sync_rm.select_global_time_samples(components)
+    rm_grid = np.linspace(-3000.0, 3000.0, 301)
+    curves = burst_sync_rm.individual_rm_curves(
+        selected[0], rm_grid, chunk_size=64
+    )
+    assert all(np.all(np.isfinite(curve)) for curve in curves.values())
+
+
 def test_main_writes_reproducible_direct_h5_products(tmp_path):
     cal_dir = tmp_path / "cal"
     cal_dir.mkdir()
@@ -234,6 +340,8 @@ def test_main_writes_reproducible_direct_h5_products(tmp_path):
             str(cal_dir),
             "--output-dir",
             str(output_dir),
+            "--run-label",
+            "synthetic-two-burst",
             "--rm-min",
             "-3000",
             "--rm-max",
@@ -263,11 +371,34 @@ def test_main_writes_reproducible_direct_h5_products(tmp_path):
     selected = pd.read_csv(output_dir / "selected_bursts.csv")
     assert len(selected) == 2
     assert (selected["n_time_samples"] == 3).all()
+    time_samples = pd.read_csv(output_dir / "time_sample_selection.csv")
+    assert len(time_samples) == 10
+    assert int(time_samples["selected"].sum()) == 6
+    leave_one_out = pd.read_csv(output_dir / "leave_one_burst_out.csv")
+    assert len(leave_one_out) == 4
 
     manifest = json.loads(
         (output_dir / "run_manifest.json").read_text(encoding="utf-8")
     )
+    run_summary = json.loads(
+        (output_dir / "run_summary.json").read_text(encoding="utf-8")
+    )
     assert manifest["pixel_mask"] == "not read or applied"
+    assert manifest["run_label"] == "synthetic-two-burst"
+    assert run_summary["run_label"] == "synthetic-two-burst"
+    assert run_summary["input"]["h5_file_count"] == 2
+    assert run_summary["input"]["selected_component_count"] == 2
+    assert run_summary["time_selection"]["selected_sample_count"] == 6
+    assert run_summary["time_selection"]["i_snr_equivalent"] > 0
+    assert set(run_summary["methods"]) == set(burst_sync_rm.ALL_METHODS)
+    assert run_summary["status"] in {
+        "robust_both_methods",
+        "both_methods_peak_disagreement",
+        "one_method_detected_consistent",
+        "one_method_detected_peak_disagreement",
+        "marginal_both_methods",
+        "no_robust_detection",
+    }
     assert set(manifest["methods"]) == set(burst_sync_rm.ALL_METHODS)
     assert set(manifest["methods"]) == {
         "time_pa_power",
@@ -277,5 +408,93 @@ def test_main_writes_reproducible_direct_h5_products(tmp_path):
         assert all("burst_pa" not in name for name in curves.files)
     with np.load(output_dir / "offpulse_null_maxima.npz") as null_maxima:
         assert all("burst_pa" not in name for name in null_maxima.files)
+        assert any(
+            name.startswith("raw__time_pa_power__")
+            for name in null_maxima.files
+        )
+        assert any(
+            name.startswith("contrast__time_pa_power__")
+            for name in null_maxima.files
+        )
+    assert {
+        "empirical_p_raw_power",
+        "empirical_p_rm_contrast",
+        "empirical_p",
+        "raw_null_exceedances",
+        "contrast_null_exceedances",
+    }.issubset(summary.columns)
+    assert np.allclose(
+        summary["empirical_p"],
+        summary["empirical_p_rm_contrast"],
+    )
     assert (output_dir / "burst_sync_rm.png").is_file()
     assert (output_dir / "burst_sync_rm_curves.npz").is_file()
+    assert (output_dir / "time_sample_selection.csv").is_file()
+    assert (output_dir / "leave_one_burst_out.csv").is_file()
+    assert (output_dir / "run_summary.json").is_file()
+
+
+def test_main_records_no_eligible_components_as_a_valid_result(tmp_path):
+    cal_dir = tmp_path / "cal"
+    cal_dir.mkdir()
+    _write_synthetic_cal_h5(
+        cal_dir / "FRBTEST-20260726-M01-0001-000000001_cal.h5",
+        1500.0,
+        0.0,
+        7,
+    )
+    output_dir = tmp_path / "no_eligible"
+
+    result = burst_sync_rm.main(
+        [
+            "--cal-dir",
+            str(cal_dir),
+            "--output-dir",
+            str(output_dir),
+            "--run-label",
+            "no-eligible-test",
+            "--min-time-snr",
+            "3",
+            "--min-peak-snr",
+            "1000",
+            "--n-null",
+            "0",
+            "--stored-masks-only",
+        ]
+    )
+
+    assert result == 0
+    run_summary = json.loads(
+        (output_dir / "run_summary.json").read_text(encoding="utf-8")
+    )
+    assert run_summary["status"] == "no_eligible_components"
+    assert run_summary["input"]["h5_file_count"] == 1
+    assert run_summary["input"]["candidate_component_count"] == 1
+    assert run_summary["input"]["selected_component_count"] == 0
+    assert run_summary["time_selection"]["selected_sample_count"] == 0
+    assert run_summary["time_selection"]["i_snr_equivalent"] == 0.0
+    assert (output_dir / "burst_sync_rm.png").is_file()
+    assert (output_dir / "burst_sync_rm_summary.csv").is_file()
+    assert (output_dir / "run_manifest.json").is_file()
+
+
+def test_main_requires_burst_detect_regions(tmp_path):
+    cal_dir = tmp_path / "cal"
+    cal_dir.mkdir()
+    path = cal_dir / "FRBTEST-20260726-M01-0001-000000001_cal.h5"
+    _write_synthetic_cal_h5(path, 1500.0, 0.0, 8)
+    with h5py.File(path, "a") as handle:
+        del handle.attrs["bursts"]
+
+    with pytest.raises(RuntimeError, match="after.burst_detect"):
+        burst_sync_rm.main(
+            [
+                "--cal-dir",
+                str(cal_dir),
+                "--output-dir",
+                str(tmp_path / "missing_burst_regions"),
+                "--n-null",
+                "0",
+                "--stored-masks-only",
+            ]
+        )

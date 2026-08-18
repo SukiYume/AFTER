@@ -193,6 +193,7 @@ python -m after.burst_detect --help
 python -m after.burst_analysis --help
 python -m after.burst_sync_rm --help
 python -m after.burst_dashboard --help
+python -m mypy after batch_processing/batch_cut_burst_data.py
 python -m pytest -q
 ```
 
@@ -437,10 +438,20 @@ python -m after.burst_sync_rm \
 `after.burst_sync_rm` reports both the primary per-time-sample PA-independent
 power sum (`time_pa_power`) and a fixed-weight stack of standardized per-burst
 RM-versus-linear-degree curves (`linear_degree_stack`). It reads
-`attrs["bursts"]`, selects the strongest time samples from Stokes I alone, and
-uses the union of channel-level RFI masks. It never applies a time-frequency
-pixel mask. The off-pulse trials use the same time-sample counts and channel
-masks to include the look-elsewhere effect within each declared test window.
+`attrs["bursts"]` and uses the union of channel-level RFI masks. It never
+applies a time-frequency pixel mask. Samples above the absolute
+`--min-time-snr` floor are ranked jointly across every burst using Stokes I
+alone; the retained prefix maximizes
+`sum(I_sample_S/N**2) / sqrt(n_selected)` without inspecting Q, U, or the RM
+curves. `time_sample_selection.csv` records every candidate and
+`leave_one_burst_out.csv` reports component influence. The off-pulse trials use
+the same selected time-sample counts and channel masks to include the
+look-elsewhere effect within each declared test window.
+The synchronization and stacking unit is a selected time sample, not an input
+burst. The optimized prefix may therefore draw from several bursts or entirely
+from one exceptionally bright burst; both are valid. Status names containing
+`both_methods` mean that the two retained RM statistics agree, not that two
+separate bursts were required to contribute.
 Both analysis paths derive the RM spacing automatically from the narrowest
 RMSF implied by the selected effective lambda-squared coverage; users specify
 only `--rm-min` and `--rm-max`.

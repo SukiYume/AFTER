@@ -19,17 +19,21 @@ time_reso 在 calibration.py 阶段已经是 raw × down_time 的有效分辨率
 fluence / TOA / 宽度时直接用 time_reso 即可, 不要再乘 down_time。
 """
 
+# Stokes I 是领域标准符号，保留其大写单字母写法。
+# ruff: noqa: E741
+
 import os
 import glob
 import json
 import argparse
+from typing import Any, cast
 
 import numpy as np
 import h5py
 import pandas as pd
 import matplotlib
 matplotlib.use('Agg')
-import seaborn as sns  # noqa: F401 - registers seaborn colormaps such as mako
+import seaborn as sns  # noqa: F401  # 导入后会向 Matplotlib 注册 ``mako`` 等颜色映射
 import matplotlib.pyplot as plt
 from matplotlib import gridspec
 
@@ -40,7 +44,11 @@ from .burst_pol import analyze_pol, plot_polarization
 
 
 def _pol_failure_result(freq, error):
-    """Return an explicit failed measurement row without scientific zeros."""
+    """构造偏振分析失败时的结果行，避免用有物理含义的零值冒充测量结果。
+
+    数值测量字段统一填入 NaN，同时保留中心频率和错误信息。这样 CSV 仍可
+    保持固定列结构，而下游程序也能明确区分“分析失败”和“真实测得为零”。
+    """
     finite_freq = np.asarray(freq)[np.isfinite(freq)]
     center_freq = (
         float(np.mean(finite_freq)) if finite_freq.size else np.nan)
@@ -89,7 +97,8 @@ def _downsample_channel_mask(mask, factor, target_size):
         result = mask[:target_size].copy()
     else:
         n_keep = (mask.size // factor) * factor
-        result = mask[:n_keep].reshape(-1, factor).any(axis=1)
+        result = np.asarray(
+            mask[:n_keep].reshape(-1, factor).any(axis=1), dtype=bool)
         result = result[:target_size]
     if result.size < target_size:
         result = np.pad(result, (0, target_size - result.size),
@@ -153,7 +162,8 @@ def plot_dynamic_spectrum(stokes_I, freq, time_reso, burst_regions, save_path):
     vmin, vmax = np.nanpercentile(data, [2, 98])
     ax1.imshow(data.T, aspect='auto', origin='lower', cmap='mako',
                vmin=vmin, vmax=vmax,
-               extent=[time_ms[0], time_ms[-1], freq[0], freq[-1]])
+               extent=(float(time_ms[0]), float(time_ms[-1]),
+                       float(freq[0]), float(freq[-1])))
     ax1.set_xlabel('Time (ms)')
     ax1.set_ylabel('Frequency (MHz)')
 
@@ -262,7 +272,8 @@ def plot_rm_selection(stokes_I, freq, time_reso, burst_region,
         vmin, vmax = 0.0, 1.0
     ax1.imshow(stokes_I.T, aspect='auto', origin='lower', cmap='mako',
                vmin=vmin, vmax=vmax,
-               extent=[time_ms[0], time_ms[-1], freq[0], freq[-1]])
+               extent=(float(time_ms[0]), float(time_ms[-1]),
+                       float(freq[0]), float(freq[-1])))
     for start, end in _true_runs(rm_time_mask):
         ax1.axvspan(start * time_reso * 1e3,
                     end * time_reso * 1e3,
@@ -311,15 +322,41 @@ def analyze_one_file(cal_h5_path, output_dir,
 
     # ---- 1. 加载 ----
     with h5py.File(cal_h5_path, 'r') as f:
-        iquv         = f['data'][:]                             # (4, nsamp, nchan)
-        freq         = f['freq'][:]                             # (nchan,)
-        gain         = f['gain'][:]     if 'gain'     in f else None
-        gain_err     = f['gain_err'][:] if 'gain_err' in f else None
-        stored_cal_channel = (f['rfi_channel'][:].astype(bool)
-                              if 'rfi_channel' in f else None)
-        stored_burst_channel = (f['burst_rfi_channel'][:].astype(bool)
-                                if 'burst_rfi_channel' in f else None)
-        attrs        = dict(f.attrs)
+        data_dataset = f['data']
+        freq_dataset = f['freq']
+        if not isinstance(data_dataset, h5py.Dataset):
+            raise TypeError(f"H5 'data' is not a dataset: {cal_h5_path}")
+        if not isinstance(freq_dataset, h5py.Dataset):
+            raise TypeError(f"H5 'freq' is not a dataset: {cal_h5_path}")
+        # 轴顺序为 (I/Q/U/V, 时间采样点, 频率通道)
+        iquv = np.asarray(data_dataset[...])
+        # 一维频率轴，长度等于频率通道数
+        freq = np.asarray(freq_dataset[...])
+
+        gain_dataset = f.get('gain')
+        gain_err_dataset = f.get('gain_err')
+        cal_channel_dataset = f.get('rfi_channel')
+        burst_channel_dataset = f.get('burst_rfi_channel')
+        for name, dataset in (
+            ('gain', gain_dataset),
+            ('gain_err', gain_err_dataset),
+            ('rfi_channel', cal_channel_dataset),
+            ('burst_rfi_channel', burst_channel_dataset),
+        ):
+            if dataset is not None and not isinstance(dataset, h5py.Dataset):
+                raise TypeError(f"H5 '{name}' is not a dataset: {cal_h5_path}")
+
+        gain = (np.asarray(gain_dataset[...])
+                if isinstance(gain_dataset, h5py.Dataset) else None)
+        gain_err = (np.asarray(gain_err_dataset[...])
+                    if isinstance(gain_err_dataset, h5py.Dataset) else None)
+        stored_cal_channel = (
+            np.asarray(cal_channel_dataset[...], dtype=bool)
+            if isinstance(cal_channel_dataset, h5py.Dataset) else None)
+        stored_burst_channel = (
+            np.asarray(burst_channel_dataset[...], dtype=bool)
+            if isinstance(burst_channel_dataset, h5py.Dataset) else None)
+        attrs = cast(dict[str, Any], dict(f.attrs))
     # 只读取已有的一维通道 mask，不读取 calibration/detection 的逐像素 mask。
 
     burst_regions = json.loads(attrs['bursts']) if 'bursts' in attrs else []
@@ -329,13 +366,14 @@ def analyze_one_file(cal_h5_path, output_dir,
 
     os.makedirs(burst_dir, exist_ok=True)
 
-    time_reso  = float(attrs['time_reso'])    # 已经是下采样后的有效分辨率
-    file_mjd   = float(attrs['file_mjd'])
-    dm_zero    = float(attrs['dm'])
+    # 已经是下采样后的有效分辨率
+    time_reso = float(np.asarray(attrs['time_reso']).item())
+    file_mjd = float(np.asarray(attrs['file_mjd']).item())
+    dm_zero = float(np.asarray(attrs['dm']).item())
 
     # ---- 1.5 额外下采样 (相对 _cal.h5 已有的倍率再做一次) ----
-    saved_dt = int(attrs.get('down_time', 1))
-    saved_df = int(attrs.get('down_freq', 1))
+    saved_dt = int(np.asarray(attrs.get('down_time', 1)).item())
+    saved_df = int(np.asarray(attrs.get('down_freq', 1)).item())
     tgt_dt = saved_dt if target_down_time is None else int(target_down_time)
     tgt_df = saved_df if target_down_freq is None else int(target_down_freq)
 

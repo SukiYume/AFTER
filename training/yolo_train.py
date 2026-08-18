@@ -176,9 +176,12 @@ def run_epoch(model, loader, device, optimizer=None, ema=None):
             #   loss_items 通常 = [box, cls, dfl]；YOLO26 / 其它变体可能更长，多余位忽略
             totals['loss'] += loss.item()
             n_items = len(loss_items) if hasattr(loss_items, '__len__') else 0
-            if n_items >= 1: totals['box'] += loss_items[0].item() * current_batch_size
-            if n_items >= 2: totals['cls'] += loss_items[1].item() * current_batch_size
-            if n_items >= 3: totals['dfl'] += loss_items[2].item() * current_batch_size
+            if n_items >= 1:
+                totals['box'] += loss_items[0].item() * current_batch_size
+            if n_items >= 2:
+                totals['cls'] += loss_items[1].item() * current_batch_size
+            if n_items >= 3:
+                totals['dfl'] += loss_items[2].item() * current_batch_size
 
             pbar.set_description(
                 f"{tag} [loss={totals['loss']/total_samples:.3f}]"

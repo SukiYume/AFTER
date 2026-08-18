@@ -22,14 +22,17 @@ import re
 import warnings
 from dataclasses import dataclass
 from pathlib import Path
+from typing import Any, cast
 
 import matplotlib
 import numpy as np
 from astropy.io import fits
+from matplotlib.axes import Axes
+from matplotlib.figure import Figure
 
 matplotlib.use("Agg")
 # 必须先选择无界面绘图后端，再导入 pyplot。
-import matplotlib.pyplot as plt  # noqa: E402
+import matplotlib.pyplot as plt  # noqa: E402  # 必须在选择无界面后端后导入
 
 
 NOISE_CLOCK_PRODUCT = 4096 * 4096 * 12
@@ -116,14 +119,16 @@ def native_to_stokes(native: np.ndarray) -> np.ndarray:
 
 def _frequency_axis(hdul: fits.HDUList, nchan: int) -> np.ndarray:
     """优先读取 DAT_FREQ；缺失时再由中心频率和带宽重建频率轴。"""
-    subint = hdul[1]
+    subint = cast(Any, hdul[1])
+    if subint.data is None:
+        raise ValueError("FITS SUBINT table has no data")
     names = set(subint.columns.names or [])
     if "DAT_FREQ" in names:
         frequency = np.asarray(subint.data["DAT_FREQ"][0], dtype=float).reshape(-1)
         if frequency.size == nchan:
             return frequency
 
-    primary = hdul[0].header
+    primary = cast(Any, hdul[0]).header
     sub_header = subint.header
     centre = primary.get("OBSFREQ", sub_header.get("OBSFREQ"))
     bandwidth = primary.get("OBSBW", sub_header.get("OBSBW"))
@@ -155,7 +160,9 @@ def compute_noise_cal_fold(
         raise ValueError("channel_chunk 必须大于等于 1")
 
     with fits.open(path, memmap=True) as hdul:
-        hdu = hdul[1]
+        hdu = cast(Any, hdul[1])
+        if hdu.data is None:
+            raise ValueError(f"FITS SUBINT table has no data: {path}")
         header = hdu.header
         nsub = int(header["NAXIS2"])
         nsblk = int(header["NSBLK"])
@@ -185,10 +192,17 @@ def compute_noise_cal_fold(
 
         # 先沿频率平均，得到方波轮廓和分时段稳定性图需要的小数组。
         # 显式使用 float64，保持旧版 np.mean 的数值行为。
-        per_period_native = np.mean(periodic, axis=3, dtype=np.float64)
-        folded_native = np.mean(per_period_native, axis=0, dtype=np.float64)
+        per_period_native = np.asarray(
+            np.mean(periodic, axis=3, dtype=np.float64), dtype=np.float64
+        )
+        folded_native = np.asarray(
+            np.mean(per_period_native, axis=0, dtype=np.float64),
+            dtype=np.float64,
+        )
 
-        power = np.mean(folded_native[:, :2], axis=1)
+        power = np.asarray(
+            np.mean(folded_native[:, :2], axis=1), dtype=np.float64
+        )
         threshold_on_mask = power > np.mean(power)
         if threshold_on_mask.all() or (~threshold_on_mask).all():
             raise ValueError("无法分离噪声管 on/off 状态")
@@ -198,8 +212,11 @@ def compute_noise_cal_fold(
         block_native = np.empty((nblocks, period_samples, npol), dtype=np.float64)
         for iblock in range(nblocks):
             start, stop = edges[iblock : iblock + 2]
-            block_native[iblock] = np.mean(
-                per_period_native[start:stop], axis=0, dtype=np.float64
+            block_native[iblock] = np.asarray(
+                np.mean(
+                    per_period_native[start:stop], axis=0, dtype=np.float64
+                ),
+                dtype=np.float64,
             )
 
         # 按频率分块折叠，计算与旧版完全相同的 noise_on - noise_off，
@@ -207,14 +224,23 @@ def compute_noise_cal_fold(
         noise_cal = np.empty((npol, nchan), dtype=np.float64)
         for first in range(0, nchan, channel_chunk):
             last = min(first + channel_chunk, nchan)
-            folded_chunk = np.mean(
-                periodic[:, :, :, first:last], axis=0, dtype=np.float64
+            folded_chunk = np.asarray(
+                np.mean(
+                    periodic[:, :, :, first:last], axis=0, dtype=np.float64
+                ),
+                dtype=np.float64,
             )
-            noise_on = np.mean(
-                folded_chunk[threshold_on_mask], axis=0, dtype=np.float64
+            noise_on = np.asarray(
+                np.mean(
+                    folded_chunk[threshold_on_mask], axis=0, dtype=np.float64
+                ),
+                dtype=np.float64,
             )
-            noise_off = np.mean(
-                folded_chunk[~threshold_on_mask], axis=0, dtype=np.float64
+            noise_off = np.asarray(
+                np.mean(
+                    folded_chunk[~threshold_on_mask], axis=0, dtype=np.float64
+                ),
+                dtype=np.float64,
             )
             noise_cal[:, first:last] = noise_on - noise_off
 
@@ -289,7 +315,7 @@ def _robust_limits(
     return float(low - pad), float(high + pad)
 
 
-def _shade_on_phase(ax: plt.Axes, start_phase: float, stop_phase: float) -> None:
+def _shade_on_phase(ax: Axes, start_phase: float, stop_phase: float) -> None:
     """标出噪声管 on 半周期及两个跳变位置。"""
     if start_phase < stop_phase:
         ax.axvspan(start_phase, stop_phase, color="#F0E442", alpha=0.10, lw=0)
@@ -518,7 +544,7 @@ def _build_metrics(
 
 
 def _plot_fold_profile(
-    ax: plt.Axes,
+    ax: Axes,
     fold_data: _FoldDiagnostic,
     values: np.ndarray,
     series: tuple[tuple[str, str], ...],
@@ -549,8 +575,8 @@ def _plot_fold_profile(
 
 
 def _plot_alignment_panel(
-    fig: plt.Figure,
-    ax: plt.Axes,
+    fig: Figure,
+    ax: Axes,
     fold_data: _FoldDiagnostic,
 ) -> None:
     """绘制 C 图：检查不同时间块的方波相位和幅度稳定性。"""
@@ -599,7 +625,7 @@ def _plot_alignment_panel(
     fig.colorbar(image, ax=ax, pad=0.015, label="Normalized Stokes I")
 
 
-def _plot_phase_panel(ax: plt.Axes, band_data: _BandDiagnostic) -> None:
+def _plot_phase_panel(ax: Axes, band_data: _BandDiagnostic) -> None:
     """绘制 D 图：交叉项的 cos、sin 和相位。"""
     frequency = band_data.frequency
     valid = band_data.phase_valid
@@ -670,7 +696,11 @@ def _plot_phase_panel(ax: plt.Axes, band_data: _BandDiagnostic) -> None:
     ax2.set_ylabel("Cross-hand phase φ (deg)")
     ax.legend(
         [line_cos, line_sin, line_phase],
-        [line_cos.get_label(), line_sin.get_label(), line_phase.get_label()],
+        [
+            str(line_cos.get_label()),
+            str(line_sin.get_label()),
+            str(line_phase.get_label()),
+        ],
         ncol=3,
         frameon=False,
         loc="upper center",
@@ -693,7 +723,7 @@ def _plot_phase_panel(ax: plt.Axes, band_data: _BandDiagnostic) -> None:
     )
 
 
-def _plot_bandpass_panel(ax: plt.Axes, band_data: _BandDiagnostic) -> None:
+def _plot_bandpass_panel(ax: Axes, band_data: _BandDiagnostic) -> None:
     """绘制 E 图：AA、BB 的 on−off 归一化带通。"""
     frequency = band_data.frequency
     valid = band_data.valid
@@ -726,7 +756,7 @@ def _plot_bandpass_panel(ax: plt.Axes, band_data: _BandDiagnostic) -> None:
     ax.legend(frameon=False, loc="best")
 
 
-def _plot_amplitude_panel(ax: plt.Axes, band_data: _BandDiagnostic) -> None:
+def _plot_amplitude_panel(ax: Axes, band_data: _BandDiagnostic) -> None:
     """绘制 F 图：差分增益和噪声管偏振度。"""
     frequency = band_data.frequency
     valid = band_data.valid
@@ -778,7 +808,7 @@ def _plot_amplitude_panel(ax: plt.Axes, band_data: _BandDiagnostic) -> None:
     ax2.tick_params(axis="y", colors=GREEN)
     ax.legend(
         [line_gain, line_pol],
-        [line_gain.get_label(), line_pol.get_label()],
+        [str(line_gain.get_label()), str(line_pol.get_label())],
         frameon=False,
         loc="best",
     )
@@ -788,7 +818,7 @@ def _draw_diagnostic_figure(
     folded: NoiseCalFold,
     fold_data: _FoldDiagnostic,
     band_data: _BandDiagnostic,
-) -> plt.Figure:
+) -> Figure:
     """按 A→F 的诊断逻辑组装完整六联图。"""
     fig, axes = plt.subplots(3, 2, figsize=(16, 14), dpi=150)
     fig.suptitle(
@@ -844,7 +874,7 @@ def _as_png_path(path: str | os.PathLike[str]) -> Path:
     return output if output.suffix.lower() == ".png" else output.with_suffix(".png")
 
 
-def _save_figure(fig: plt.Figure, output: Path) -> None:
+def _save_figure(fig: Figure, output: Path) -> None:
     """先写临时文件再原子替换，避免留下不完整诊断图。"""
     temporary = output.with_name(f".{output.stem}.{os.getpid()}.tmp.png")
     try:
@@ -924,6 +954,7 @@ def fold_noise_cal(
 
 
 def _parse_args() -> argparse.Namespace:
+    """解析独立生成噪声管诊断图所需的命令行参数。"""
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("cal_fits", help="FAST noise-cal *_0001.fits")
     output_group = parser.add_mutually_exclusive_group()

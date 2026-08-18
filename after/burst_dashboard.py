@@ -34,6 +34,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
 import seaborn as sns  # 仅用于 set_theme(whitegrid) 提供基础网格主题
+from cycler import cycler
 from matplotlib import font_manager
 from matplotlib.colors import LinearSegmentedColormap
 
@@ -129,6 +130,12 @@ COLUMN_LABELS = {
 # 二、命令行参数
 # =========================================================================== #
 def parse_args():
+    """解析生成观测面板所需的输入、输出路径和质量判据。
+
+    除 CSV 路径外，其余选项均有默认值：输出文件默认与 CSV 同目录，分析图片
+    目录也默认取 CSV 所在目录；SNR、DM 误差和 RM 显著性阈值只影响面板中的
+    提示、筛选或展示，不会回写原始测量结果。
+    """
     parser = argparse.ArgumentParser(description="根据 burst_results.csv 生成静态观测面板")
     parser.add_argument("--csv", required=True, help="burst_results.csv 路径")
     parser.add_argument(
@@ -185,7 +192,7 @@ def load_results(csv_path, rm_threshold):
         df["burst_idx"] = 0
 
     # 有 TOA 就用 TOA 算相对时间（秒）并按时间排序；否则退化为按文件顺序。
-    if "toa_mjd" in df.columns and df["toa_mjd"].notna().any():
+    if "toa_mjd" in df.columns and bool(df["toa_mjd"].notna().any()):
         first_toa = df["toa_mjd"].min()
         df["time_s"] = (df["toa_mjd"] - first_toa) * 86400.0
         sort_cols = ["toa_mjd", "file_name", "burst_idx"]
@@ -380,7 +387,7 @@ def setup_plot_style():
             "ytick.color": PALETTE["muted"],
             "grid.color": "#EBEFF6",
             "grid.linewidth": 0.8,
-            "axes.prop_cycle": plt.cycler(color=CYCLE),
+            "axes.prop_cycle": cycler(color=CYCLE),
             "font.sans-serif": font_stack,
             "axes.unicode_minus": False,
         }
@@ -389,13 +396,13 @@ def setup_plot_style():
 
 def scaled_sizes(values, low=42, high=240):
     """把一列数值线性映射到散点的面积区间 [low, high]；全空或同值时取中间大小。"""
-    vals = pd.to_numeric(values, errors="coerce")
-    if vals.notna().sum() == 0:
-        return np.full(len(vals), (low + high) / 2)
-    filled = vals.fillna(vals.median()).to_numpy(dtype=float)
+    vals = np.asarray(pd.to_numeric(values, errors="coerce"), dtype=float).reshape(-1)
+    if np.count_nonzero(~np.isnan(vals)) == 0:
+        return np.full(vals.size, (low + high) / 2)
+    filled = np.where(np.isnan(vals), np.nanmedian(vals), vals)
     vmin, vmax = np.nanmin(filled), np.nanmax(filled)
     if np.isclose(vmin, vmax):
-        return np.full(len(vals), (low + high) / 2)
+        return np.full(vals.size, (low + high) / 2)
     return low + (filled - vmin) / (vmax - vmin) * (high - low)
 
 
@@ -569,10 +576,16 @@ def plot_distributions(df):
     ax_snr, ax_flu, ax_wid, ax_bw = axes.ravel()
 
     def panel(ax, col, title, color, *, logx=False):
+        """在指定子图上绘制一列数据的直方图，并统一处理缺失值和对数分箱。
+
+        普通坐标根据有效样本数选取分箱数；对数坐标会先排除非正值，再用
+        ``logspace`` 生成等对数间隔的边界。无可用数据时显示统一占位提示。
+        """
         if col not in df.columns or not df[col].notna().any():
             add_no_data(ax)
             return
         vals = df[col].dropna()
+        bins: int | np.ndarray
         if logx:
             # 对数轴需要正值，且用对数分箱跨越数量级（大样本里 fluence 常如此）。
             vals = vals[vals > 0]
@@ -1200,6 +1213,13 @@ def build_css():
 # 九、组装整页 HTML
 # =========================================================================== #
 def build_html(df, csv_path, output_path, analysis_dir, metadata, args):
+    """把清洗后的测量表组装成可独立打开的静态 HTML 面板。
+
+    函数先计算观测级汇总指标，再将各统计图转成内嵌 PNG data URI，随后生成
+    强爆发画廊、明细表和完整 CSS/HTML。``analysis_dir`` 用来寻找已有的动态谱
+    与偏振图片；``output_path`` 只用于页面内记录目标位置，本函数本身不写盘，
+    而是返回完整 HTML 字符串供 :func:`main` 保存。
+    """
     setup_plot_style()
     generated_at = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
 
@@ -1367,6 +1387,7 @@ def build_html(df, csv_path, output_path, analysis_dir, metadata, args):
 # 十、入口
 # =========================================================================== #
 def main():
+    """命令行入口：读取结果、推断元信息、构建面板并以 UTF-8 写入磁盘。"""
     args = parse_args()
     csv_path = Path(args.csv)
     output_path = Path(args.output) if args.output else csv_path.with_name("burst_dashboard.html")
@@ -1381,7 +1402,10 @@ def main():
     print(f"[OK] Dashboard saved: {output_path}")
     print(f"  bursts: {len(df)}")
     print(f"  files: {df['file_name'].nunique() if 'file_name' in df.columns else 0}")
-    print(f"  reliable RM: {int(df['rm_reliable'].sum())}/{len(df)}")
+    reliable_rm = np.count_nonzero(
+        np.asarray(df["rm_reliable"], dtype=bool)
+    )
+    print(f"  reliable RM: {reliable_rm}/{len(df)}")
 
 
 if __name__ == "__main__":
