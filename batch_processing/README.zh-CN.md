@@ -14,6 +14,10 @@
 旧版 burst FITS
   -> 当前 cut H5 schema
   -> 批量定标
+
+重建清单 + 原始 FAST FITS
+  -> 重建旧版 burst FITS
+  -> 当前 cut H5 schema
 ```
 
 本文所有命令都假设当前目录是 AFTER 仓库根目录。安装依赖和完整科学流程见
@@ -25,6 +29,7 @@
 |---|---|---|
 | 根据标准 `*_Burst.txt` 批量裁切 | `batch_cut_burst_data.py` | 每个事件使用同一 `segment_length`。 |
 | 裁切长周期或需要逐事件窗口长度的候选 | `batch_cut_selected_long_period.py` | 每行单独指定 `segment_length`，并可按 source/date 筛选。 |
+| 重建旧版 burst FITS | `cut_burst_fits.py` | 旧 FITS 已删除，但仍保留经核查的重建清单和原始观测。 |
 | 把旧版 burst FITS 转成当前 H5 | `fits_to_h5.py` | 已经存在旧 cut FITS，不需要重新读取完整原始观测。 |
 | 批量定标 cut H5 | `batch_calibration.py` | 生成 Stokes I/Q/U/V、RFI mask 和 `*_cal.h5`。 |
 
@@ -33,6 +38,7 @@
 ```bash
 python batch_processing/batch_cut_burst_data.py --help
 python batch_processing/batch_cut_selected_long_period.py --help
+python batch_processing/cut_burst_fits.py --help
 python batch_processing/fits_to_h5.py --help
 python batch_processing/batch_calibration.py --help
 ```
@@ -142,7 +148,23 @@ python batch_processing/batch_cut_selected_long_period.py \
 `--overwrite` 会清理本次所选 source/date 对应的已有裁切产物后重建。应先配合
 `--dry-run` 确认筛选范围。
 
-## 3. 转换旧版 burst FITS
+## 3. 重建或转换旧版 burst FITS
+
+如果旧 cut FITS 已删除，但保留了精确重建所需的索引，可以用 `cut_burst_fits.py`
+从原始观测重新生成。先运行 `--dry-run`；它只检查清单、冻结的原始文件顺序和
+未压缩 FITS 是否齐全，不写 burst 数据：
+
+```bash
+python batch_processing/cut_burst_fits.py \
+  --burst-txt /path/to/catalogs/FRBXXXX_legacy_fits_rebuild.txt \
+  --raw-root /path/to/raw-root \
+  --output-root /path/to/rebuilt-fits \
+  --dry-run
+```
+
+逐项确认输出的目录和分组后再去掉 `--dry-run`。默认情况下，任何
+`rebuild_status` 不以 `ready` 开头的记录都会停止任务；只有核查过不能精确重建的
+原因后才应使用 `--skip-blocked`。该脚本只写消色散后的 burst FITS，不做定标。
 
 `fits_to_h5.py` 用于已经存在旧版 burst cut FITS、但后续流程需要当前 H5 schema 的情况。
 预期输入大致为：
@@ -155,8 +177,10 @@ python batch_processing/batch_cut_selected_long_period.py \
       <FRB>-<date>-Mxx-<fits-number>-<start-sample>.fits
 ```
 
-`--catalog-dir` 下应放置匹配的 `<FRB>_Burst.txt`，格式与上一节的标准七列表相同。脚本用
-目录名、日期、beam、文件编号和起始样本匹配 catalog metadata。
+`--catalog-dir` 下应放置匹配的 `<FRB>_Burst.txt`。通常使用上一节的标准七列格式；同时
+兼容旧版六列 `name beam project dm date time` 格式。日期目录和文件名既可以使用
+`YYYYMMDD`，也可以使用 `YYYYMMDD_1` 这类同日分段形式。脚本用目录名、日期、beam、
+文件编号和起始样本匹配 catalog metadata。
 
 ```bash
 python batch_processing/fits_to_h5.py \
@@ -177,7 +201,8 @@ python batch_processing/fits_to_h5.py \
 ```
 
 脚本会复制 `_0001.fits` 定标文件，将旧 burst FITS 写成当前 cut H5，并在每个日期目录生成
-`obs_info.json`。使用 `--overwrite` 可以替换已存在的转换结果。
+`obs_info.json`。先用 `--dry-run` 可以只检查范围而不创建目录或文件；使用 `--overwrite`
+可以替换已存在的转换结果。`--asd-root` 必须显式指定，脚本不会猜测要扫描哪个旧目录。
 
 ## 4. 批量流量与偏振定标
 
@@ -199,7 +224,11 @@ FRB_name DM RA DEC
 
 RA/DEC 可以使用冒号格式或 Astropy 可识别的带单位格式。DM 用于 source 记录；每个 cut
 H5 自身也应保存对应 DM。
-每个 beam 组使用同一日期目录中匹配的 `Mxx..._0001.fits`；缺少定标文件时停止该组。
+每个 beam 组优先使用当前日期目录中匹配的 `Mxx..._0001.fits`。对
+`YYYYMMDD_1`、`YYYYMMDD_2` 这类同日分段，若当前分段的噪声管诊断不通过，
+批处理可改用同一天其他分段中同波束的有效定标文件，但不会跨日期回退。
+同日候选全部不可用时停止该组；实际采用的文件会写入每个 H5 的
+`calibration_fits` 属性。
 
 ### 运行
 
@@ -229,6 +258,12 @@ python batch_processing/batch_calibration.py \
 - 省略 `--down-time`、`--down-freq`：自动选择适合检查和画图的分辨率；
 - `--down-time 1`：保留原始时间分辨率；
 - `--down-freq 1`：保留原始频率通道。
+- `--time-crop-samples 512`：先围绕输入时间轴中心裁出 512 个原始采样点；
+  未显式指定 `--down-time` 时会自动使用 1，且 JPG 直接按保存分辨率重画。
+- `--target-time-reso-ms 0.786432 --output-time-samples 512`：先对完整
+  输入做定标，再按每个文件的原始分辨率自动计算整数时间下采样倍率，
+  最后从下采样结果的中心裁出 512 点。`--target-time-reso-ms` 不能与
+  `--down-time` 并用，`--output-time-samples` 不能与 `--time-crop-samples` 并用。
 
 批处理默认启用 FFT RFI；传入 `--no-rfi-fft` 可改用熵方法。
 

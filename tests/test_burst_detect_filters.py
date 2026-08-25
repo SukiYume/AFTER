@@ -160,7 +160,27 @@ class FilterInferenceBoxesTest(unittest.TestCase):
 
 class DetectionDisplayTest(unittest.TestCase):
 
-    def test_calibration_display_subtracts_baseline_and_downsamples_copy(self):
+    def test_finds_same_directory_calibration_jpg(self):
+        with tempfile.TemporaryDirectory() as directory:
+            h5_path = Path(directory) / 'sample_cal.h5'
+            reference_path = Path(directory) / 'sample.jpg'
+            h5_path.touch()
+            reference_path.touch()
+
+            self.assertEqual(
+                burst_detect._find_reference_jpg(str(h5_path)),
+                str(reference_path),
+            )
+
+    def test_missing_reference_jpg_returns_none(self):
+        with tempfile.TemporaryDirectory() as directory:
+            h5_path = Path(directory) / 'sample_cal.h5'
+            h5_path.touch()
+
+            self.assertIsNone(
+                burst_detect._find_reference_jpg(str(h5_path)))
+
+    def test_calibration_display_normalizes_and_downsamples_copy(self):
         data = np.array([
             [1, 10, 100, 1000],
             [3, 12, 102, 1002],
@@ -176,7 +196,13 @@ class DetectionDisplayTest(unittest.TestCase):
                 time_factor=2, freq_factor=2)
 
         np.testing.assert_array_equal(data, original)
-        np.testing.assert_allclose(display, [[-2, -2], [2, 2]])
+        normalized = original / np.nanmean(original, axis=0, keepdims=True)
+        expected = np.nanmean(
+            np.nanmean(normalized.reshape(2, 2, 4), axis=1)
+            .reshape(2, 2, 2),
+            axis=2,
+        )
+        np.testing.assert_allclose(display, expected)
         np.testing.assert_allclose(display_freq, [1050, 1250])
         self.assertEqual(display_time_reso, 0.002)
 
@@ -242,6 +268,64 @@ class DetectionDisplayTest(unittest.TestCase):
         finally:
             real_close(fig)
 
+    def test_interactive_shows_reference_jpg_in_same_window(self):
+        data = np.ones((4, 4), dtype=np.float32)
+        freq = np.linspace(1000, 1500, 4)
+        figures = []
+        real_figure = burst_detect.plt.figure
+        real_close = burst_detect.plt.close
+
+        def capture_figure(*args, **kwargs):
+            fig = real_figure(*args, **kwargs)
+            fig.canvas.start_event_loop = mock.Mock()
+            figures.append(fig)
+            return fig
+
+        def render_left_panels(fig, *_args, subplot_spec=None, **_kwargs):
+            """只构造左侧坐标轴，避免测试替身未注册 mako 色表。"""
+            grid = (
+                fig.add_gridspec(4, 1, hspace=0)
+                if subplot_spec is None
+                else subplot_spec.subgridspec(4, 1, hspace=0)
+            )
+            return fig.add_subplot(grid[0, 0]), fig.add_subplot(grid[1:, 0])
+
+        reference = np.zeros((20, 20, 3), dtype=np.uint8)
+        with mock.patch.object(
+                burst_detect.plt, 'figure', side_effect=capture_figure), \
+                mock.patch.object(
+                    burst_detect.plt, 'imread', return_value=reference), \
+                mock.patch.object(burst_detect.plt, 'show'), \
+                mock.patch.object(burst_detect.plt, 'pause'), \
+                mock.patch.object(burst_detect.plt, 'close'), \
+                mock.patch.object(
+                    burst_detect,
+                    '_render_two_panel',
+                    side_effect=render_left_panels,
+                ), \
+                mock.patch.object(burst_detect, '_raise_window'):
+            result = burst_detect.review_interactive(
+                data,
+                freq,
+                time_reso=0.001,
+                reference_image_path='sample.jpg',
+            )
+
+        self.assertEqual(result, [])
+        fig = figures[0]
+        try:
+            self.assertEqual(len(fig.axes), 3)
+            reference_axis = fig.axes[2]
+            self.assertEqual(len(reference_axis.images), 1)
+            self.assertFalse(reference_axis.axison)
+            self.assertIn('sample.jpg', reference_axis.get_title())
+            self.assertEqual(
+                tuple(fig.get_size_inches()),
+                burst_detect.REFERENCE_REVIEW_FIGSIZE,
+            )
+        finally:
+            real_close(fig)
+
 
 class DetectionRfiTest(unittest.TestCase):
 
@@ -304,6 +388,8 @@ class DetectionRfiTest(unittest.TestCase):
     def test_quit_returns_normally_without_marking_current_file(self):
         with tempfile.TemporaryDirectory() as directory:
             path = Path(directory) / 'sample_cal.h5'
+            reference_path = Path(directory) / 'sample.jpg'
+            reference_path.touch()
             with h5py.File(path, 'w') as h5:
                 h5.create_dataset(
                     'data', data=np.ones((4, 512, 512), dtype=np.float32))
@@ -333,6 +419,10 @@ class DetectionRfiTest(unittest.TestCase):
                 review_mock.call_args.kwargs['time_factor'], 2)
             self.assertEqual(
                 review_mock.call_args.kwargs['freq_factor'], 2)
+            self.assertEqual(
+                review_mock.call_args.kwargs['reference_image_path'],
+                str(reference_path),
+            )
             with h5py.File(path, 'r') as h5:
                 self.assertNotIn('bursts', h5.attrs)
                 self.assertNotIn('burst_rfi_mask', h5)

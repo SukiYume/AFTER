@@ -353,9 +353,14 @@ Useful saved-resolution choices:
 - use `--down-time 1` to preserve raw time resolution for peak-flux comparisons;
 - use `--down-freq 1` to preserve raw frequency channels for detailed spectral
   and RFI inspection.
+- use `--target-time-reso-ms 0.786432 --output-time-samples 512` to calibrate
+  the complete input, downsample each file to the same effective time
+  resolution, and then center-crop the saved data to 512 samples.
 
 Each burst beam uses its matching `Mxx..._0001.fits`; calibration stops that
-beam group when the file is absent.
+beam group when the file is absent. For split directories from the same date,
+an unusable noise-calibration file may fall back to a valid same-beam file from
+another segment of that date, but never from another date.
 FFT RFI detection is the batch default. Pass `--no-rfi-fft` to select entropy
 mode. Outputs are written below `<cal-root>/<FRB>/<date>/`.
 
@@ -393,6 +398,9 @@ Use `--mode semi-auto` to revisit selected entries from `detections.json`, or
 `--mode manual` when model suggestions are not useful. In the interactive
 review UI, `x` records an intentionally empty burst list; `q` or `Esc` saves
 completed progress and exits without marking the current file complete.
+When a matching quicklook JPG is present beside the calibrated H5 (for example,
+`name_cal.h5` with `name.jpg`), the interactive window shows it read-only on the
+right for comparison. Missing JPGs retain the original two-panel layout.
 
 ### 5. Analyze physical properties
 

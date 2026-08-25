@@ -332,9 +332,13 @@ FRB_name DM RA DEC
 - 不传 `--down-time` 和 `--down-freq`：自动选择适合画图的分辨率；
 - `--down-time 1`：保留原始时间分辨率，用于 peak-flux 对比；
 - `--down-freq 1`：保留原始频率通道，用于频谱和 RFI 细查。
+- `--target-time-reso-ms 0.786432 --output-time-samples 512`：先对完整输入定标，
+  再把不同文件下采样到相同的有效时间分辨率，最后把保存数据中心裁成 512 点。
 
-每个 burst beam 使用同 beam 的 `Mxx..._0001.fits`，缺少时停止该 beam 组。批处理
-默认使用 FFT RFI；传入 `--no-rfi-fft` 可选择熵方法。
+每个 burst beam 使用同 beam 的 `Mxx..._0001.fits`，缺少时停止该 beam 组。
+同一日期拆成多个分段目录时，如果当前噪声管文件不可用，可以回退到同日其他分段的
+同波束文件，但不会跨日期回退。批处理默认使用 FFT RFI；传入 `--no-rfi-fft`
+可选择熵方法。
 输出写到 `<cal-root>/<FRB>/<date>/`。
 
 ### 4. 检测并复核 burst 区域
@@ -366,6 +370,8 @@ python -m after.burst_detect \
 自动标记需要修正时使用 `--mode semi-auto`；模型建议明显无用时使用
 `--mode manual`。交互界面中，`x` 会记录明确的空 burst 列表；`q` 或 `Esc` 会保存
 已完成进度并退出，不会把当前文件误标为完成。
+如果定标 H5 同目录中存在配套 quicklook JPG（例如 `name_cal.h5` 对应
+`name.jpg`），交互窗口会在右侧只读显示该图供对照；缺图时仍使用原来的双面板布局。
 
 ### 5. 分析物理量
 

@@ -45,6 +45,8 @@ DEFAULT_MAX_HORIZONTAL_ASPECT = 3.0
 
 # 与 calibration.py 的 quicklook 保持同样的画布大小。
 TWO_PANEL_FIGSIZE = (5, 5)
+# 交互窗口右侧显示定标 JPG 时只增加宽度，保持原有高度和拖框面板大小。
+REFERENCE_REVIEW_FIGSIZE = (11, 6)
 
 
 class _ReviewState(TypedDict):
@@ -53,6 +55,25 @@ class _ReviewState(TypedDict):
     command: str | None
     showing_model: bool
     user_boxes: list[tuple[tuple[float, float, float, float], Any, Any]]
+
+
+def _find_reference_jpg(h5_path):
+    """查找与定标 H5 配套、位于同一目录的 quicklook JPG。
+
+    calibration.py 的约定是 ``name_cal.h5`` 对应 ``name.jpg``；同时兼容
+    ``name.h5`` 对应 ``name.jpg`` 和少数保留 ``_cal`` 后缀的 JPG。找不到时
+    返回 None，让交互窗口保持原来的双面板布局。
+    """
+    stem, _ = os.path.splitext(os.fspath(h5_path))
+    plain_stem = stem[:-4] if stem.lower().endswith("_cal") else stem
+    candidates = [plain_stem + ".jpg"]
+    if plain_stem != stem:
+        candidates.append(stem + ".jpg")
+
+    for candidate in candidates:
+        if os.path.isfile(candidate):
+            return candidate
+    return None
 
 
 def load_yolo_model(model_path, model_name="yolo11n"):
@@ -159,7 +180,7 @@ def prepare_calibration_display(
 ):
     """按 calibration.py 的 quicklook 方式准备人工检查用动态谱。
 
-    这里只复制 Stokes I、逐频率通道减去时间中值，并按 calibration 保存的
+    这里只复制 Stokes I、逐频率通道除以时间平均值，并按 calibration 保存的
     额外倍率下采样。特意不读取或屏蔽任何 RFI 通道，也不会改动原数组。
     """
     plot_I = np.asarray(stokes_I, dtype=np.float32).copy()
@@ -167,7 +188,8 @@ def prepare_calibration_display(
     time_factor = max(1, int(time_factor))
     freq_factor = max(1, int(freq_factor))
 
-    plot_I -= np.nanmedian(plot_I, axis=0)
+    # plot_I -= np.nanmedian(plot_I, axis=0)
+    plot_I /= np.nanmean(plot_I, axis=0, keepdims=True) + 1e-8
     nsamp, nchan = plot_I.shape
 
     if time_factor > 1:
@@ -585,10 +607,15 @@ def bbox_to_region(x0, y0, x1, y1, freq, time_reso, nsamp, nchan, confidence=1.0
     }
 
 
-def _render_two_panel(fig, stokes_I, freq, time_reso, interpolation=None):
+def _render_two_panel(
+    fig, stokes_I, freq, time_reso, interpolation=None, subplot_spec=None
+):
     """在 fig 上构建标准两面板布局: 上 profile + 下动态谱, 返回 (ax_profile, ax_spec).
 
-    输入是已经减过基线的 Jy 数据。本函数只负责共享绘图样式，不画 burst box。
+    输入是 prepare_calibration_display 准备好的显示数据。本函数只负责共享
+    绘图样式，不画 burst box。
+    ``subplot_spec`` 不为 None 时把两面板嵌入指定区域，供交互窗口在右侧并排
+    放置定标 JPG；默认值维持原来的整幅画布布局。
     ``interpolation=None`` 时沿用 Matplotlib 默认值；人工交互窗口可显式传入
     ``bilinear`` 减轻屏幕显示的颗粒感，而自动保存图继续保持原有渲染方式。
     """
@@ -607,7 +634,11 @@ def _render_two_panel(fig, stokes_I, freq, time_reso, interpolation=None):
     time_ms = np.arange(nsamp) * time_reso * 1e3
     time_end_ms = nsamp * time_reso * 1e3
 
-    gs = fig.add_gridspec(4, 1, hspace=0)
+    gs = (
+        fig.add_gridspec(4, 1, hspace=0)
+        if subplot_spec is None
+        else subplot_spec.subgridspec(4, 1, hspace=0)
+    )
     ax_prof = fig.add_subplot(gs[0, 0])
     ax_prof.step(time_ms, profile, where="mid", color="royalblue", lw=0.8)
     ax_prof.set_xlim(0, time_end_ms)
@@ -676,13 +707,21 @@ def _raise_window(fig):
 
 
 def review_interactive(
-    stokes_I, freq, time_reso, burst_regions=None, time_factor=1, freq_factor=1
+    stokes_I,
+    freq,
+    time_reso,
+    burst_regions=None,
+    time_factor=1,
+    freq_factor=1,
+    reference_image_path=None,
 ):
     """显示动态谱供人工确认或重新标注爆发位置。
 
     burst_regions=None → 纯手动标注模式, 直接拖拽鼠标画框；
     burst_regions 有内容 → 展示模型检测结果, 用户可按 Enter 接受。
     动态谱按 calibration.py 的 quicklook 方式显示，但不读取或屏蔽 RFI。
+    找到配套 JPG 时，同一窗口右侧显示该定标 quicklook 作为只读参考；右侧图像
+    不参与拖框、坐标转换或数据处理。
 
     交互逻辑 (一图窗内完成, 不来回切终端):
       * Enter / Return    → 接受当前显示的框 (模型框 或 已经画过的用户框)
@@ -713,12 +752,47 @@ def review_interactive(
         time_factor=time_factor,
         freq_factor=freq_factor,
     )
-    # 交互窗口使用适中的画布和 DPI，让 512×512 动态谱获得足够屏幕像素，
-    # 同时避免窗口占满屏幕；bilinear 只改变显示重采样，不改变数据或框坐标。
-    fig = plt.figure(figsize=(6, 6), dpi=110)
-    ax_prof, ax_spec = _render_two_panel(
-        fig, display_I, display_freq, display_time_reso, interpolation="bilinear"
-    )
+    reference_image = None
+    if reference_image_path is not None:
+        try:
+            reference_image = plt.imread(reference_image_path)
+        except (OSError, ValueError) as exc:
+            print(f"  [警告] 无法读取参考图 {reference_image_path}: {exc}")
+
+    # 有参考图时只横向扩展窗口：左侧交互面板仍保留约 6×6 英寸，右侧 JPG
+    # 作为只读参照。缺图或读图失败时保持原来的窗口大小和布局。
+    if reference_image is None:
+        fig = plt.figure(figsize=(6, 6), dpi=110)
+        ax_prof, ax_spec = _render_two_panel(
+            fig, display_I, display_freq, display_time_reso, interpolation="bilinear"
+        )
+    else:
+        # 嵌套 GridSpec 交给 constrained layout 排版；对这种布局调用
+        # tight_layout 会产生兼容性警告，并可能挤压右侧参考图。
+        fig = plt.figure(
+            figsize=REFERENCE_REVIEW_FIGSIZE,
+            dpi=110,
+            constrained_layout=True,
+        )
+        outer = fig.add_gridspec(
+            1, 2, width_ratios=(1.08, 0.92), wspace=0.08
+        )
+        ax_prof, ax_spec = _render_two_panel(
+            fig,
+            display_I,
+            display_freq,
+            display_time_reso,
+            interpolation="bilinear",
+            subplot_spec=outer[0],
+        )
+        ax_reference = fig.add_subplot(outer[1])
+        ax_reference.imshow(reference_image)
+        ax_reference.set_axis_off()
+        ax_reference.set_title(
+            "Calibration reference\n" + os.path.basename(reference_image_path),
+            fontsize=8,
+            pad=6,
+        )
     # title 挂在上面板, 才会出现在图窗顶端而不是两面板之间.
     ax_prof.set_title(title_review if showing_model else title_draw, fontsize=10, pad=6)
 
@@ -840,8 +914,10 @@ def review_interactive(
     cid_close = fig.canvas.mpl_connect("close_event", on_close)
     cid_mouse = fig.canvas.mpl_connect("button_press_event", on_mouse_press)
 
-    fig.tight_layout(pad=0.8)
-    fig.subplots_adjust(hspace=0)
+    if reference_image is None:
+        # 无参考图时继续沿用原来的两面板排版，避免改变已有交互窗口外观。
+        fig.tight_layout(pad=0.8)
+        fig.subplots_adjust(hspace=0)
     plt.show(block=False)
     fig.canvas.draw_idle()
     _raise_window(fig)
@@ -939,6 +1015,11 @@ def detect_one_file(
     nsamp, nchan = stokes_I.shape
     plot_time_factor = max(1, plot_dt // save_dt)
     plot_freq_factor = max(1, plot_df // save_df)
+    reference_image_path = (
+        _find_reference_jpg(h5_path)
+        if mode in ("manual", "semi-auto")
+        else None
+    )
 
     if mode == "manual":
         burst_regions = review_interactive(
@@ -947,6 +1028,7 @@ def detect_one_file(
             time_reso,
             time_factor=plot_time_factor,
             freq_factor=plot_freq_factor,
+            reference_image_path=reference_image_path,
         )
     else:
         # auto / semi-auto: YOLO 推理.
@@ -980,6 +1062,7 @@ def detect_one_file(
             burst_regions,
             time_factor=plot_time_factor,
             freq_factor=plot_freq_factor,
+            reference_image_path=reference_image_path,
         )
     if burst_regions is None:
         return None

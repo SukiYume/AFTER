@@ -1,22 +1,18 @@
 """Convert legacy cut FITS burst files to the current H5 cut format.
 
-The expected remote layout is::
+An input legacy tree can be arranged as::
 
-    /path/to/after_data/
-    |-- FRB20251229A/
-    |   |-- 20260106/
-    |   |   |-- FRB20251229A_tracking-M01_0001.fits
-    |   |   `-- FRB20251229A-20260106-M01-0075-009823391.fits
-    |   `-- ...
-    `-- H5_Cut/
+    /path/to/legacy_fits/
+    `-- FRB20251229A/20260106/
+        |-- FRB20251229A_tracking-M01_0001.fits
+        `-- FRB20251229A-20260106-M01-0075-009823391.fits
 
 The Burst.txt catalogs are read from --catalog-dir. The default is the
-directory containing this script, so the curated txt files can live beside the
-batch scripts.
+``batch_processing`` directory containing this script.
 
-By default the script scans FRB20* directories under asd_root and writes:
+The script scans matching FRB directories below ``--asd-root`` and writes:
 
-    /path/to/after_data/H5_Cut/<FRB>/<date>/*.h5
+    data_processing/H5_Cut/<FRB>/<date>/*.h5
 
 Only legacy burst FITS names are converted. Calibration FITS files ending in
 ``_0001.fits`` are copied unchanged so the H5 directory mirrors the direct H5
@@ -26,6 +22,7 @@ cut output layout.
 from __future__ import annotations
 
 import argparse
+import os
 import re
 import shutil
 import sys
@@ -39,37 +36,57 @@ from astropy.io import fits
 
 
 PROJECT_DIR = Path(__file__).resolve().parent.parent
+SCRIPT_DIR = Path(__file__).resolve().parent
 if str(PROJECT_DIR) not in sys.path:
     sys.path.insert(0, str(PROJECT_DIR))
 
 from after.obs_metadata import write_obs_info_json  # noqa: E402
 
 
-DEFAULT_ASD_ROOT = "/path/to/after_data"
-DEFAULT_OUTPUT_ROOT = "/path/to/after_data/H5_Cut"
-DEFAULT_CATALOG_DIR = Path(__file__).resolve().parent
+DEFAULT_OUTPUT_ROOT = str(PROJECT_DIR / "H5_Cut")
+DEFAULT_CATALOG_DIR = SCRIPT_DIR
 
 
 def parse_old_filename(filename: str):
     """Parse legacy burst FITS metadata from its filename."""
-    m = re.match(r"^(.+)-(\d{8})-M(\d{2})-(\d{4})-(\d{9})\.fits$", filename)
+    date_pattern = r"\d{8}(?:_\d+)?"
+    # 观测起点附近的切片允许 start_sample < 0；AFTER 的文件名约定用
+    # ``n`` 代替负号，例如 n000000123 表示 -123。
+    start_pattern = r"n?\d{9}"
+    m = re.match(
+        rf"^(.+)-({date_pattern})-M(\d{{2}})-(\d{{4}})-({start_pattern})\.fits$",
+        filename,
+    )
     if m:
+        start_token = m.group(5)
         return {
             "frb_name": m.group(1),
             "date": m.group(2),
             "beam": int(m.group(3)),
             "fits_number": int(m.group(4)),
-            "start_sample": int(m.group(5)),
+            "start_sample": (
+                -int(start_token[1:])
+                if start_token.startswith("n")
+                else int(start_token)
+            ),
         }
 
-    m = re.match(r"^(.+)-(\d{8})-(\d{4})-(\d{9})\.fits$", filename)
+    m = re.match(
+        rf"^(.+)-({date_pattern})-(\d{{4}})-({start_pattern})\.fits$",
+        filename,
+    )
     if m:
+        start_token = m.group(4)
         return {
             "frb_name": m.group(1),
             "date": m.group(2),
             "beam": 1,
             "fits_number": int(m.group(3)),
-            "start_sample": int(m.group(4)),
+            "start_sample": (
+                -int(start_token[1:])
+                if start_token.startswith("n")
+                else int(start_token)
+            ),
         }
 
     return None
@@ -80,7 +97,9 @@ def is_cal_fits(filename: str) -> bool:
 
 
 def is_date_dir(path: Path) -> bool:
-    return path.is_dir() and re.match(r"^\d{8}$", path.name) is not None
+    """识别八位日期目录以及同一天拆分出的 ``_1``、``_2`` 等目录。"""
+
+    return path.is_dir() and re.fullmatch(r"\d{8}(?:_\d+)?", path.name) is not None
 
 
 def is_source_frb_dir(path: Path, prefix: str) -> bool:
@@ -107,10 +126,17 @@ def parse_burst_catalog(catalog_dir: Path, prefix: str):
                 parts = line.split()
                 if not parts or parts[0].lower() == "base":
                     continue
-                if len(parts) < 7:
+                if parts[0].lower() in {"base", "name"}:
+                    continue
+                if len(parts) >= 7:
+                    base, project, raw_name, date, beam, dm, toa = parts[:7]
+                elif len(parts) >= 6:
+                    # FRB190520 使用旧六列格式：name beam project dm date time。
+                    raw_name, beam, project, dm, date, toa = parts[:6]
+                    base = ""
+                else:
                     print(f"[WARN] skip malformed row {txt_path.name}:{line_no}: {line.rstrip()}")
                     continue
-                base, project, raw_name, date, beam, dm, toa = parts[:7]
                 try:
                     catalog[save_frb].append(
                         {
@@ -154,16 +180,28 @@ def load_fits_data(filepath: Path):
         return raw.reshape(h1["NAXIS2"] * h1["NSBLK"], h1["NPOL"], h1["NCHAN"])
 
 
-def copy_cal_files(date_path: Path, output_path: Path, overwrite: bool):
+def copy_cal_files(
+    date_path: Path,
+    output_path: Path,
+    overwrite: bool,
+    dry_run: bool = False,
+):
     """Copy calibration FITS files and return the first calibration path."""
     first_cal = None
-    output_path.mkdir(parents=True, exist_ok=True)
+    if not dry_run:
+        output_path.mkdir(parents=True, exist_ok=True)
     for path in sorted(date_path.iterdir()):
         if not path.is_file() or not is_cal_fits(path.name):
             continue
         dst = output_path / path.name
-        if overwrite or not dst.exists():
-            shutil.copy2(path, dst)
+        if not dry_run and (overwrite or not dst.exists()):
+            temp_path = dst.with_name(f"{dst.name}.tmp")
+            temp_path.unlink(missing_ok=True)
+            try:
+                shutil.copy2(path, temp_path)
+                os.replace(temp_path, dst)
+            finally:
+                temp_path.unlink(missing_ok=True)
         if first_cal is None:
             first_cal = path
     return first_cal
@@ -201,19 +239,25 @@ def save_to_h5(save_path: Path, filename: str, data: np.ndarray, meta: dict):
     """Write H5 using the same dataset/attribute layout as :mod:`after.cut_burst_data`."""
     save_path.mkdir(parents=True, exist_ok=True)
     filepath = save_path / filename
-    with h5py.File(filepath, "w") as f:
-        f.create_dataset("data", data=data, compression="gzip", compression_opts=4)
-        f.create_dataset("freq", data=meta["freq"])
-        f.attrs["start_sample"] = meta["start_sample"]
-        f.attrs["file_mjd"] = meta["file_mjd"]
-        f.attrs["toa_sec"] = meta["toa_sec"]
-        f.attrs["time_reso"] = meta["time_reso"]
-        f.attrs["npol"] = meta["npol"]
-        f.attrs["nchan"] = meta["nchan"]
-        f.attrs["segment_length"] = meta["segment_length"]
-        f.attrs["obs_start_mjd"] = meta["obs_start_mjd"]
-        f.attrs["beam"] = meta["beam"]
-        f.attrs["dm"] = meta["dm"]
+    temp_path = filepath.with_name(f"{filepath.name}.tmp")
+    temp_path.unlink(missing_ok=True)
+    try:
+        with h5py.File(temp_path, "w") as f:
+            f.create_dataset("data", data=data, compression="gzip", compression_opts=4)
+            f.create_dataset("freq", data=meta["freq"])
+            f.attrs["start_sample"] = meta["start_sample"]
+            f.attrs["file_mjd"] = meta["file_mjd"]
+            f.attrs["toa_sec"] = meta["toa_sec"]
+            f.attrs["time_reso"] = meta["time_reso"]
+            f.attrs["npol"] = meta["npol"]
+            f.attrs["nchan"] = meta["nchan"]
+            f.attrs["segment_length"] = meta["segment_length"]
+            f.attrs["obs_start_mjd"] = meta["obs_start_mjd"]
+            f.attrs["beam"] = meta["beam"]
+            f.attrs["dm"] = meta["dm"]
+        os.replace(temp_path, filepath)
+    finally:
+        temp_path.unlink(missing_ok=True)
     return filepath
 
 
@@ -229,7 +273,11 @@ def convert_one_fits(args):
     h5_name = (
         f"{name_info['frb_name']}-{name_info['date']}-"
         f"M{name_info['beam']:02d}-{name_info['fits_number']:04d}-"
-        f"{name_info['start_sample']:09d}.h5"
+        + (
+            f"n{abs(name_info['start_sample']):09d}.h5"
+            if name_info["start_sample"] < 0
+            else f"{name_info['start_sample']:09d}.h5"
+        )
     )
     h5_path = output_dir / h5_name
     if h5_path.exists() and not overwrite:
@@ -271,7 +319,8 @@ def save_obs_json(output_dir: Path):
 
 
 def collect_tasks(asd_root: Path, output_root: Path, catalog_dir: Path,
-                  prefix: str, only: set[str], overwrite: bool):
+                  prefix: str, only: set[str], overwrite: bool,
+                  dry_run: bool = False):
     catalog = parse_burst_catalog(catalog_dir, prefix)
     if not catalog:
         print(f"No {prefix}*_Burst.txt catalog rows found under {catalog_dir}")
@@ -298,7 +347,7 @@ def collect_tasks(asd_root: Path, output_root: Path, catalog_dir: Path,
         frb_count = 0
         for date_path in sorted(path for path in frb_path.iterdir() if is_date_dir(path)):
             output_path = output_root / frb_path.name / date_path.name
-            cal_path = copy_cal_files(date_path, output_path, overwrite)
+            cal_path = copy_cal_files(date_path, output_path, overwrite, dry_run)
             if cal_path is None:
                 print(f"[WARN] {frb_path.name}/{date_path.name}: no *_0001.fits calibration file")
                 continue
@@ -322,12 +371,21 @@ def collect_tasks(asd_root: Path, output_root: Path, catalog_dir: Path,
 
 def parse_args():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--asd-root", default=DEFAULT_ASD_ROOT)
+    parser.add_argument(
+        "--asd-root",
+        required=True,
+        help="待迁移的旧 burst FITS 根目录；必须显式指定，避免误扫目录",
+    )
     parser.add_argument("--output-root", default=DEFAULT_OUTPUT_ROOT)
     parser.add_argument("--catalog-dir", default=str(DEFAULT_CATALOG_DIR))
     parser.add_argument("--frb-prefix", default="FRB20")
     parser.add_argument("--workers", type=int, default=16)
     parser.add_argument("--overwrite", action="store_true")
+    parser.add_argument(
+        "--dry-run",
+        action="store_true",
+        help="只统计待转换文件，不创建或修改输出文件",
+    )
     parser.add_argument("--only", nargs="*", default=None, help="Optional FRB directory names to process")
     return parser.parse_args()
 
@@ -341,9 +399,15 @@ def main():
 
     tasks, date_output_dirs = collect_tasks(
         asd_root, output_root, catalog_dir, args.frb_prefix, only, args.overwrite,
+        args.dry_run,
     )
     if not tasks:
         print("No burst FITS files to convert")
+        return
+
+    if args.dry_run:
+        print(f"Dry run: {len(tasks)} burst FITS would be considered")
+        print(f"Dry run: {len(date_output_dirs)} date output directories")
         return
 
     print(f"Converting {len(tasks)} burst FITS with {args.workers} workers")

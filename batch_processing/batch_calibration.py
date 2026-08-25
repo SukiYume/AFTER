@@ -43,10 +43,10 @@ from after.calibration import (  # noqa: E402
 from after import DEFAULT_CAL_NPZ as DEFAULT_CAL_NPZ_PATH  # noqa: E402
 
 
-DEFAULT_ROOT_DIR = "/path/to/after_data/H5_Cut"
+DEFAULT_ROOT_DIR = str(PROJECT_DIR / "H5_Cut")
 DEFAULT_DM_FILE = str(SCRIPT_DIR / "h5_calibration_dm_file.txt")
 DEFAULT_CAL_NPZ = str(DEFAULT_CAL_NPZ_PATH)
-DEFAULT_CAL_ROOT = "/path/to/after_data/H5_Cut/H5_Cal"
+DEFAULT_CAL_ROOT = str(PROJECT_DIR / "H5_Cal")
 
 
 def extract_beam(filename):
@@ -95,7 +95,8 @@ def parse_dm_file(path):
 
 
 def collect_calibration_groups(root_dir, cal_root, sources, cal_npz, down_time, down_freq,
-                               rfi_fft, only):
+                               rfi_fft, only, time_crop_samples=None,
+                               target_time_reso=None, output_time_samples=None):
     """Collect date/beam groups.
 
     Grouping keeps calibration arrays local to a worker process and avoids
@@ -116,7 +117,9 @@ def collect_calibration_groups(root_dir, cal_root, sources, cal_npz, down_time, 
         dates = sorted(
             d
             for d in os.listdir(frb_dir)
-            if d.isdigit() and len(d) == 8 and os.path.isdir(os.path.join(frb_dir, d))
+            # 同一天拆成多段观测时，目录名会是 YYYYMMDD_1、YYYYMMDD_2。
+            if re.fullmatch(r"\d{8}(?:_\d+)?", d)
+            and os.path.isdir(os.path.join(frb_dir, d))
         )
         print(f'  {src["name"]}: {len(dates)} date dirs')
 
@@ -142,6 +145,21 @@ def collect_calibration_groups(root_dir, cal_root, sources, cal_npz, down_time, 
                         f'calibration FITS for {len(h5_list)} bursts'
                     )
 
+                # 同一日期的观测有时会被拆成 YYYYMMDD_1/2。后一段
+                # 目录中名为 *_0001.fits 的文件不一定真的含有噪声管信号；
+                # 因此先用当前目录的文件，诊断不通过时再按顺序尝试同日
+                # 其他分段的同波束定标文件。不跨日期借用定标。
+                date_base = date.split("_", 1)[0]
+                cal_fits_candidates = [cal_fits_path]
+                for sibling_date in dates:
+                    if sibling_date == date or sibling_date.split("_", 1)[0] != date_base:
+                        continue
+                    sibling_path = find_cal_fits(
+                        os.path.join(frb_dir, sibling_date), beam
+                    )
+                    if sibling_path is not None and sibling_path not in cal_fits_candidates:
+                        cal_fits_candidates.append(sibling_path)
+
                 groups.append(
                     {
                         "source": src["name"],
@@ -150,6 +168,7 @@ def collect_calibration_groups(root_dir, cal_root, sources, cal_npz, down_time, 
                         "output_dir": os.path.join(cal_root, src["name"], date),
                         "h5_list": h5_list,
                         "cal_fits_path": cal_fits_path,
+                        "cal_fits_candidates": cal_fits_candidates,
                         "cal_npz": cal_npz,
                         "ra": src["ra"],
                         "dec": src["dec"],
@@ -157,6 +176,9 @@ def collect_calibration_groups(root_dir, cal_root, sources, cal_npz, down_time, 
                         "down_time": down_time,
                         "down_freq": down_freq,
                         "rfi_fft": rfi_fft,
+                        "time_crop_samples": time_crop_samples,
+                        "target_time_reso": target_time_reso,
+                        "output_time_samples": output_time_samples,
                     }
                 )
 
@@ -165,12 +187,38 @@ def collect_calibration_groups(root_dir, cal_root, sources, cal_npz, down_time, 
 
 def process_group(group):
     """Calibrate all bursts in one source/date/beam group."""
-    with fits.open(group["cal_fits_path"]) as f:
-        nchan = f[1].header["NCHAN"]
+    candidates = group.get("cal_fits_candidates", [group["cal_fits_path"]])
+    calibration_errors = []
+    for cal_fits_path in candidates:
+        try:
+            with fits.open(cal_fits_path) as f:
+                nchan = f[1].header["NCHAN"]
+            noise_cal = fold_noise_cal(
+                cal_fits_path, diagnostic_dir=group["output_dir"]
+            )
+        except ValueError as exc:
+            calibration_errors.append((cal_fits_path, exc))
+            print(
+                f'  [noise-cal 不可用] {group["source"]}/{group["date"]} '
+                f'M{group["beam"]:02d}: {os.path.basename(cal_fits_path)}: {exc}'
+            )
+            continue
+        break
+    else:
+        details = "; ".join(
+            f"{os.path.basename(path)}: {error}"
+            for path, error in calibration_errors
+        )
+        raise ValueError(
+            f'{group["source"]}/{group["date"]} M{group["beam"]:02d} '
+            f"同日候选定标文件全部不可用: {details}"
+        )
 
-    noise_cal = fold_noise_cal(
-        group["cal_fits_path"], diagnostic_dir=group["output_dir"]
-    )
+    if cal_fits_path != group["cal_fits_path"]:
+        print(
+            f'  [noise-cal 同日回退] {group["source"]}/{group["date"]} '
+            f'M{group["beam"]:02d}: 改用 {cal_fits_path}'
+        )
     t_cal = load_t_cal(group["cal_npz"], group["beam"], nchan)
 
     print(
@@ -186,17 +234,21 @@ def process_group(group):
             group["ra"],
             group["dec"],
             group["beam"],
-            group["cal_fits_path"],
+            cal_fits_path,
             group["cal_npz"],
-            group["down_time"],
-            group["down_freq"],
-            group["rfi_fft"],
+            down_time=group["down_time"],
+            down_freq=group["down_freq"],
+            rfi_fft=group["rfi_fft"],
+            time_crop_samples=group["time_crop_samples"],
+            target_time_reso=group["target_time_reso"],
+            output_time_samples=group["output_time_samples"],
         )
     return group["source"], group["date"], group["beam"], len(group["h5_list"])
 
 
 def batch_calibrate(root_dir, cal_root, dm_file, cal_npz, down_time=None, down_freq=None,
-                    rfi_fft=True, num_workers=8, only=None):
+                    rfi_fft=True, num_workers=8, only=None, time_crop_samples=None,
+                    target_time_reso=None, output_time_samples=None):
     sources = parse_dm_file(dm_file)
     print(f"[source table] {len(sources)} sources")
 
@@ -209,6 +261,9 @@ def batch_calibrate(root_dir, cal_root, dm_file, cal_npz, down_time=None, down_f
         down_freq,
         rfi_fft,
         only,
+        time_crop_samples,
+        target_time_reso,
+        output_time_samples,
     )
     if not groups:
         print("No calibration groups to process")
@@ -235,6 +290,33 @@ def parse_args():
     parser.add_argument("--cal-npz", default=DEFAULT_CAL_NPZ)
     parser.add_argument("--down-time", type=int, default=None)
     parser.add_argument("--down-freq", type=int, default=None)
+    parser.add_argument(
+        "--time-crop-samples",
+        type=int,
+        default=None,
+        help=(
+            "Center-crop this many raw time samples before downsampling; "
+            "when set, time downsampling defaults to 1 and plots use saved resolution"
+        ),
+    )
+    parser.add_argument(
+        "--target-time-reso-ms",
+        type=float,
+        default=None,
+        help=(
+            "Target saved time resolution in milliseconds; an integer down_time "
+            "is calculated separately for every input H5"
+        ),
+    )
+    parser.add_argument(
+        "--output-time-samples",
+        type=int,
+        default=None,
+        help=(
+            "Center-crop to this many samples after calibration and saved-resolution "
+            "downsampling"
+        ),
+    )
     parser.add_argument("--rfi-down-freq", type=int, default=None, help=argparse.SUPPRESS)
     parser.add_argument(
         "--rfi-fft",
@@ -249,6 +331,10 @@ def parse_args():
 
 if __name__ == "__main__":
     args = parse_args()
+    if args.target_time_reso_ms is not None and args.down_time is not None:
+        raise SystemExit("--target-time-reso-ms and --down-time are mutually exclusive")
+    if args.output_time_samples is not None and args.time_crop_samples is not None:
+        raise SystemExit("--output-time-samples and --time-crop-samples are mutually exclusive")
     batch_calibrate(
         args.root_dir,
         args.cal_root,
@@ -259,4 +345,11 @@ if __name__ == "__main__":
         rfi_fft=args.rfi_fft,
         num_workers=args.workers,
         only=args.only,
+        time_crop_samples=args.time_crop_samples,
+        target_time_reso=(
+            None
+            if args.target_time_reso_ms is None
+            else args.target_time_reso_ms * 1e-3
+        ),
+        output_time_samples=args.output_time_samples,
     )

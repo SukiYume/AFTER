@@ -15,6 +15,10 @@ confirmed TOAs + raw FAST FITS
 legacy burst FITS
   -> current cut-H5 schema
   -> batch calibration
+
+rebuild catalog + raw FAST FITS
+  -> rebuilt legacy burst FITS
+  -> current cut-H5 schema
 ```
 
 All commands below assume that the current directory is the AFTER repository
@@ -27,6 +31,7 @@ scientific workflow.
 |---|---|---|
 | Cut a standard `*_Burst.txt` catalog | `batch_cut_burst_data.py` | Every selected event uses the same `segment_length`. |
 | Cut long-period or variable-window candidates | `batch_cut_selected_long_period.py` | Each row specifies its own `segment_length`; source/date filtering is useful. |
+| Rebuild legacy burst FITS | `cut_burst_fits.py` | The old FITS were removed but a checked rebuild catalog and the raw observation remain available. |
 | Convert legacy burst FITS to the current H5 schema | `fits_to_h5.py` | Old cut FITS already exist and the full observation does not need to be read again. |
 | Calibrate cut H5 files in batches | `batch_calibration.py` | Produce Stokes I/Q/U/V, RFI masks, and `*_cal.h5`. |
 
@@ -35,6 +40,7 @@ Inspect the full CLI before running a batch:
 ```bash
 python batch_processing/batch_cut_burst_data.py --help
 python batch_processing/batch_cut_selected_long_period.py --help
+python batch_processing/cut_burst_fits.py --help
 python batch_processing/fits_to_h5.py --help
 python batch_processing/batch_calibration.py --help
 ```
@@ -150,7 +156,25 @@ Output layout:
 `--overwrite` clears and rebuilds existing cut products for the selected
 source/date scope. Verify that scope with `--dry-run` first.
 
-## 3. Convert legacy burst FITS
+## 3. Rebuild or convert legacy burst FITS
+
+If old cut FITS were removed after their exact reconstruction metadata was
+saved, `cut_burst_fits.py` can recreate them from the raw observation. Start
+with `--dry-run`; this validates the catalog, frozen raw-file order, and
+availability of uncompressed FITS without writing burst data:
+
+```bash
+python batch_processing/cut_burst_fits.py \
+  --burst-txt /path/to/catalogs/FRBXXXX_legacy_fits_rebuild.txt \
+  --raw-root /path/to/raw-root \
+  --output-root /path/to/rebuilt-fits \
+  --dry-run
+```
+
+Remove `--dry-run` only after checking every reported directory and group.
+Rows whose `rebuild_status` is not `ready*` stop the run by default; use
+`--skip-blocked` only after reviewing why those rows cannot be reconstructed
+exactly. The script writes only dedispersed burst FITS and does no calibration.
 
 Use `fits_to_h5.py` when legacy cut FITS already exist but downstream stages
 need the current H5 schema. The expected input resembles:
@@ -163,9 +187,12 @@ need the current H5 schema. The expected input resembles:
       <FRB>-<date>-Mxx-<fits-number>-<start-sample>.fits
 ```
 
-Place the matching `<FRB>_Burst.txt` catalogs under `--catalog-dir`. They use
-the same seven-column format described above. The converter matches catalog
-metadata using the source directory, date, beam, FITS number, and start sample.
+Place the matching `<FRB>_Burst.txt` catalogs under `--catalog-dir`. The normal
+input uses the same seven-column format described above. The legacy six-column
+`name beam project dm date time` format is also accepted. Date directory and
+filename tokens may be either `YYYYMMDD` or split forms such as `YYYYMMDD_1`.
+The converter matches catalog metadata using the source directory, date, beam,
+FITS number, and start sample.
 
 ```bash
 python batch_processing/fits_to_h5.py \
@@ -187,7 +214,9 @@ python batch_processing/fits_to_h5.py \
 
 The converter copies `_0001.fits` calibration files, writes current-schema cut
 H5 files, and creates `obs_info.json` in each output date directory. Use
-`--overwrite` to replace existing converted products.
+`--dry-run` to inspect the scope without creating directories or files, and use
+`--overwrite` to replace existing converted products. `--asd-root` is required
+so the converter never guesses which legacy tree to scan.
 
 ## 4. Batch flux and polarization calibration
 
@@ -210,7 +239,12 @@ FRB_name DM RA DEC
 RA and DEC may use colon notation or another Astropy-readable unit format. DM
 is retained as source metadata; each cut H5 should also carry its own DM.
 Every beam group uses its matching `Mxx..._0001.fits` in the same date
-directory. Processing stops for a group whose calibration file is missing.
+directory. For split same-day directories such as `YYYYMMDD_1` and
+`YYYYMMDD_2`, the batch first validates the current segment's calibration
+file. If its noise-diode diagnostic fails, the batch may fall back to a valid
+same-beam calibration file from another segment of that same date; it never
+falls back across dates. Processing stops when no same-day candidate is
+available. The selected file is recorded in each H5's `calibration_fits` attr.
 
 ### Run
 
@@ -240,6 +274,14 @@ Saved-resolution choices:
 - omit `--down-time` and `--down-freq` for automatic, plot-friendly values;
 - use `--down-time 1` to retain the raw time resolution;
 - use `--down-freq 1` to retain the raw frequency channels.
+- use `--time-crop-samples 512` to center-crop 512 raw time samples before
+  downsampling; unless explicitly overridden, time downsampling becomes 1 and
+  the JPG is redrawn directly at the saved resolution.
+- use `--target-time-reso-ms 0.786432 --output-time-samples 512` to calibrate
+  the complete input first, choose a separate integer time-downsampling factor
+  for each raw resolution, and only then center-crop the downsampled result to
+  512 samples. `--target-time-reso-ms` cannot be combined with `--down-time`,
+  and `--output-time-samples` cannot be combined with `--time-crop-samples`.
 
 FFT RFI detection is enabled by default. Pass `--no-rfi-fft` to use entropy
 mode instead.
