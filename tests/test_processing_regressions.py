@@ -1,3 +1,5 @@
+# fmt: off
+
 import sys
 from pathlib import Path
 from types import SimpleNamespace
@@ -14,7 +16,7 @@ def test_gaussian_fit_accepts_descending_axis():
     x = np.linspace(1000.0, 1500.0, 501)
     y = 0.2 + 5.0 * np.exp(-0.5 * ((x - 1250.0) / 42.466) ** 2)
 
-    ascending = burst_properties._fit_gaussian(x, y)
+    ascending  = burst_properties._fit_gaussian(x, y)
     descending = burst_properties._fit_gaussian(x[::-1], y[::-1])
 
     np.testing.assert_allclose(descending, ascending, rtol=1e-6, atol=1e-6)
@@ -22,7 +24,7 @@ def test_gaussian_fit_accepts_descending_axis():
 
 def test_bootstrap_is_reproducible_with_seed():
     source_rng = np.random.default_rng(7)
-    data = source_rng.normal(0.0, 1.0, (128, 32))
+    data       = source_rng.normal(0.0, 1.0, (128, 32))
     data[60:68] += 8.0
     kwargs = {
         "stokes_I": data,
@@ -35,8 +37,9 @@ def test_bootstrap_is_reproducible_with_seed():
             "freq_start": 0,
             "freq_end": 32,
         },
-        "noise_mask": np.r_[np.ones(56, dtype=bool), np.zeros(16, dtype=bool),
-                            np.ones(56, dtype=bool)],
+        "noise_mask": np.r_[
+            np.ones(56, dtype=bool), np.zeros(16, dtype=bool), np.ones(56, dtype=bool)
+        ],
         "rfi_mask": np.zeros_like(data, dtype=bool),
         "freq_index": np.ones(32, dtype=bool),
         "n_boot": 50,
@@ -104,8 +107,9 @@ def test_cut_before_observation_start_keeps_logical_time(monkeypatch, tmp_path):
 
 
 def test_extract_segment_zero_pads_a_truncated_final_fits(
-        monkeypatch, tmp_path, capsys):
-    first = np.arange(10, dtype=np.uint8).reshape(10, 1, 1)
+    monkeypatch, tmp_path, capsys
+):
+    first     = np.arange(10, dtype=np.uint8).reshape(10, 1, 1)
     truncated = np.arange(10, 14, dtype=np.uint8).reshape(4, 1, 1)
 
     def fake_read(path, header=True):
@@ -126,8 +130,8 @@ def test_extract_segment_zero_pads_a_truncated_final_fits(
         str(tmp_path),
         ["M01_0001.fits", "M01_0002.fits"],
         {"file_nsamp": 10, "npol": 1, "nchan": 1},
-        start_sample=8,
-        total_length=8,
+        start_sample = 8,
+        total_length = 8,
     )
 
     np.testing.assert_array_equal(
@@ -137,8 +141,7 @@ def test_extract_segment_zero_pads_a_truncated_final_fits(
     assert "末尾补零 2 个采样" in capsys.readouterr().out
 
 
-def test_calibration_rewrites_incomplete_output_with_provenance(
-        monkeypatch, tmp_path):
+def test_calibration_rewrites_incomplete_output_with_provenance(monkeypatch, tmp_path):
     input_path = tmp_path / "FRBTEST-20260728-M02-0001-000000000.h5"
     output_dir = tmp_path / "cal"
     output_dir.mkdir()
@@ -146,15 +149,17 @@ def test_calibration_rewrites_incomplete_output_with_provenance(
     with h5py.File(input_path, "w") as h5:
         h5.create_dataset("data", data=np.zeros((16, 2, 4), dtype=np.float32))
         h5.create_dataset("freq", data=np.linspace(1000.0, 1500.0, 4))
-        h5.attrs.update({
-            "file_mjd": 60000.0,
-            "obs_start_mjd": 60000.0,
-            "start_sample": 0,
-            "toa_sec": 0.008,
-            "time_reso": 0.001,
-            "nchan": 4,
-            "dm": 100.0,
-        })
+        h5.attrs.update(
+            {
+                "file_mjd": 60000.0,
+                "obs_start_mjd": 60000.0,
+                "start_sample": 0,
+                "toa_sec": 0.008,
+                "time_reso": 0.001,
+                "nchan": 4,
+                "dm": 100.0,
+            }
+        )
     with h5py.File(output_path, "w") as h5:
         h5.create_dataset("data", data=np.zeros((1,), dtype=np.float32))
 
@@ -191,9 +196,9 @@ def test_calibration_rewrites_incomplete_output_with_provenance(
         2,
         "/cal/M02_0001.fits",
         "/cal/tcal.npz",
-        down_time=1,
-        down_freq=1,
-        time_crop_samples=8,
+        down_time         = 1,
+        down_freq         = 1,
+        time_crop_samples = 8,
     )
 
     assert not Path(f"{output_path}.tmp").exists()
@@ -216,23 +221,24 @@ def test_calibration_rewrites_incomplete_output_with_provenance(
         assert h5.attrs["plot_down_freq"] == 1
 
 
-def test_calibration_targets_effective_resolution_then_crops(
-        monkeypatch, tmp_path):
+def test_calibration_targets_effective_resolution_then_crops(monkeypatch, tmp_path):
     """验证新路径的顺序是“完整数据定标 → 下采样 → 中心裁剪”。"""
     input_path = tmp_path / "FRBTEST-20260728-M02-0001-000000000.h5"
     output_dir = tmp_path / "cal"
     with h5py.File(input_path, "w") as h5:
         h5.create_dataset("data", data=np.zeros((32, 2, 8), dtype=np.float32))
         h5.create_dataset("freq", data=np.linspace(1000.0, 1500.0, 8))
-        h5.attrs.update({
-            "file_mjd": 60000.0,
-            "obs_start_mjd": 60000.0,
-            "start_sample": 0,
-            "toa_sec": 0.016,
-            "time_reso": 0.001,
-            "nchan": 8,
-            "dm": 100.0,
-        })
+        h5.attrs.update(
+            {
+                "file_mjd": 60000.0,
+                "obs_start_mjd": 60000.0,
+                "start_sample": 0,
+                "toa_sec": 0.016,
+                "time_reso": 0.001,
+                "nchan": 8,
+                "dm": 100.0,
+            }
+        )
 
     calibrated_input_shapes = []
 
@@ -271,9 +277,9 @@ def test_calibration_targets_effective_resolution_then_crops(
         2,
         "/cal/M02_0001.fits",
         "/cal/tcal.npz",
-        down_freq=2,
-        target_time_reso=0.004,
-        output_time_samples=4,
+        down_freq           = 2,
+        target_time_reso    = 0.004,
+        output_time_samples = 4,
     )
 
     # 定标函数看到的仍是完整 32 个原始时间点。
@@ -309,15 +315,17 @@ def test_calibration_rejects_non_integer_target_time_ratio(tmp_path):
     with h5py.File(input_path, "w") as h5:
         h5.create_dataset("data", data=np.zeros((16, 2, 4), dtype=np.float32))
         h5.create_dataset("freq", data=np.linspace(1000.0, 1500.0, 4))
-        h5.attrs.update({
-            "file_mjd": 60000.0,
-            "obs_start_mjd": 60000.0,
-            "start_sample": 0,
-            "toa_sec": 0.008,
-            "time_reso": 0.001,
-            "nchan": 4,
-            "dm": 100.0,
-        })
+        h5.attrs.update(
+            {
+                "file_mjd": 60000.0,
+                "obs_start_mjd": 60000.0,
+                "start_sample": 0,
+                "toa_sec": 0.008,
+                "time_reso": 0.001,
+                "nchan": 4,
+                "dm": 100.0,
+            }
+        )
 
     with pytest.raises(ValueError, match="整数倍"):
         calibration.process_one_burst(
@@ -342,21 +350,24 @@ def test_calibration_rejects_non_integer_target_time_ratio(tmp_path):
     ],
 )
 def test_calibration_rejects_downsampling_larger_than_data(
-        tmp_path, downsampling, error):
+    tmp_path, downsampling, error
+):
     input_path = tmp_path / "FRBTEST.h5"
     output_dir = tmp_path / "cal"
     with h5py.File(input_path, "w") as h5:
         h5.create_dataset("data", data=np.zeros((16, 2, 4), dtype=np.float32))
         h5.create_dataset("freq", data=np.linspace(1000.0, 1500.0, 4))
-        h5.attrs.update({
-            "file_mjd": 60000.0,
-            "obs_start_mjd": 60000.0,
-            "start_sample": 0,
-            "toa_sec": 0.008,
-            "time_reso": 0.001,
-            "nchan": 4,
-            "dm": 100.0,
-        })
+        h5.attrs.update(
+            {
+                "file_mjd": 60000.0,
+                "obs_start_mjd": 60000.0,
+                "start_sample": 0,
+                "toa_sec": 0.008,
+                "time_reso": 0.001,
+                "nchan": 4,
+                "dm": 100.0,
+            }
+        )
 
     with pytest.raises(ValueError, match=error):
         calibration.process_one_burst(
@@ -383,7 +394,7 @@ def test_batch_calibration_falls_back_to_same_date_sibling(monkeypatch):
         def __exit__(self, *args):
             return False
 
-    attempted = []
+    attempted      = []
     processed_with = []
 
     monkeypatch.setattr(batch_calibration.fits, "open", lambda *args: FakeFits())
@@ -433,3 +444,5 @@ def test_batch_calibration_falls_back_to_same_date_sibling(monkeypatch):
     assert attempted == group["cal_fits_candidates"]
     assert processed_with == ["/cut/20200806_1/good-M01_0001.fits"]
     assert result == ("FRB190520", "20200806_2", 1, 1)
+
+# fmt: on

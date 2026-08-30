@@ -1,3 +1,5 @@
+# fmt: off
+
 from pathlib import Path
 
 import h5py
@@ -21,9 +23,7 @@ def test_parse_old_filename_accepts_split_date_directory():
 
 
 def test_parse_old_filename_accepts_negative_start_token():
-    parsed = fits_to_h5.parse_old_filename(
-        "FRBTEST-20260728-M01-0001-n000000123.fits"
-    )
+    parsed = fits_to_h5.parse_old_filename("FRBTEST-20260728-M01-0001-n000000123.fits")
 
     assert parsed is not None
     assert parsed["start_sample"] == -123
@@ -31,7 +31,7 @@ def test_parse_old_filename_accepts_negative_start_token():
 
 def test_convert_preserves_negative_start_token(monkeypatch, tmp_path):
     fits_path = tmp_path / "FRBTEST-20260728-M01-0001-n000000123.fits"
-    captured = {}
+    captured  = {}
     monkeypatch.setattr(
         fits_to_h5,
         "load_fits_data",
@@ -43,25 +43,25 @@ def test_convert_preserves_negative_start_token(monkeypatch, tmp_path):
 
     monkeypatch.setattr(fits_to_h5, "save_to_h5", fake_save)
 
-    result = fits_to_h5.convert_one_fits((
-        fits_path,
-        tmp_path / "output",
-        [],
-        {
-            "time_reso": 0.001,
-            "file_nsamp": 16,
-            "start_mjd": 60000.0,
-            "npol": 2,
-            "nchan": 4,
-            "freq": np.linspace(1000.0, 1500.0, 4),
-        },
-        False,
-    ))
+    result = fits_to_h5.convert_one_fits(
+        (
+            fits_path,
+            tmp_path / "output",
+            [],
+            {
+                "time_reso": 0.001,
+                "file_nsamp": 16,
+                "start_mjd": 60000.0,
+                "npol": 2,
+                "nchan": 4,
+                "freq": np.linspace(1000.0, 1500.0, 4),
+            },
+            False,
+        )
+    )
 
     assert result == "ok_no_catalog_match"
-    assert captured["filename"] == (
-        "FRBTEST-20260728-M01-0001-n000000123.h5"
-    )
+    assert captured["filename"] == ("FRBTEST-20260728-M01-0001-n000000123.h5")
 
 
 def test_is_date_dir_accepts_split_suffix(tmp_path):
@@ -131,9 +131,11 @@ def test_copy_cal_files_dry_run_does_not_create_output(tmp_path):
     selected = fits_to_h5.copy_cal_files(
         date_path,
         output_path,
-        overwrite=False,
-        dry_run=True,
+        overwrite = False,
+        dry_run   = True,
     )
 
     assert selected == calibration_path
     assert not output_path.exists()
+
+# fmt: on

@@ -1,3 +1,5 @@
+# fmt: off
+
 """通用 RFI 标记工具。
 
 流程中有两个地方需要做 RFI 标记：
@@ -11,8 +13,8 @@
 """
 
 import numpy as np
-from scipy.stats import entropy, median_abs_deviation
 from scipy.ndimage import median_filter
+from scipy.stats import entropy, median_abs_deviation
 
 
 def z_score_flagger(data, sigma):
@@ -33,7 +35,7 @@ def z_score_flagger(data, sigma):
         True = 异常点。
     """
     med = np.nanmedian(data)
-    mad = median_abs_deviation(np.ravel(data), nan_policy='omit')
+    mad = median_abs_deviation(np.ravel(data), nan_policy="omit")
     return np.abs(data - med) > sigma * mad
 
 
@@ -69,18 +71,22 @@ def cal_rfi(data, noise_mask, down_time=1, down_freq=1, fft=False):
     work = data.copy().astype(np.float32, copy=False)
 
     # 1) 像素级：50σ 孤立异常点（保留原始分辨率）
-    centered  = work - np.nanmean(work, axis=0, keepdims=True)
-    rfi_pixel = z_score_flagger(centered, sigma=50)
+    centered        = work - np.nanmean(work, axis=0, keepdims=True)
+    rfi_pixel       = z_score_flagger(centered, sigma=50)
     work[rfi_pixel] = np.nanmedian(work)
 
     # 2) 下采样：截断到 down_time / down_freq 的整数倍
     nsamp, nchan = work.shape
-    nt, nf = nsamp // down_time, nchan // down_freq
+    nt, nf       = nsamp // down_time, nchan // down_freq
     if nt == 0 or nf == 0:
         return np.zeros(nchan, dtype=bool), rfi_pixel
 
-    work_ds  = work[:nt * down_time, :nf * down_freq].reshape(nt, down_time, nf, down_freq).mean(axis=(1, 3))
-    noise_ds = noise_mask[:nt * down_time].reshape(nt, down_time).mean(axis=1) > 0.5
+    work_ds = (
+        work[: nt * down_time, : nf * down_freq]
+        .reshape(nt, down_time, nf, down_freq)
+        .mean(axis=(1, 3))
+    )
+    noise_ds = noise_mask[: nt * down_time].reshape(nt, down_time).mean(axis=1) > 0.5
     if noise_ds.sum() < 3:
         return np.zeros(nchan, dtype=bool), rfi_pixel
 
@@ -96,13 +102,12 @@ def cal_rfi(data, noise_mask, down_time=1, down_freq=1, fft=False):
         base[chan_bad] = np.nanmedian(base)
         chan_bad       = chan_bad | z_score_flagger(base, sigma=20)
 
-    rfi_channel = np.zeros(nchan, dtype=bool)
-    rfi_channel[:nf * down_freq] = np.repeat(chan_bad, down_freq)
+    rfi_channel                   = np.zeros(nchan, dtype=bool)
+    rfi_channel[: nf * down_freq] = np.repeat(chan_bad, down_freq)
     return rfi_channel, rfi_pixel
 
 
-def robust_channel_mask(data, noise_mask, sigma=6.0,
-                        local_window=31, grow=1):
+def robust_channel_mask(data, noise_mask, sigma=6.0, local_window=31, grow=1):
     """标记持续窄带 RFI，只返回通道级 mask。
 
     ``cal_rfi`` 的熵方法擅长抓很强的坏通道，但偏振分析里仍可能残留一些
@@ -135,11 +140,11 @@ def robust_channel_mask(data, noise_mask, sigma=6.0,
     if planes.ndim == 2:
         planes = planes[np.newaxis, ...]
     if planes.ndim != 3:
-        raise ValueError('data 必须是 (nsamp,nchan) 或 (npol,nsamp,nchan)')
+        raise ValueError("data 必须是 (nsamp,nchan) 或 (npol,nsamp,nchan)")
 
     noise_mask = np.asarray(noise_mask, dtype=bool)
     if noise_mask.ndim != 1 or noise_mask.size != planes.shape[1]:
-        raise ValueError('noise_mask 长度必须等于时间采样数')
+        raise ValueError("noise_mask 长度必须等于时间采样数")
     if np.count_nonzero(noise_mask) < 3:
         return np.zeros(planes.shape[2], dtype=bool)
 
@@ -153,15 +158,16 @@ def robust_channel_mask(data, noise_mask, sigma=6.0,
 
     combined = np.zeros(planes.shape[2], dtype=bool)
     for plane in planes:
-        noise = plane[noise_mask]
-        center = np.nanmedian(noise, axis=0, keepdims=True)
+        noise    = plane[noise_mask]
+        center   = np.nanmedian(noise, axis=0, keepdims=True)
         residual = noise - center
-        diff = np.diff(residual, axis=0)
+        diff     = np.diff(residual, axis=0)
         metrics = (
             1.4826 * np.nanmedian(np.abs(residual), axis=0),
-            1.4826 * np.nanmedian(
-                np.abs(diff - np.nanmedian(diff, axis=0, keepdims=True)),
-                axis=0),
+            1.4826
+            * np.nanmedian(
+                np.abs(diff - np.nanmedian(diff, axis=0, keepdims=True)), axis=0
+            ),
             np.nanpercentile(np.abs(residual), 99, axis=0),
         )
 
@@ -169,21 +175,19 @@ def robust_channel_mask(data, noise_mask, sigma=6.0,
             positive = metric[np.isfinite(metric) & (metric > 0)]
             if positive.size == 0:
                 continue
-            floor = max(float(np.nanmedian(positive)) * 1e-6,
-                        np.finfo(np.float64).tiny)
-            log_metric = np.log10(np.maximum(metric, floor))
-            local = median_filter(log_metric, size=local_window,
-                                  mode='nearest')
-            excess = log_metric - local
+            floor         = max(float(np.nanmedian(positive)) * 1e-6, np.finfo(np.float64).tiny)
+            log_metric    = np.log10(np.maximum(metric, floor))
+            local         = median_filter(log_metric, size=local_window, mode="nearest")
+            excess        = log_metric - local
             center_excess = np.nanmedian(excess)
-            scale = 1.4826 * np.nanmedian(
-                np.abs(excess - center_excess))
+            scale         = 1.4826 * np.nanmedian(np.abs(excess - center_excess))
             if not np.isfinite(scale) or scale <= 0:
                 continue
             combined |= excess > center_excess + sigma * scale
 
     if grow > 0 and np.any(combined):
-        kernel = np.ones(2 * grow + 1, dtype=np.int16)
-        combined = np.convolve(combined.astype(np.int16), kernel,
-                               mode='same') > 0
+        kernel   = np.ones(2 * grow + 1, dtype=np.int16)
+        combined = np.convolve(combined.astype(np.int16), kernel, mode="same") > 0
     return combined
+
+# fmt: on

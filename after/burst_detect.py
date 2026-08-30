@@ -1,3 +1,5 @@
+# fmt: off
+
 """
 爆发检测流水线 (YOLO)
 
@@ -44,7 +46,7 @@ device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 DEFAULT_MAX_HORIZONTAL_ASPECT = 3.0
 
 # 与 calibration.py 的 quicklook 保持同样的画布大小。
-TWO_PANEL_FIGSIZE = (5, 5)
+TWO_PANEL_FIGSIZE        = (5, 5)
 # 交互窗口右侧显示定标 JPG 时只增加宽度，保持原有高度和拖框面板大小。
 REFERENCE_REVIEW_FIGSIZE = (11, 6)
 
@@ -64,7 +66,7 @@ def _find_reference_jpg(h5_path):
     ``name.h5`` 对应 ``name.jpg`` 和少数保留 ``_cal`` 后缀的 JPG。找不到时
     返回 None，让交互窗口保持原来的双面板布局。
     """
-    stem, _ = os.path.splitext(os.fspath(h5_path))
+    stem, _    = os.path.splitext(os.fspath(h5_path))
     plain_stem = stem[:-4] if stem.lower().endswith("_cal") else stem
     candidates = [plain_stem + ".jpg"]
     if plain_stem != stem:
@@ -122,8 +124,8 @@ def _fill_nonfinite(data):
     arr = np.asarray(data, dtype=np.float32).copy()
     bad = ~np.isfinite(arr)
     if np.any(bad):
-        good = arr[~bad]
-        fill = float(np.median(good)) if good.size else 0.0
+        good     = arr[~bad]
+        fill     = float(np.median(good)) if good.size else 0.0
         arr[bad] = fill
     return arr
 
@@ -158,13 +160,13 @@ def normalize_image(data, pmin=5, pmax=95):
 
     # 每个频率通道用自己的时间平均值归一化。denom 形状为 (1, nchan)，
     # 会自动 broadcast 到 (nsamp, nchan)。
-    denom = np.mean(img, axis=0, keepdims=True)
-    valid = np.isfinite(denom) & (np.abs(denom) > 1e-8)
+    denom    = np.mean(img, axis=0, keepdims=True)
+    valid    = np.isfinite(denom) & (np.abs(denom) > 1e-8)
     fallback = float(np.median(denom[valid])) if np.any(valid) else 1.0
     if not np.isfinite(fallback) or abs(fallback) <= 1e-8:
         fallback = 1.0
     denom = np.where(valid, denom, fallback)
-    img = img / denom
+    img   = img / denom
 
     vmin, vmax = np.percentile(img, (pmin, pmax))
     if not np.isfinite(vmin) or not np.isfinite(vmax) or vmax <= vmin:
@@ -183,8 +185,8 @@ def prepare_calibration_display(
     这里只复制 Stokes I、逐频率通道除以时间平均值，并按 calibration 保存的
     额外倍率下采样。特意不读取或屏蔽任何 RFI 通道，也不会改动原数组。
     """
-    plot_I = np.asarray(stokes_I, dtype=np.float32).copy()
-    plot_freq = np.asarray(freq).copy()
+    plot_I      = np.asarray(stokes_I, dtype=np.float32).copy()
+    plot_freq   = np.asarray(freq).copy()
     time_factor = max(1, int(time_factor))
     freq_factor = max(1, int(freq_factor))
 
@@ -218,7 +220,7 @@ def write_detection_results(h5_path, iquv, burst_regions, rfi_fft=False):
     noise_mask, 先按噪声段中值减基线, 再分别在 Stokes I / V 上找 RFI,
     最后取二者并集。不覆盖 calibration 阶段的 rfi_mask / rfi_channel。
     """
-    work = np.asarray(iquv, dtype=np.float32).copy()
+    work  = np.asarray(iquv, dtype=np.float32).copy()
     nsamp = work.shape[1]
     nchan = work.shape[2]
 
@@ -232,7 +234,7 @@ def write_detection_results(h5_path, iquv, burst_regions, rfi_fft=False):
         noise_mask[:] = True
 
     baseline = np.nanmedian(work[:, noise_mask, :], axis=1, keepdims=True)
-    work = work - baseline
+    work     = work - baseline
 
     rfi_channel_i, rfi_pixel_i = cal_rfi(
         work[0], noise_mask, down_time=1, down_freq=1, fft=rfi_fft
@@ -243,15 +245,15 @@ def write_detection_results(h5_path, iquv, burst_regions, rfi_fft=False):
         )
     else:
         rfi_channel_v = np.zeros(nchan, dtype=bool)
-        rfi_pixel_v = np.zeros((nsamp, nchan), dtype=bool)
+        rfi_pixel_v   = np.zeros((nsamp, nchan), dtype=bool)
 
-    rfi_channel = rfi_channel_i | rfi_channel_v
-    rfi_pixel = rfi_pixel_i | rfi_pixel_v
-    rfi_mask = rfi_pixel.copy()
+    rfi_channel              = rfi_channel_i | rfi_channel_v
+    rfi_pixel                = rfi_pixel_i | rfi_pixel_v
+    rfi_mask                 = rfi_pixel.copy()
     rfi_mask[:, rfi_channel] = True
-    rfi_fraction = float(np.sum(rfi_mask) / rfi_mask.size) if rfi_mask.size else 0.0
-    plot_I = work[0].copy()
-    plot_I[rfi_mask] = np.nan
+    rfi_fraction             = float(np.sum(rfi_mask) / rfi_mask.size) if rfi_mask.size else 0.0
+    plot_I                   = work[0].copy()
+    plot_I[rfi_mask]         = np.nan
 
     with h5py.File(h5_path, "a") as f:
         f.attrs["bursts"] = json.dumps(burst_regions, ensure_ascii=False)
@@ -262,11 +264,11 @@ def write_detection_results(h5_path, iquv, burst_regions, rfi_fft=False):
             if name in f:
                 del f[name]
             f.create_dataset(name, data=data)
-        f.attrs["burst_rfi_fraction"] = rfi_fraction
-        f.attrs["burst_rfi_channel_count"] = int(np.sum(rfi_channel))
+        f.attrs["burst_rfi_fraction"]           = rfi_fraction
+        f.attrs["burst_rfi_channel_count"]      = int(np.sum(rfi_channel))
         f.attrs["burst_rfi_noise_sample_count"] = int(np.sum(noise_mask))
-        f.attrs["burst_rfi_method"] = "fft" if rfi_fft else "entropy"
-        f.attrs["burst_rfi_source"] = "burst_detect"
+        f.attrs["burst_rfi_method"]             = "fft" if rfi_fft else "entropy"
+        f.attrs["burst_rfi_source"]             = "burst_detect"
     return rfi_channel, rfi_fraction, plot_I
 
 
@@ -303,7 +305,7 @@ def prepare_image_tiles(stokes_I, target_size=512, time_factor=None, freq_factor
     freq_factor : int or float   实际像素 → 保存通道的换算倍率
     """
     nsamp, nchan = stokes_I.shape
-    data = _fill_nonfinite(stokes_I)
+    data         = _fill_nonfinite(stokes_I)
 
     # ---- 频率轴: 块均值 + (必要时) 线性插值, 最终得到 target_size 通道 ----
     if freq_factor is None:
@@ -317,35 +319,35 @@ def prepare_image_tiles(stokes_I, target_size=512, time_factor=None, freq_factor
         )
     if data.shape[1] != target_size:
         # 不能整除或还偏多/偏少时, 都用线性插值精确对齐
-        data = np.asarray(zoom(data, (1, target_size / data.shape[1]), order=1))
+        data        = np.asarray(zoom(data, (1, target_size / data.shape[1]), order=1))
         freq_factor = nchan / target_size
 
     # ---- 时间轴: 块均值下采样, 太短再线性插值补到 target_size ----
     if time_factor is None:
         time_factor = max(1, nsamp // target_size)
     nt_keep = (nsamp // time_factor) * time_factor
-    nt_ds = nt_keep // time_factor
+    nt_ds   = nt_keep // time_factor
     data = np.asarray(
         data[:nt_keep].reshape(nt_ds, time_factor, target_size).mean(axis=1)
         if time_factor > 1
         else data[:nt_keep]
     )
     if nt_ds < target_size:
-        data = np.asarray(zoom(data, (target_size / nt_ds, 1), order=1))
+        data        = np.asarray(zoom(data, (target_size / nt_ds, 1), order=1))
         time_factor = nsamp / target_size
-        nt_ds = target_size
+        nt_ds       = target_size
 
     # ---- 按 target_size 切 tile, 末尾不足的用中值填充 (单 tile 是 n_tiles=1 的特例) ----
-    n_tiles = int(np.ceil(nt_ds / target_size))
-    med = float(np.median(data))
+    n_tiles        = int(np.ceil(nt_ds / target_size))
+    med            = float(np.median(data))
     tiles, offsets = [], []
     for k in range(n_tiles):
         start = k * target_size
-        end = start + target_size
+        end   = start + target_size
         if end <= nt_ds:
             tile = data[start:end]
         else:
-            pad = np.full((end - nt_ds, target_size), med, dtype=data.dtype)
+            pad  = np.full((end - nt_ds, target_size), med, dtype=data.dtype)
             tile = np.concatenate([data[start:nt_ds], pad], axis=0)
         tiles.append(normalize_image(tile).T)
         offsets.append(start * time_factor)  # 起点偏移 (保存采样点)
@@ -363,7 +365,7 @@ def filter_inference_boxes(
         raise ValueError("max_horizontal_aspect must be positive")
 
     scores = np.asarray(scores)
-    boxes = np.asarray(boxes)
+    boxes  = np.asarray(boxes)
     if boxes.ndim != 2 or boxes.shape[1] != 4:
         raise ValueError(f"boxes must have shape (N, 4), got {boxes.shape}")
     if scores.ndim != 1 or len(scores) != len(boxes):
@@ -392,8 +394,8 @@ def filter_inference_boxes(
     )
     order = sorted(
         range(len(boxes)),
-        key=lambda i: (float(boxes[i, 2] * boxes[i, 3]), float(scores[i])),
-        reverse=True,
+        key     = lambda i: (float(boxes[i, 2] * boxes[i, 3]), float(scores[i])),
+        reverse = True,
     )
 
     keep: list[int] = []
@@ -444,11 +446,11 @@ def predict_single(
     # 输出轴依次为批次、候选锚框、框坐标与类别分数，通常形如 (1, N, 5)。
     pred = pred.permute(0, 2, 1)
 
-    box = pred[0, :, :4]  # [cx, cy, w, h]
-    score = pred[0, :, 4]  # 置信度（单类别）
+    box   = pred[0, :, :4]  # [cx, cy, w, h]
+    score = pred[0, :, 4]   # 置信度（单类别）
 
     # 置信度过滤
-    keep = score > conf
+    keep       = score > conf
     box, score = box[keep], score[keep]
 
     if len(box) == 0:
@@ -485,10 +487,10 @@ def boxes_to_regions_tiled(tile_results, time_factor, freq_factor, nsamp, nchan)
             continue
         for i in range(len(boxes)):
             cx, cy, w, h = boxes[i]
-            t_start = max(0, int((cx - w / 2) * time_factor) + int(t_offset))
-            t_end = min(nsamp, int((cx + w / 2) * time_factor) + int(t_offset))
-            f_start = max(0, int((cy - h / 2) * freq_factor))
-            f_end = min(nchan, int((cy + h / 2) * freq_factor))
+            t_start      = max(0, int((cx - w / 2) * time_factor) + int(t_offset))
+            t_end        = min(nsamp, int((cx + w / 2) * time_factor) + int(t_offset))
+            f_start      = max(0, int((cy - h / 2) * freq_factor))
+            f_end        = min(nchan, int((cy + h / 2) * freq_factor))
             regions.append(
                 {
                     "time_start": t_start,
@@ -524,10 +526,10 @@ def _draw_burst_box(
         (t_lo, f_lo),
         t_hi - t_lo,
         f_hi - f_lo,
-        linewidth=lw,
-        edgecolor=edge,
-        facecolor="none",
-        linestyle="--",
+        linewidth = lw,
+        edgecolor = edge,
+        facecolor = "none",
+        linestyle = "--",
     )
     ax_spec.add_patch(rect)
     span = ax_profile.axvspan(t_lo, t_hi, alpha=alpha, facecolor=face)
@@ -565,9 +567,9 @@ def add_region_patches(
                 t0,
                 max(f0, f1),
                 f"{r['confidence']:.2f}",
-                color=edge,
-                fontsize=8,
-                va="bottom",
+                color    = edge,
+                fontsize = 8,
+                va       = "bottom",
             )
         artists.append((rect, span))
     return artists
@@ -585,19 +587,19 @@ def bbox_to_region(x0, y0, x1, y1, freq, time_reso, nsamp, nchan, confidence=1.0
     f_max = np.clip(max(y0, y1), min(freq[0], freq[-1]), max(freq[0], freq[-1]))
 
     t_start = max(0, int(t_min / (time_reso * 1e3)))
-    t_end = min(nsamp, int(np.ceil(t_max / (time_reso * 1e3))))
+    t_end   = min(nsamp, int(np.ceil(t_max / (time_reso * 1e3))))
 
     if freq[0] <= freq[-1]:
         f_start = int(np.searchsorted(freq, f_min, side="left"))
-        f_end = int(np.searchsorted(freq, f_max, side="right"))
+        f_end   = int(np.searchsorted(freq, f_max, side="right"))
     else:
-        freq_asc = freq[::-1]
+        freq_asc  = freq[::-1]
         asc_start = int(np.searchsorted(freq_asc, f_min, side="left"))
-        asc_end = int(np.searchsorted(freq_asc, f_max, side="right"))
-        f_start = nchan - asc_end
-        f_end = nchan - asc_start
+        asc_end   = int(np.searchsorted(freq_asc, f_max, side="right"))
+        f_start   = nchan - asc_end
+        f_end     = nchan - asc_start
     f_start = max(0, min(nchan, f_start))
-    f_end = max(0, min(nchan, f_end))
+    f_end   = max(0, min(nchan, f_end))
     return {
         "time_start": t_start,
         "time_end": t_end,
@@ -620,18 +622,18 @@ def _render_two_panel(
     ``bilinear`` 减轻屏幕显示的颗粒感，而自动保存图继续保持原有渲染方式。
     """
     nsamp, _ = stokes_I.shape
-    image = np.asarray(stokes_I, dtype=np.float32).T
-    profile = np.nanmean(stokes_I, axis=1)
-    finite = image[np.isfinite(image)]
+    image    = np.asarray(stokes_I, dtype=np.float32).T
+    profile  = np.nanmean(stokes_I, axis=1)
+    finite   = image[np.isfinite(image)]
     if finite.size:
         vmin, vmax = np.nanpercentile(finite, [5, 95])
         if not np.isfinite(vmin) or not np.isfinite(vmax) or vmax <= vmin:
-            center = float(np.nanmedian(finite))
+            center     = float(np.nanmedian(finite))
             vmin, vmax = center - 1.0, center + 1.0
     else:
-        image = np.zeros_like(image, dtype=np.float32)
+        image      = np.zeros_like(image, dtype=np.float32)
         vmin, vmax = 0, 1
-    time_ms = np.arange(nsamp) * time_reso * 1e3
+    time_ms     = np.arange(nsamp) * time_reso * 1e3
     time_end_ms = nsamp * time_reso * 1e3
 
     gs = (
@@ -645,18 +647,18 @@ def _render_two_panel(
     ax_prof.set_xticks([])
     ax_prof.set_ylabel("Flux (Jy)")
 
-    ax_spec = fig.add_subplot(gs[1:, 0])
+    ax_spec      = fig.add_subplot(gs[1:, 0])
     image_kwargs = {}
     if interpolation is not None:
         image_kwargs["interpolation"] = interpolation
     ax_spec.imshow(
         image,
-        aspect="auto",
-        origin="lower",
-        cmap="mako",
-        vmin=vmin,
-        vmax=vmax,
-        extent=[0, time_end_ms, freq[0], freq[-1]],
+        aspect = "auto",
+        origin = "lower",
+        cmap   = "mako",
+        vmin   = vmin,
+        vmax   = vmax,
+        extent = [0, time_end_ms, freq[0], freq[-1]],
         **image_kwargs,
     )
     ax_spec.set_xlabel("Time (ms)")
@@ -666,8 +668,8 @@ def _render_two_panel(
 
 def plot_detection(stokes_I, freq, time_reso, burst_regions, save_path):
     """绘制动态谱 + 检测框叠加图 (自动模式落盘版)."""
-    nchan = stokes_I.shape[1]
-    fig = plt.figure(figsize=TWO_PANEL_FIGSIZE)
+    nchan            = stokes_I.shape[1]
+    fig              = plt.figure(figsize=TWO_PANEL_FIGSIZE)
     ax_prof, ax_spec = _render_two_panel(fig, stokes_I, freq, time_reso)
     add_region_patches(
         ax_prof,
@@ -676,8 +678,8 @@ def plot_detection(stokes_I, freq, time_reso, burst_regions, save_path):
         freq,
         time_reso,
         nchan,
-        label_conf=True,
-        linewidth=1,
+        label_conf = True,
+        linewidth  = 1,
     )
     fig.align_labels()
     fig.savefig(save_path, dpi=200, bbox_inches="tight")
@@ -734,7 +736,7 @@ def review_interactive(
       * 关闭窗口           → 等价于按 Enter, 误关不会中断批处理
     """
     burst_regions = burst_regions or []
-    nsamp, nchan = stokes_I.shape
+    nsamp, nchan  = stokes_I.shape
 
     title_review = (
         "Enter: accept | x: no burst | drag: redraw\n"
@@ -749,8 +751,8 @@ def review_interactive(
         stokes_I,
         freq,
         time_reso,
-        time_factor=time_factor,
-        freq_factor=freq_factor,
+        time_factor = time_factor,
+        freq_factor = freq_factor,
     )
     reference_image = None
     if reference_image_path is not None:
@@ -770,28 +772,26 @@ def review_interactive(
         # 嵌套 GridSpec 交给 constrained layout 排版；对这种布局调用
         # tight_layout 会产生兼容性警告，并可能挤压右侧参考图。
         fig = plt.figure(
-            figsize=REFERENCE_REVIEW_FIGSIZE,
-            dpi=110,
-            constrained_layout=True,
+            figsize            = REFERENCE_REVIEW_FIGSIZE,
+            dpi                = 110,
+            constrained_layout = True,
         )
-        outer = fig.add_gridspec(
-            1, 2, width_ratios=(1.08, 0.92), wspace=0.08
-        )
+        outer = fig.add_gridspec(1, 2, width_ratios=(1.08, 0.92), wspace=0.08)
         ax_prof, ax_spec = _render_two_panel(
             fig,
             display_I,
             display_freq,
             display_time_reso,
-            interpolation="bilinear",
-            subplot_spec=outer[0],
+            interpolation = "bilinear",
+            subplot_spec  = outer[0],
         )
         ax_reference = fig.add_subplot(outer[1])
         ax_reference.imshow(reference_image)
         ax_reference.set_axis_off()
         ax_reference.set_title(
             "Calibration reference\n" + os.path.basename(reference_image_path),
-            fontsize=8,
-            pad=6,
+            fontsize = 8,
+            pad      = 6,
         )
     # title 挂在上面板, 才会出现在图窗顶端而不是两面板之间.
     ax_prof.set_title(title_review if showing_model else title_draw, fontsize=10, pad=6)
@@ -805,8 +805,8 @@ def review_interactive(
             freq,
             time_reso,
             nchan,
-            label_conf=False,
-            linewidth=1.5,
+            label_conf = False,
+            linewidth  = 1.5,
         )
         if showing_model
         else []
@@ -903,14 +903,14 @@ def review_interactive(
     _selector = RectangleSelector(
         ax_spec,
         on_select,
-        useblit=True,
-        button=MouseButton.LEFT,
-        minspanx=5,
-        minspany=5,
-        spancoords="pixels",
-        interactive=False,
+        useblit     = True,
+        button      = MouseButton.LEFT,
+        minspanx    = 5,
+        minspany    = 5,
+        spancoords  = "pixels",
+        interactive = False,
     )
-    cid_key = fig.canvas.mpl_connect("key_press_event", on_key)
+    cid_key   = fig.canvas.mpl_connect("key_press_event", on_key)
     cid_close = fig.canvas.mpl_connect("close_event", on_close)
     cid_mouse = fig.canvas.mpl_connect("button_press_event", on_mouse_press)
 
@@ -1002,23 +1002,21 @@ def detect_one_file(
         if not isinstance(freq_dataset, h5py.Dataset):
             raise TypeError(f"H5 'freq' is not a dataset: {h5_path}")
         # 轴顺序为 (I/Q/U/V, 时间采样点, 频率通道)
-        iquv = np.asarray(data_dataset[...])
+        iquv      = np.asarray(data_dataset[...])
         # 一维频率轴，长度等于频率通道数
-        freq = np.asarray(freq_dataset[...])
+        freq      = np.asarray(freq_dataset[...])
         time_reso = float(np.asarray(f.attrs["time_reso"]).item())
-        save_dt = int(f.attrs.get("down_time", 1))
-        plot_dt = int(f.attrs.get("plot_down_time", save_dt))
-        save_df = int(f.attrs.get("down_freq", 1))
-        plot_df = int(f.attrs.get("plot_down_freq", save_df))
+        save_dt   = int(f.attrs.get("down_time", 1))
+        plot_dt   = int(f.attrs.get("plot_down_time", save_dt))
+        save_df   = int(f.attrs.get("down_freq", 1))
+        plot_df   = int(f.attrs.get("plot_down_freq", save_df))
 
-    stokes_I = iquv[0]  # Stokes I，轴顺序为（时间采样点，频率通道）
-    nsamp, nchan = stokes_I.shape
+    stokes_I         = iquv[0]  # Stokes I，轴顺序为（时间采样点，频率通道）
+    nsamp, nchan     = stokes_I.shape
     plot_time_factor = max(1, plot_dt // save_dt)
     plot_freq_factor = max(1, plot_df // save_df)
     reference_image_path = (
-        _find_reference_jpg(h5_path)
-        if mode in ("manual", "semi-auto")
-        else None
+        _find_reference_jpg(h5_path) if mode in ("manual", "semi-auto") else None
     )
 
     if mode == "manual":
@@ -1026,9 +1024,9 @@ def detect_one_file(
             stokes_I,
             freq,
             time_reso,
-            time_factor=plot_time_factor,
-            freq_factor=plot_freq_factor,
-            reference_image_path=reference_image_path,
+            time_factor          = plot_time_factor,
+            freq_factor          = plot_freq_factor,
+            reference_image_path = reference_image_path,
         )
     else:
         # auto / semi-auto: YOLO 推理.
@@ -1060,9 +1058,9 @@ def detect_one_file(
             freq,
             time_reso,
             burst_regions,
-            time_factor=plot_time_factor,
-            freq_factor=plot_freq_factor,
-            reference_image_path=reference_image_path,
+            time_factor          = plot_time_factor,
+            freq_factor          = plot_freq_factor,
+            reference_image_path = reference_image_path,
         )
     if burst_regions is None:
         return None
@@ -1103,15 +1101,15 @@ if __name__ == "__main__":
     parser.add_argument("--conf", default=0.25, type=float, help="置信度阈值")
     parser.add_argument(
         "--max-horizontal-aspect",
-        default=DEFAULT_MAX_HORIZONTAL_ASPECT,
-        type=float,
-        help="过滤 width/height 超过该值的横向模型框",
+        default = DEFAULT_MAX_HORIZONTAL_ASPECT,
+        type    = float,
+        help    = "过滤 width/height 超过该值的横向模型框",
     )
     parser.add_argument(
         "--mode",
-        default="semi-auto",
-        choices=["auto", "semi-auto", "manual"],
-        help="auto=全自动; semi-auto=YOLO+人工审查（默认）; manual=纯手工标记",
+        default = "semi-auto",
+        choices = ["auto", "semi-auto", "manual"],
+        help    = "auto=全自动; semi-auto=YOLO+人工审查（默认）; manual=纯手工标记",
     )
     parser.add_argument(
         "--max-files", default=None, type=int, help="最多处理多少个文件（调试用）"
@@ -1161,7 +1159,7 @@ if __name__ == "__main__":
 
     quit_requested = False
     for h5_path in h5_files:
-        fname = os.path.basename(h5_path)
+        fname      = os.path.basename(h5_path)
         record_key = os.path.relpath(h5_path, args.cal_dir).replace(os.sep, "/")
         if record_key in detections:
             print(f"  [{fname}] 跳过 (detections.json 中已存在)")
@@ -1169,18 +1167,18 @@ if __name__ == "__main__":
         result = detect_one_file(
             h5_path,
             model,
-            conf=args.conf,
-            mode=args.mode,
-            plot_dir=plot_dir,
-            rfi_fft=args.rfi_fft,
-            max_horizontal_aspect=args.max_horizontal_aspect,
+            conf                  = args.conf,
+            mode                  = args.mode,
+            plot_dir              = plot_dir,
+            rfi_fft               = args.rfi_fft,
+            max_horizontal_aspect = args.max_horizontal_aspect,
         )
         if result is None:
             quit_requested = True
             break
         detections[record_key] = result
         # 每文件落盘一次, 中途中断 / Ctrl+C 不会丢已经标好的进度
-        temp_det_path = det_path + ".tmp"
+        temp_det_path          = det_path + ".tmp"
         with open(temp_det_path, "w") as f:
             json.dump(detections, f, indent=2)
         os.replace(temp_det_path, det_path)
@@ -1200,3 +1198,5 @@ if __name__ == "__main__":
     else:
         print(f"[OK] 检测结果已保存: {det_path}")
         print(f"\n完成: {n_with}/{len(detections)} 个文件检测到爆发")
+
+# fmt: on

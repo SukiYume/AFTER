@@ -1,3 +1,5 @@
+# fmt: off
+
 """Run :mod:`after.cut_burst_data` on a Burst.txt table and write date-grouped H5 cuts."""
 
 from __future__ import annotations
@@ -10,7 +12,7 @@ from collections import defaultdict
 from multiprocessing import Pool
 from pathlib import Path
 
-SCRIPT_DIR = Path(__file__).resolve().parent
+SCRIPT_DIR  = Path(__file__).resolve().parent
 PROJECT_DIR = SCRIPT_DIR.parent
 if str(PROJECT_DIR) not in sys.path:
     sys.path.insert(0, str(PROJECT_DIR))
@@ -21,7 +23,6 @@ from after.cut_burst_data import (  # noqa: E402  # 先把仓库根目录加入 
     read_obs_info,
     save_obs_json,
 )
-
 
 DEFAULT_SEGMENT_LENGTH = 4096 * 16
 
@@ -97,7 +98,7 @@ def run_group(args):
         if obs_json.exists():
             obs_json.unlink()
 
-    info = read_obs_info(str(data_path), file_list)
+    info              = read_obs_info(str(data_path), file_list)
     shifts, max_shift = calc_dispersion_shift(dm, info["freq"], info["time_reso"])
     cut_args = [
         (
@@ -138,8 +139,8 @@ def parse_args():
     parser.add_argument("--overwrite", action="store_true")
     parser.add_argument(
         "--no-copy-first-fits",
-        action="store_true",
-        help=(
+        action = "store_true",
+        help   = (
             "Do not copy the first science FITS into each output directory. "
             "Use this when calibration is supplied from the original raw tree."
         ),
@@ -148,16 +149,23 @@ def parse_args():
 
 
 def main():
-    args = parse_args()
-    burst_txt = Path(args.burst_txt)
+    args          = parse_args()
+    burst_txt     = Path(args.burst_txt)
     save_frb_name = args.save_frb_name or burst_txt.name[: -len("_Burst.txt")]
-    rows = read_burst_txt(burst_txt)
+    rows          = read_burst_txt(burst_txt)
     if not rows:
         raise SystemExit(f"No rows in {burst_txt}")
 
     grouped = defaultdict(list)
     for row in rows:
-        key = (row["base"], row["project"], row["name"], row["date"], row["beam"], row["dm"])
+        key = (
+            row["base"],
+            row["project"],
+            row["name"],
+            row["date"],
+            row["beam"],
+            row["dm"],
+        )
         grouped[key].append(row)
 
     print(f"Loaded {len(rows)} rows in {len(grouped)} data groups")
@@ -182,3 +190,5 @@ def main():
 
 if __name__ == "__main__":
     main()
+
+# fmt: on

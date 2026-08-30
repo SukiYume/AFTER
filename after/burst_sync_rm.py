@@ -1,3 +1,5 @@
+# fmt: off
+
 """叠加标准 AFTER H5 数据，对同步选择的时间采样点搜索旋转量（RM）。
 
 这是通用的 AFTER 分析阶段，不负责导入某次特定观测。预期流程为
@@ -53,14 +55,13 @@ from .burst_pol import build_automatic_rm_grid
 from .rfi import cal_rfi, robust_channel_mask
 
 matplotlib.use("Agg")
-import matplotlib.pyplot as plt  # noqa: E402  # 必须先选择无界面绘图后端再导入
+import matplotlib.pyplot as plt             # noqa: E402  # 必须先选择无界面绘图后端再导入
 from matplotlib.colors import TwoSlopeNorm  # noqa: E402
 
-
-C_M_S = 299_792_458.0
+C_M_S                   = 299_792_458.0
 NULL_RM_GRID_OVERSAMPLE = 4.0
-PRIMARY_METHODS = ("time_pa_power", "linear_degree_stack")
-ALL_METHODS = PRIMARY_METHODS
+PRIMARY_METHODS         = ("time_pa_power", "linear_degree_stack")
+ALL_METHODS             = PRIMARY_METHODS
 
 
 class BurstRegion(TypedDict):
@@ -174,59 +175,59 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument(
         "--cal-dir",
-        type=Path,
-        required=True,
-        help=(
+        type     = Path,
+        required = True,
+        help     = (
             "Directory containing standard calibration.py *_cal.h5 files "
             "after burst_detect has written attrs['bursts']."
         ),
     )
     parser.add_argument(
         "--output-dir",
-        type=Path,
-        required=True,
-        help="New output directory. Existing directories are not reused.",
+        type     = Path,
+        required = True,
+        help     = "New output directory. Existing directories are not reused.",
     )
     parser.add_argument(
         "--run-label",
-        default=None,
-        help=(
+        default = None,
+        help    = (
             "Optional observation/group label used in plots and summaries. "
             "It does not affect sample selection or the RM statistics."
         ),
     )
     parser.add_argument(
         "--file-list",
-        type=Path,
-        default=None,
-        help=(
+        type    = Path,
+        default = None,
+        help    = (
             "Optional text file with one H5 path or cal-dir-relative filename "
             "per line. Blank lines and lines beginning with # are ignored."
         ),
     )
     parser.add_argument(
         "--recursive",
-        action="store_true",
-        help="Find *_cal.h5 recursively below --cal-dir.",
+        action = "store_true",
+        help   = "Find *_cal.h5 recursively below --cal-dir.",
     )
     parser.add_argument(
         "--rm-min",
-        type=float,
-        default=-50_000.0,
-        help="RM lower bound; grid spacing is derived automatically.",
+        type    = float,
+        default = -50_000.0,
+        help    = "RM lower bound; grid spacing is derived automatically.",
     )
     parser.add_argument(
         "--rm-max",
-        type=float,
-        default=50_000.0,
-        help="RM upper bound; grid spacing is derived automatically.",
+        type    = float,
+        default = 50_000.0,
+        help    = "RM upper bound; grid spacing is derived automatically.",
     )
     parser.add_argument(
         "--test-window",
-        action="append",
-        default=None,
-        metavar="NAME:LOW:HIGH",
-        help=(
+        action  = "append",
+        default = None,
+        metavar = "NAME:LOW:HIGH",
+        help    = (
             "Empirical-null search window. Repeat for multiple windows. "
             "Default: full RM grid."
         ),
@@ -235,84 +236,84 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser.add_argument("--seed", type=int, default=12_110_200)
     parser.add_argument(
         "--null-pool-size",
-        type=int,
-        default=0,
-        help=(
+        type    = int,
+        default = 0,
+        help    = (
             "Maximum off-pulse samples transformed per burst; 0 uses all. "
             "A smaller value is useful for quick validation runs."
         ),
     )
     parser.add_argument(
         "--min-time-snr",
-        type=float,
-        default=5.0,
-        help=(
+        type    = float,
+        default = 5.0,
+        help    = (
             "Absolute Stokes-I S/N floor for candidate time samples. "
             "Candidates from all bursts are then selected globally."
         ),
     )
     parser.add_argument(
         "--min-peak-snr",
-        type=float,
-        default=5.0,
-        help="Reject components whose I-only peak S/N is below this value.",
+        type    = float,
+        default = 5.0,
+        help    = "Reject components whose I-only peak S/N is below this value.",
     )
     parser.add_argument(
         "--max-bursts",
-        type=int,
-        default=None,
-        help="Keep only the highest-I-S/N N components after loading.",
+        type    = int,
+        default = None,
+        help    = "Keep only the highest-I-S/N N components after loading.",
     )
     parser.add_argument("--freq-min", type=float, default=None)
     parser.add_argument("--freq-max", type=float, default=None)
     parser.add_argument(
         "--min-channels",
-        type=int,
-        default=32,
-        help="Minimum number of unmasked channels required per component.",
+        type    = int,
+        default = 32,
+        help    = "Minimum number of unmasked channels required per component.",
     )
     parser.add_argument(
         "--stored-masks-only",
-        action="store_true",
-        help=(
+        action = "store_true",
+        help   = (
             "Use only stored rfi_channel and burst_rfi_channel. By default "
             "channel RFI is also recomputed from off-pulse data."
         ),
     )
     parser.add_argument(
         "--rfi-fft",
-        action="store_true",
-        help="Use FFT instead of entropy for the recalculated channel mask.",
+        action = "store_true",
+        help   = "Use FFT instead of entropy for the recalculated channel mask.",
     )
     parser.add_argument("--rfi-channel-sigma", type=float, default=6.0)
     parser.add_argument("--rfi-channel-window", type=int, default=31)
     parser.add_argument("--rfi-channel-grow", type=int, default=1)
     parser.add_argument(
         "--curve-weighting",
-        choices=("equal", "peak-snr"),
-        default="equal",
-        help=(
+        choices = ("equal", "peak-snr"),
+        default = "equal",
+        help    = (
             "Fixed weights for linear_degree_stack. Equal is the default to "
             "avoid double-weighting high-S/N bursts."
         ),
     )
     parser.add_argument(
         "--max-weight-ratio",
-        type=float,
-        default=4.0,
-        help="Maximum weight ratio around the median for peak-snr weighting.",
+        type    = float,
+        default = 4.0,
+        help    = "Maximum weight ratio around the median for peak-snr weighting.",
     )
     parser.add_argument(
         "--transform-chunk-size",
-        type=int,
-        default=256,
-        help="Number of trial RMs per matrix-multiplication chunk.",
+        type    = int,
+        default = 256,
+        help    = "Number of trial RMs per matrix-multiplication chunk.",
     )
     parser.add_argument(
         "--load-workers",
-        type=int,
-        default=1,
-        help=(
+        type    = int,
+        default = 1,
+        help    = (
             "Number of spawned processes used to read H5 files and recompute "
             "channel RFI. The default 1 preserves serial behavior."
         ),
@@ -363,19 +364,17 @@ def parse_search_windows(
         return [SearchWindow("full", float(rm_min), float(rm_max))]
 
     windows: list[SearchWindow] = []
-    names: set[str] = set()
+    names: set[str]             = set()
     for value in values:
         parts = value.split(":")
         if len(parts) != 3:
-            raise ValueError(
-                f"Invalid --test-window {value!r}; expected NAME:LOW:HIGH"
-            )
+            raise ValueError(f"Invalid --test-window {value!r}; expected NAME:LOW:HIGH")
         name = re.sub(r"[^A-Za-z0-9_.-]+", "_", parts[0].strip())
         if not name:
             raise ValueError(f"Invalid empty test-window name in {value!r}")
         if name in names:
             raise ValueError(f"Duplicate test-window name: {name}")
-        low = float(parts[1])
+        low  = float(parts[1])
         high = float(parts[2])
         if not np.isfinite(low) or not np.isfinite(high) or high <= low:
             raise ValueError(f"Invalid test-window limits in {value!r}")
@@ -405,14 +404,13 @@ def select_primary_plot_window(
     if grid.ndim != 1 or grid.size < 2:
         raise ValueError("RM grid must contain at least two points")
 
-    grid_low = float(grid[0])
+    grid_low  = float(grid[0])
     grid_high = float(grid[-1])
     tolerance = 0.51 * abs(float(np.median(np.diff(grid))))
     covering = [
         window
         for window in windows
-        if window.low <= grid_low + tolerance
-        and window.high >= grid_high - tolerance
+        if window.low <= grid_low + tolerance and window.high >= grid_high - tolerance
     ]
     if covering:
         return min(
@@ -465,9 +463,9 @@ def discover_h5_files(
     else:
         iterator: Iterable[Path]
         iterator = cal_dir.rglob("*_cal.h5") if recursive else cal_dir.glob("*_cal.h5")
-        files = [path.resolve() for path in iterator]
+        files    = [path.resolve() for path in iterator]
 
-    unique = sorted(set(files), key=lambda path: str(path))
+    unique  = sorted(set(files), key=lambda path: str(path))
     missing = [path for path in unique if not path.is_file()]
     if missing:
         preview = "\n".join(f"  {path}" for path in missing[:10])
@@ -493,7 +491,7 @@ def decode_regions(value: object) -> list[BurstRegion]:
         raise TypeError(f"Unsupported attrs['bursts'] type: {type(value).__name__}")
     if not isinstance(decoded, list):
         raise ValueError("attrs['bursts'] must decode to a list")
-    required = {"time_start", "time_end", "freq_start", "freq_end"}
+    required                     = {"time_start", "time_end", "freq_start", "freq_end"}
     validated: list[BurstRegion] = []
     for index, region in enumerate(decoded):
         if not isinstance(region, dict):
@@ -555,7 +553,7 @@ def robust_location_scale(values: np.ndarray) -> tuple[float, float]:
     if finite.size == 0:
         return math.nan, math.nan
     center = float(np.median(finite))
-    scale = float(1.4826 * np.median(np.abs(finite - center)))
+    scale  = float(1.4826 * np.median(np.abs(finite - center)))
     if not np.isfinite(scale) or scale <= 0:
         scale = float(np.std(finite))
     return center, scale
@@ -586,66 +584,72 @@ def i_only_time_candidates(
 
     返回全时间轴布尔掩码、峰值/噪声/数量摘要，以及完整的平滑 SNR 轮廓。
     """
-    values = np.asarray(stokes_i, dtype=np.float64)
-    good = np.asarray(frequency_mask, dtype=bool)
-    noise = np.asarray(noise_mask, dtype=bool)
-    nsamp = values.shape[0]
-    selected = np.zeros(nsamp, dtype=bool)
+    values      = np.asarray(stokes_i, dtype=np.float64)
+    good        = np.asarray(frequency_mask, dtype=bool)
+    noise       = np.asarray(noise_mask, dtype=bool)
+    nsamp       = values.shape[0]
+    selected    = np.zeros(nsamp, dtype=bool)
     snr_profile = np.full(nsamp, np.nan, dtype=np.float64)
-    ts = max(0, min(nsamp, int(burst_region["time_start"])))
-    te = max(0, min(nsamp, int(burst_region["time_end"])))
+    ts          = max(0, min(nsamp, int(burst_region["time_start"])))
+    te          = max(0, min(nsamp, int(burst_region["time_end"])))
     if te <= ts or not np.any(good):
-        return selected, {
-            "peak_sample": ts,
-            "peak_snr": 0.0,
-            "noise_sigma": math.nan,
-            "sample_count": 0,
-        }, snr_profile
+        return (
+            selected,
+            {
+                "peak_sample": ts,
+                "peak_snr": 0.0,
+                "noise_sigma": math.nan,
+                "sample_count": 0,
+            },
+            snr_profile,
+        )
 
     with py_warnings.catch_warnings():
         py_warnings.filterwarnings(
             "ignore",
-            message="Mean of empty slice",
-            category=RuntimeWarning,
+            message  = "Mean of empty slice",
+            category = RuntimeWarning,
         )
         profile = np.nanmean(values[:, good], axis=1)
     finite_noise = profile[noise & np.isfinite(profile)]
     if finite_noise.size:
         noise_center = float(np.nanmedian(finite_noise))
-        noise_sigma = float(
-            1.4826 * np.nanmedian(np.abs(finite_noise - noise_center))
-        )
+        noise_sigma  = float(1.4826 * np.nanmedian(np.abs(finite_noise - noise_center)))
         if not np.isfinite(noise_sigma) or noise_sigma <= 0:
             noise_sigma = float(np.nanstd(finite_noise))
     else:
         noise_center = 0.0
-        noise_sigma = 0.0
+        noise_sigma  = 0.0
     if not np.isfinite(noise_sigma) or noise_sigma <= 0:
         noise_sigma = np.finfo(np.float64).eps
 
     net = np.nan_to_num(
         profile - noise_center,
-        nan=0.0,
-        posinf=0.0,
-        neginf=0.0,
+        nan    = 0.0,
+        posinf = 0.0,
+        neginf = 0.0,
     )
     smooth = np.convolve(
         net,
         np.array([0.25, 0.5, 0.25], dtype=np.float64),
         mode="same",
     )
-    snr_profile = np.asarray(smooth / noise_sigma, dtype=np.float64)
-    region_snr = snr_profile[ts:te]
-    peak_offset = int(np.argmax(region_snr))
-    peak_sample = ts + peak_offset
-    peak_snr = float(region_snr[peak_offset])
+    snr_profile     = np.asarray(smooth / noise_sigma, dtype=np.float64)
+    region_snr      = snr_profile[ts:te]
+    peak_offset     = int(np.argmax(region_snr))
+    peak_sample     = ts + peak_offset
+    peak_snr        = float(region_snr[peak_offset])
     selected[ts:te] = region_snr >= float(min_snr)
-    return selected, {
-        "peak_sample": peak_sample,
-        "peak_snr": peak_snr,
-        "noise_sigma": float(noise_sigma),
-        "sample_count": int(np.count_nonzero(selected)),
-    }, snr_profile
+    return (
+        selected,
+        {
+            "peak_sample": peak_sample,
+            "peak_snr": peak_snr,
+            "noise_sigma": float(noise_sigma),
+            "sample_count": int(np.count_nonzero(selected)),
+        },
+        snr_profile,
+    )
 
 
 def select_global_time_samples(
@@ -680,8 +684,7 @@ def select_global_time_samples(
             )
         if burst.p_on.shape[0] != burst.time_indices.size:
             raise ValueError(
-                f"{burst.component_id}: p_on time axis does not match "
-                "time_indices"
+                f"{burst.component_id}: p_on time axis does not match time_indices"
             )
         for sample_offset, (time_index, sample_snr) in enumerate(
             zip(burst.time_indices, burst.time_snr, strict=True)
@@ -706,8 +709,8 @@ def select_global_time_samples(
     table = pd.DataFrame(records)
     table = table.sort_values(
         ["i_sample_snr", "component_id", "time_index"],
-        ascending=[False, True, True],
-        kind="mergesort",
+        ascending = [False, True, True],
+        kind      = "mergesort",
     ).reset_index(drop=True)
     table.insert(0, "global_rank", np.arange(1, len(table) + 1, dtype=int))
     cumulative = np.cumsum(table["i_snr_squared"].to_numpy(dtype=np.float64))
@@ -726,25 +729,26 @@ def select_global_time_samples(
         if component_rows.empty:
             continue
         offsets = np.sort(
-            cast(pd.Series, component_rows["component_sample_offset"])
-            .to_numpy(dtype=int)
+            cast(pd.Series, component_rows["component_sample_offset"]).to_numpy(
+                dtype=int
+            )
         )
         i_time_total = burst.i_time_total[offsets]
         selected_bursts.append(
             replace(
                 burst,
-                time_indices=burst.time_indices[offsets],
-                time_snr=burst.time_snr[offsets],
-                p_on=burst.p_on[offsets],
-                i_time_total=i_time_total,
-                i_total=float(np.sum(i_time_total)),
+                time_indices = burst.time_indices[offsets],
+                time_snr     = burst.time_snr[offsets],
+                p_on         = burst.p_on[offsets],
+                i_time_total = i_time_total,
+                i_total      = float(np.sum(i_time_total)),
             )
         )
 
-    selected_values = table.loc[
-        table["selected"], "i_sample_snr"
-    ].to_numpy(dtype=np.float64)
-    total_snr2 = float(cumulative[-1])
+    selected_values = table.loc[table["selected"], "i_sample_snr"].to_numpy(
+        dtype=np.float64
+    )
+    total_snr2    = float(cumulative[-1])
     selected_snr2 = float(cumulative[best_k - 1])
     info: GlobalTimeInfo = {
         "strategy": "global_i_snr2_over_sqrt_n",
@@ -811,12 +815,12 @@ def complex_faraday_transform(
     ``F_t(RM) = Σ_chan (Q+iU) exp[-2i RM (λ²-mean(λ²))]``。减去平均 λ² 只改变
     复相位参考点，不改变功率峰位置；RM 网格分块做矩阵乘法以控制峰值内存。
     """
-    dtype = np.dtype(output_dtype)
-    p_work = np.asarray(p_data, dtype=dtype)
-    wave2 = np.asarray(wave2_m2, dtype=np.float64)
-    rm_values = np.asarray(rm_grid, dtype=np.float64)
+    dtype          = np.dtype(output_dtype)
+    p_work         = np.asarray(p_data, dtype=dtype)
+    wave2          = np.asarray(wave2_m2, dtype=np.float64)
+    rm_values      = np.asarray(rm_grid, dtype=np.float64)
     wave2_centered = wave2 - float(np.mean(wave2))
-    output = np.empty((p_work.shape[0], rm_values.size), dtype=dtype)
+    output         = np.empty((p_work.shape[0], rm_values.size), dtype=dtype)
     for first in range(0, rm_values.size, chunk_size):
         last = min(first + chunk_size, rm_values.size)
         phase = np.exp(
@@ -845,18 +849,18 @@ def recompute_channel_rfi(
         channel, _ = cal_rfi(
             plane,
             noise_mask,
-            down_time=1,
-            down_freq=1,
-            fft=fft,
+            down_time = 1,
+            down_freq = 1,
+            fft       = fft,
         )
         recalculated.append(channel)
     entropy_or_fft = np.logical_or.reduce(recalculated)
     robust = robust_channel_mask(
         iquv,
         noise_mask,
-        sigma=sigma,
-        local_window=local_window,
-        grow=grow,
+        sigma        = sigma,
+        local_window = local_window,
+        grow         = grow,
     )
     return entropy_or_fft, robust
 
@@ -916,8 +920,8 @@ def load_file_components(
                 "on this calibrated H5 before burst_sync_rm; skipped"
             )
             return [], warnings
-        regions = decode_regions(handle.attrs["bursts"])
-        stored_cal = channel_mask(handle, "rfi_channel", freq.size)
+        regions      = decode_regions(handle.attrs["bursts"])
+        stored_cal   = channel_mask(handle, "rfi_channel", freq.size)
         stored_burst = channel_mask(handle, "burst_rfi_channel", freq.size)
 
     if not regions:
@@ -955,45 +959,34 @@ def load_file_components(
     # 契约，只要这三路中任一时间采样出现 NaN/inf，就排除整个频率通道。
     # 这样 burst 区域内的 inf 不会在 ``nan_to_num`` 中变成浮点最大值并污染
     # 法拉第变换；同时仍保留至少三个有效 off-pulse 样本的结构性检查。
-    required_stokes = iquv[:3]
-    finite_noise_count = np.sum(
-        np.isfinite(required_stokes[:, noise_mask, :]), axis=1
-    )
-    nonfinite_channel = (
-        np.any(finite_noise_count < 3, axis=0)
-        | np.any(~np.isfinite(required_stokes), axis=(0, 1))
+    required_stokes    = iquv[:3]
+    finite_noise_count = np.sum(np.isfinite(required_stokes[:, noise_mask, :]), axis=1)
+    nonfinite_channel = np.any(finite_noise_count < 3, axis=0) | np.any(
+        ~np.isfinite(required_stokes), axis=(0, 1)
     )
     with py_warnings.catch_warnings():
         py_warnings.filterwarnings(
             "ignore",
-            message="All-NaN slice encountered",
-            category=RuntimeWarning,
+            message  = "All-NaN slice encountered",
+            category = RuntimeWarning,
         )
         baseline = np.nanmedian(iquv[:, noise_mask, :], axis=1, keepdims=True)
     iquv = iquv - baseline
 
     if stored_masks_only:
         recalculated = np.zeros(freq.size, dtype=bool)
-        robust = np.zeros(freq.size, dtype=bool)
+        robust       = np.zeros(freq.size, dtype=bool)
     else:
-        rfi_work = np.nan_to_num(
-            iquv, nan=0.0, posinf=0.0, neginf=0.0
-        )
+        rfi_work = np.nan_to_num(iquv, nan=0.0, posinf=0.0, neginf=0.0)
         recalculated, robust = recompute_channel_rfi(
             rfi_work,
             noise_mask,
-            fft=rfi_fft,
-            sigma=rfi_channel_sigma,
-            local_window=rfi_channel_window,
-            grow=rfi_channel_grow,
+            fft          = rfi_fft,
+            sigma        = rfi_channel_sigma,
+            local_window = rfi_channel_window,
+            grow         = rfi_channel_grow,
         )
-    final_rfi = (
-        stored_cal
-        | stored_burst
-        | recalculated
-        | robust
-        | nonfinite_channel
-    )
+    final_rfi = stored_cal | stored_burst | recalculated | robust | nonfinite_channel
 
     components: list[BurstRMData] = []
     for burst_idx, region in valid_regions:
@@ -1027,23 +1020,17 @@ def load_file_components(
 
         # ``good`` 已排除任何含非有限 I/Q/U 的通道；显式指定正负无穷的
         # 回退值仍作为防御性保护，确保传给 RM 合成的数组始终有限。
-        i_on = np.nan_to_num(
-            iquv[0, times][:, good], nan=0.0, posinf=0.0, neginf=0.0
-        )
-        q_on = np.nan_to_num(
-            iquv[1, times][:, good], nan=0.0, posinf=0.0, neginf=0.0
-        )
-        u_on = np.nan_to_num(
-            iquv[2, times][:, good], nan=0.0, posinf=0.0, neginf=0.0
-        )
+        i_on = np.nan_to_num(iquv[0, times][:, good], nan=0.0, posinf=0.0, neginf=0.0)
+        q_on = np.nan_to_num(iquv[1, times][:, good], nan=0.0, posinf=0.0, neginf=0.0)
+        u_on = np.nan_to_num(iquv[2, times][:, good], nan=0.0, posinf=0.0, neginf=0.0)
         q_noise = np.nan_to_num(
             iquv[1, noise_mask][:, good], nan=0.0, posinf=0.0, neginf=0.0
         )
         u_noise = np.nan_to_num(
             iquv[2, noise_mask][:, good], nan=0.0, posinf=0.0, neginf=0.0
         )
-        variance_channel = (
-            robust_channel_variance(q_noise) + robust_channel_variance(u_noise)
+        variance_channel = robust_channel_variance(q_noise) + robust_channel_variance(
+            u_noise
         )
         variance_one_time = float(np.sum(variance_channel))
         if not np.isfinite(variance_one_time) or variance_one_time <= 0:
@@ -1053,29 +1040,29 @@ def load_file_components(
             continue
 
         freq_good = freq[good]
-        wave2 = (C_M_S / (freq_good * 1e6)) ** 2
+        wave2     = (C_M_S / (freq_good * 1e6)) ** 2
         components.append(
             BurstRMData(
-                component_id=component_id(path.name, burst_idx),
-                file_name=path.name,
-                file_path=path,
-                burst_idx=burst_idx,
-                peak_snr=float(time_info["peak_snr"]),
-                time_indices=times,
-                time_snr=time_snr_profile[times],
-                freq_mhz=freq_good,
-                wave2_m2=wave2,
-                p_on=q_on + 1j * u_on,
-                p_noise=q_noise + 1j * u_noise,
-                i_time_total=np.sum(i_on, axis=1),
-                i_total=float(np.sum(i_on)),
-                noise_variance_one_time=variance_one_time,
-                stored_cal_rfi_count=int(np.count_nonzero(stored_cal)),
-                stored_burst_rfi_count=int(np.count_nonzero(stored_burst)),
-                recalculated_rfi_count=int(np.count_nonzero(recalculated)),
-                robust_rfi_count=int(np.count_nonzero(robust)),
-                nonfinite_rfi_count=int(np.count_nonzero(nonfinite_channel)),
-                final_rfi_count=int(np.count_nonzero(final_rfi)),
+                component_id            = component_id(path.name, burst_idx),
+                file_name               = path.name,
+                file_path               = path,
+                burst_idx               = burst_idx,
+                peak_snr                = float(time_info["peak_snr"]),
+                time_indices            = times,
+                time_snr                = time_snr_profile[times],
+                freq_mhz                = freq_good,
+                wave2_m2                = wave2,
+                p_on                    = q_on + 1j * u_on,
+                p_noise                 = q_noise + 1j * u_noise,
+                i_time_total            = np.sum(i_on, axis=1),
+                i_total                 = float(np.sum(i_on)),
+                noise_variance_one_time = variance_one_time,
+                stored_cal_rfi_count    = int(np.count_nonzero(stored_cal)),
+                stored_burst_rfi_count  = int(np.count_nonzero(stored_burst)),
+                recalculated_rfi_count  = int(np.count_nonzero(recalculated)),
+                robust_rfi_count        = int(np.count_nonzero(robust)),
+                nonfinite_rfi_count     = int(np.count_nonzero(nonfinite_channel)),
+                final_rfi_count         = int(np.count_nonzero(final_rfi)),
             )
         )
     return components, warnings
@@ -1104,10 +1091,10 @@ def curve_weights(
         return np.ones(len(bursts), dtype=np.float64)
     if mode != "peak-snr":
         raise ValueError(f"Unknown curve-weighting mode: {mode}")
-    raw = np.asarray([max(burst.peak_snr, np.finfo(float).tiny) for burst in bursts])
+    raw    = np.asarray([max(burst.peak_snr, np.finfo(float).tiny) for burst in bursts])
     median = float(np.median(raw))
-    low = median / max_weight_ratio
-    high = median * max_weight_ratio
+    low    = median / max_weight_ratio
+    high   = median * max_weight_ratio
     return np.clip(raw, low, high) / median
 
 
@@ -1127,15 +1114,15 @@ def individual_rm_curves(
         burst.p_on,
         burst.wave2_m2,
         rm_grid,
-        chunk_size=chunk_size,
-        output_dtype=np.dtype(np.complex128),
+        chunk_size   = chunk_size,
+        output_dtype = np.dtype(np.complex128),
     )
     variance = max(burst.noise_variance_one_time, np.finfo(float).tiny)
     linear_degree = np.sum(np.abs(faraday), axis=0) / max(
         abs(burst.i_total), np.finfo(float).tiny
     )
     time_pa_power_samples = np.abs(faraday) ** 2 / variance
-    time_pa_power = np.sum(time_pa_power_samples, axis=0)
+    time_pa_power         = np.sum(time_pa_power_samples, axis=0)
     return {
         "linear_degree": linear_degree,
         "time_pa_power": time_pa_power,
@@ -1154,10 +1141,8 @@ def combine_curves(
     ``linear_degree_stack`` 则先分别做稳健标准化，再按固定权重求和，并除以
     ``sqrt(sum(weight²))`` 保持不同成员数下尺度近似可比。
     """
-    time_pa_power = sum(
-        curves[burst.component_id]["time_pa_power"] for burst in bursts
-    )
-    denominator = math.sqrt(float(np.sum(weights**2)))
+    time_pa_power = sum(curves[burst.component_id]["time_pa_power"] for burst in bursts)
+    denominator   = math.sqrt(float(np.sum(weights**2)))
     linear_degree_stack = sum(
         weight * standardized_curve(curves[burst.component_id]["linear_degree"])
         for burst, weight in zip(bursts, weights, strict=True)
@@ -1181,10 +1166,8 @@ def observed_curves_on_grid(
     功率曲线可直接线性插值；线偏振度验证曲线必须先逐爆发插值、在目标网格上
     重新稳健标准化，再按原固定权重叠加，才能与零试验采用完全相同的统计定义。
     """
-    time_pa_power = np.interp(
-        target_grid, fine_grid, fine_combined["time_pa_power"]
-    )
-    denominator = math.sqrt(float(np.sum(weights**2)))
+    time_pa_power = np.interp(target_grid, fine_grid, fine_combined["time_pa_power"])
+    denominator   = math.sqrt(float(np.sum(weights**2)))
     linear_degree_stack = sum(
         weight
         * standardized_curve(
@@ -1198,9 +1181,7 @@ def observed_curves_on_grid(
     ) / max(denominator, np.finfo(float).tiny)
     return {
         "time_pa_power": time_pa_power,
-        "linear_degree_stack": np.asarray(
-            linear_degree_stack, dtype=np.float64
-        ),
+        "linear_degree_stack": np.asarray(linear_degree_stack, dtype=np.float64),
     }
 
 
@@ -1210,14 +1191,14 @@ def peak_in_window(
     window: SearchWindow,
 ) -> tuple[float, float, float]:
     """在指定窗口内找到曲线最大值，返回峰值 RM、原始统计量和稳健 z 值。"""
-    inside = (rm_grid >= window.low) & (rm_grid <= window.high)
+    inside  = (rm_grid >= window.low) & (rm_grid <= window.high)
     indices = np.flatnonzero(inside)
     if indices.size == 0:
         raise ValueError(f"No RM samples inside test window {window.name}")
-    local = np.asarray(curve)[inside]
+    local       = np.asarray(curve)[inside]
     local_index = int(np.nanargmax(local))
-    index = int(indices[local_index])
-    z_curve = standardized_curve(curve)
+    index       = int(indices[local_index])
+    z_curve     = standardized_curve(curve)
     return (
         float(rm_grid[index]),
         float(curve[index]),
@@ -1238,7 +1219,7 @@ def precompute_noise_transforms(
     容纳该爆发真实选中的时间点数。返回变换缓存和所用原始脉冲外索引，后者写入
     归档以保证抽样池可追溯。
     """
-    transforms: dict[str, np.ndarray] = {}
+    transforms: dict[str, np.ndarray]   = {}
     pool_indices: dict[str, np.ndarray] = {}
     for burst in bursts:
         available = burst.p_noise.shape[0]
@@ -1259,8 +1240,8 @@ def precompute_noise_transforms(
             burst.p_noise[chosen],
             burst.wave2_m2,
             rm_grid,
-            chunk_size=chunk_size,
-            output_dtype=np.dtype(np.complex64),
+            chunk_size   = chunk_size,
+            output_dtype = np.dtype(np.complex64),
         )
         print(
             f"  null pool {burst.component_id}: {requested}/{available} "
@@ -1282,26 +1263,22 @@ def null_trial_curves(
     该分量的频率覆盖、通道掩码和样本数；随后使用相同噪声归一化及固定权重。
     """
     time_pa_power: np.ndarray | None = None
-    linear_stack: np.ndarray | None = None
+    linear_stack: np.ndarray | None  = None
     for burst, weight in zip(bursts, weights, strict=True):
-        pool = noise_transforms[burst.component_id]
-        chosen = rng.choice(pool.shape[0], size=burst.n_time, replace=False)
-        faraday = pool[chosen]
-        variance = max(burst.noise_variance_one_time, np.finfo(float).tiny)
-        time_curve = np.sum(np.abs(faraday) ** 2, axis=0) / variance
+        pool         = noise_transforms[burst.component_id]
+        chosen       = rng.choice(pool.shape[0], size=burst.n_time, replace=False)
+        faraday      = pool[chosen]
+        variance     = max(burst.noise_variance_one_time, np.finfo(float).tiny)
+        time_curve   = np.sum(np.abs(faraday) ** 2, axis=0) / variance
         linear_curve = np.sum(np.abs(faraday), axis=0)
-        linear_z = weight * standardized_curve(linear_curve)
+        linear_z     = weight * standardized_curve(linear_curve)
         time_pa_power = (
             time_curve if time_pa_power is None else time_pa_power + time_curve
         )
-        linear_stack = (
-            linear_z if linear_stack is None else linear_stack + linear_z
-        )
+        linear_stack = linear_z if linear_stack is None else linear_stack + linear_z
     assert time_pa_power is not None
     assert linear_stack is not None
-    linear_stack /= max(
-        math.sqrt(float(np.sum(weights**2))), np.finfo(float).tiny
-    )
+    linear_stack /= max(math.sqrt(float(np.sum(weights**2))), np.finfo(float).tiny)
     return {
         "time_pa_power": np.asarray(time_pa_power, dtype=np.float64),
         "linear_degree_stack": np.asarray(linear_stack, dtype=np.float64),
@@ -1330,15 +1307,13 @@ def run_empirical_null(
     返回逐方法/窗口摘要表、零分布数组归档，以及每个分量使用的脉冲外池索引。
     """
     observed: dict[tuple[str, str], tuple[float, float, float]] = {}
-    raw_maxima: dict[tuple[str, str], np.ndarray] = {}
-    contrast_maxima: dict[tuple[str, str], np.ndarray] = {}
+    raw_maxima: dict[tuple[str, str], np.ndarray]               = {}
+    contrast_maxima: dict[tuple[str, str], np.ndarray]          = {}
     for method in ALL_METHODS:
         for window in windows:
-            key = (method, window.name)
-            observed[key] = peak_in_window(
-                rm_grid, observed_curves[method], window
-            )
-            raw_maxima[key] = np.empty(n_null, dtype=np.float64)
+            key                  = (method, window.name)
+            observed[key]        = peak_in_window(rm_grid, observed_curves[method], window)
+            raw_maxima[key]      = np.empty(n_null, dtype=np.float64)
             contrast_maxima[key] = np.empty(n_null, dtype=np.float64)
 
     pool_rng = np.random.default_rng(seed)
@@ -1349,12 +1324,10 @@ def run_empirical_null(
         pool_rng,
         chunk_size,
     )
-    trial_rng = np.random.default_rng(seed + 1)
+    trial_rng     = np.random.default_rng(seed + 1)
     progress_step = max(1, n_null // 10)
     for trial in range(n_null):
-        trial_curves = null_trial_curves(
-            bursts, noise_transforms, weights, trial_rng
-        )
+        trial_curves = null_trial_curves(bursts, noise_transforms, weights, trial_rng)
         for method in ALL_METHODS:
             contrast_curve = standardized_curve(trial_curves[method])
             for window in windows:
@@ -1364,10 +1337,8 @@ def run_empirical_null(
                 _, contrast_statistic, _ = peak_in_window(
                     rm_grid, contrast_curve, window
                 )
-                raw_maxima[(method, window.name)][trial] = raw_statistic
-                contrast_maxima[(method, window.name)][
-                    trial
-                ] = contrast_statistic
+                raw_maxima[(method, window.name)][trial]      = raw_statistic
+                contrast_maxima[(method, window.name)][trial] = contrast_statistic
         if (trial + 1) % progress_step == 0 or trial + 1 == n_null:
             print(f"  null trials {trial + 1}/{n_null}", flush=True)
 
@@ -1378,12 +1349,8 @@ def run_empirical_null(
             observed_rm, observed_statistic, observed_z = observed[key]
             raw_values = raw_maxima[key]
             contrast_values = contrast_maxima[key]
-            raw_exceedances = int(
-                np.count_nonzero(raw_values >= observed_statistic)
-            )
-            contrast_exceedances = int(
-                np.count_nonzero(contrast_values >= observed_z)
-            )
+            raw_exceedances = int(np.count_nonzero(raw_values >= observed_statistic))
+            contrast_exceedances = int(np.count_nonzero(contrast_values >= observed_z))
             rows.append(
                 {
                     "method": method,
@@ -1408,23 +1375,13 @@ def run_empirical_null(
                     "empirical_p_rm_contrast": float(
                         (contrast_exceedances + 1) / (n_null + 1)
                     ),
-                    "empirical_p": float(
-                        (contrast_exceedances + 1) / (n_null + 1)
-                    ),
+                    "empirical_p": float((contrast_exceedances + 1) / (n_null + 1)),
                     "raw_null_p95": float(np.percentile(raw_values, 95)),
                     "raw_null_p99": float(np.percentile(raw_values, 99)),
-                    "contrast_null_p95": float(
-                        np.percentile(contrast_values, 95)
-                    ),
-                    "contrast_null_p99": float(
-                        np.percentile(contrast_values, 99)
-                    ),
-                    "null_p95_max_statistic": float(
-                        np.percentile(contrast_values, 95)
-                    ),
-                    "null_p99_max_statistic": float(
-                        np.percentile(contrast_values, 99)
-                    ),
+                    "contrast_null_p95": float(np.percentile(contrast_values, 95)),
+                    "contrast_null_p99": float(np.percentile(contrast_values, 99)),
+                    "null_p95_max_statistic": float(np.percentile(contrast_values, 95)),
+                    "null_p99_max_statistic": float(np.percentile(contrast_values, 99)),
                 }
             )
     pool_archive = {
@@ -1438,7 +1395,7 @@ def run_empirical_null(
         null_archive[f"contrast__{method}__{window_name}"] = values
         # 保留历史归档键名，但令其指向 ``empirical_p`` 实际使用的、已修正的
         # 最大稳健 z 分布，避免旧工具读到与摘要显著性不一致的数据。
-        null_archive[f"{method}__{window_name}"] = values
+        null_archive[f"{method}__{window_name}"]           = values
     return pd.DataFrame(rows), null_archive, pool_archive
 
 
@@ -1451,9 +1408,7 @@ def fine_grid_summary(
     rows: list[dict[str, object]] = []
     for method in ALL_METHODS:
         for window in windows:
-            rm, statistic, robust_z = peak_in_window(
-                rm_grid, combined[method], window
-            )
+            rm, statistic, robust_z = peak_in_window(rm_grid, combined[method], window)
             rows.append(
                 {
                     "method": method,
@@ -1505,14 +1460,11 @@ def leave_one_burst_out_summary(
     rows: list[dict[str, object]] = []
     for excluded_index, excluded in enumerate(bursts):
         retained = [
-            burst
-            for index, burst in enumerate(bursts)
-            if index != excluded_index
+            burst for index, burst in enumerate(bursts) if index != excluded_index
         ]
         retained_weights = np.delete(weights, excluded_index)
         retained_curves = {
-            burst.component_id: individual[burst.component_id]
-            for burst in retained
+            burst.component_id: individual[burst.component_id] for burst in retained
         }
         loo_combined = combine_curves(
             retained,
@@ -1520,20 +1472,14 @@ def leave_one_burst_out_summary(
             retained_weights,
         )
         for method in PRIMARY_METHODS:
-            loo_rm, _, loo_z = peak_in_window(
-                rm_grid, loo_combined[method], window
-            )
-            shift = abs(float(loo_rm) - float(full_peaks[method]))
-            shift_rmsf = shift / max(
-                float(rm_rmsf_fwhm), np.finfo(float).tiny
-            )
+            loo_rm, _, loo_z = peak_in_window(rm_grid, loo_combined[method], window)
+            shift            = abs(float(loo_rm) - float(full_peaks[method]))
+            shift_rmsf       = shift / max(float(rm_rmsf_fwhm), np.finfo(float).tiny)
             rows.append(
                 {
                     "excluded_component": excluded.component_id,
                     "excluded_n_time_samples": excluded.n_time,
-                    "excluded_i_snr_squared_sum": float(
-                        np.sum(excluded.time_snr**2)
-                    ),
+                    "excluded_i_snr_squared_sum": float(np.sum(excluded.time_snr**2)),
                     "remaining_components": len(retained),
                     "method": method,
                     "full_peak_rm": float(full_peaks[method]),
@@ -1576,11 +1522,10 @@ def write_plot(
         "linear_degree_stack": "Linear-degree stack (validation)",
     }
     primary_window = select_primary_plot_window(windows, rm_grid)
-    rm_step = float(np.median(np.diff(rm_grid)))
-    full_width = float(rm_grid[-1] - rm_grid[0])
+    rm_step        = float(np.median(np.diff(rm_grid)))
+    full_width     = float(rm_grid[-1] - rm_grid[0])
     method_z = {
-        method: standardized_curve(combined[method])
-        for method in PRIMARY_METHODS
+        method: standardized_curve(combined[method]) for method in PRIMARY_METHODS
     }
     method_peaks = {
         method: peak_in_window(rm_grid, combined[method], primary_window)
@@ -1613,21 +1558,12 @@ def write_plot(
         for burst in bursts
     ]
     matched_dates = sorted(
-        {
-            match.group("date")
-            for match in observation_matches
-            if match is not None
-        }
+        {match.group("date") for match in observation_matches if match is not None}
     )
     matched_sources = {
-        match.group("source")
-        for match in observation_matches
-        if match is not None
+        match.group("source") for match in observation_matches if match is not None
     }
-    normalized_sources = {
-        re.sub(r"S\d+$", "", source)
-        for source in matched_sources
-    }
+    normalized_sources = {re.sub(r"S\d+$", "", source) for source in matched_sources}
     if run_label:
         observation = run_label
     elif len(matched_dates) > 1 and len(normalized_sources) == 1:
@@ -1640,8 +1576,8 @@ def write_plot(
         observation = f"{next(iter(matched_sources))}  {matched_dates[0]}"
     else:
         observation = Path(bursts[0].file_name).stem
-    band_min = min(float(burst.freq_mhz.min()) for burst in bursts)
-    band_max = max(float(burst.freq_mhz.max()) for burst in bursts)
+    band_min   = min(float(burst.freq_mhz.min()) for burst in bursts)
+    band_max   = max(float(burst.freq_mhz.max()) for burst in bursts)
     total_time = sum(burst.n_time for burst in bursts)
     n_null = (
         int(null_table["n_null"].iloc[0])
@@ -1689,20 +1625,18 @@ def write_plot(
                 rf"RMSF FWHM={rm_rmsf_fwhm:.1f} rad m$^{{-2}}$ · "
                 f"{n_null} null trials · channel masks only (pixel mask off)"
             ),
-            fontsize=17,
-            linespacing=1.45,
+            fontsize    = 17,
+            linespacing = 1.45,
         )
 
-        sample_curves: list[np.ndarray] = []
-        sample_labels: list[str] = []
-        component_centers: list[float] = []
-        component_labels: list[str] = []
+        sample_curves: list[np.ndarray]   = []
+        sample_labels: list[str]          = []
+        component_centers: list[float]    = []
+        component_labels: list[str]       = []
         component_boundaries: list[float] = []
-        row_offset = 0
+        row_offset                        = 0
         for burst, match in zip(bursts, observation_matches, strict=True):
-            sample_power = individual[burst.component_id][
-                "time_pa_power_samples"
-            ]
+            sample_power   = individual[burst.component_id]["time_pa_power_samples"]
             expected_shape = (burst.n_time, rm_grid.size)
             if sample_power.shape != expected_shape:
                 raise ValueError(
@@ -1725,9 +1659,7 @@ def write_plot(
                     f"{date_prefix}{burst.component_id}:t{int(sample_index)}   "
                     f"I-S/N={float(sample_snr):.1f}"
                 )
-            component_centers.append(
-                row_offset + 0.5 * (burst.n_time - 1)
-            )
+            component_centers.append(row_offset + 0.5 * (burst.n_time - 1))
             component_labels.append(
                 f"{date_prefix}{burst.component_id}   "
                 f"$N_t$={burst.n_time}, "
@@ -1739,26 +1671,26 @@ def write_plot(
                 component_boundaries.append(row_offset - 0.5)
 
         individual_matrix = np.vstack(sample_curves)
-        clipped_low = -2.5
-        clipped_high = 6.0
+        clipped_low       = -2.5
+        clipped_high      = 6.0
         normalization = TwoSlopeNorm(
-            vmin=clipped_low,
-            vcenter=0.0,
-            vmax=clipped_high,
+            vmin    = clipped_low,
+            vcenter = 0.0,
+            vmax    = clipped_high,
         )
         image = heat_axis.imshow(
             np.clip(individual_matrix, clipped_low, clipped_high),
-            aspect="auto",
-            origin="upper",
-            extent=(
+            aspect        = "auto",
+            origin        = "upper",
+            extent        = (
                 float(rm_grid[0]),
                 float(rm_grid[-1]),
                 total_time - 0.5,
                 -0.5,
             ),
-            cmap="RdBu_r",
-            norm=normalization,
-            interpolation="nearest",
+            cmap          = "RdBu_r",
+            norm          = normalization,
+            interpolation = "nearest",
         )
         heat_axis.grid(False)
         heat_axis.set_title(
@@ -1776,47 +1708,43 @@ def write_plot(
         for boundary in component_boundaries:
             heat_axis.axhline(
                 boundary,
-                color="black",
-                linewidth=0.8,
-                alpha=0.65,
-                zorder=3,
+                color     = "black",
+                linewidth = 0.8,
+                alpha     = 0.65,
+                zorder    = 3,
             )
-        window_mask = (
-            (rm_grid >= primary_window.low)
-            & (rm_grid <= primary_window.high)
-        )
+        window_mask    = (rm_grid >= primary_window.low) & (rm_grid <= primary_window.high)
         window_indices = np.flatnonzero(window_mask)
         for row_index, curve in enumerate(individual_matrix):
             peak_index = window_indices[np.argmax(curve[window_mask])]
             heat_axis.scatter(
                 rm_grid[peak_index],
                 row_index,
-                s=18,
-                marker="o",
-                facecolor="none",
-                edgecolor="white",
-                linewidth=0.8,
-                zorder=4,
+                s         = 18,
+                marker    = "o",
+                facecolor = "none",
+                edgecolor = "white",
+                linewidth = 0.8,
+                zorder    = 4,
             )
         primary_peak_rm = method_peaks["time_pa_power"][0]
         heat_axis.axvline(
             primary_peak_rm,
-            color="#FFE66D",
-            linestyle="--",
-            linewidth=1.6,
-            label=f"TimePA combined peak: {primary_peak_rm:.0f}",
+            color     = "#FFE66D",
+            linestyle = "--",
+            linewidth = 1.6,
+            label     = f"TimePA combined peak: {primary_peak_rm:.0f}",
         )
         heat_axis.legend(loc="upper right", fontsize=9)
         colorbar = fig.colorbar(
             image,
-            ax=heat_axis,
-            pad=0.01,
-            aspect=35,
-            shrink=0.92,
+            ax     = heat_axis,
+            pad    = 0.01,
+            aspect = 35,
+            shrink = 0.92,
         )
         colorbar.set_label(
-            "Per-time-sample TimePA robust z "
-            "(display clipped at −2.5, 6)"
+            "Per-time-sample TimePA robust z (display clipped at −2.5, 6)"
         )
 
         for method in PRIMARY_METHODS:
@@ -1824,19 +1752,19 @@ def write_plot(
             full_axis.plot(
                 rm_grid,
                 method_z[method],
-                color=colors[method],
-                linewidth=1.6,
-                label=(
+                color     = colors[method],
+                linewidth = 1.6,
+                label     = (
                     f"{labels[method]}\n"
                     f"RM={peak_rm:.0f}, z={peak_z:.2f}, {p_text(method)}"
                 ),
             )
             full_axis.axvline(
                 peak_rm,
-                color=colors[method],
-                linestyle=":",
-                linewidth=1.1,
-                alpha=0.9,
+                color     = colors[method],
+                linestyle = ":",
+                linewidth = 1.1,
+                alpha     = 0.9,
             )
         if max(float(np.nanmax(curve)) for curve in method_z.values()) > 30:
             full_axis.set_yscale("symlog", linthresh=3.0, linscale=1.0)
@@ -1844,31 +1772,28 @@ def write_plot(
                 0.99,
                 0.02,
                 "symlog y-scale",
-                transform=full_axis.transAxes,
-                ha="right",
-                va="bottom",
-                fontsize=8,
-                color="0.4",
+                transform = full_axis.transAxes,
+                ha        = "right",
+                va        = "bottom",
+                fontsize  = 8,
+                color     = "0.4",
             )
         full_axis.axhline(0.0, color="0.45", linewidth=0.8)
-        full_axis.axhline(
-            3.0, color="0.45", linewidth=0.8, linestyle="--", alpha=0.7
-        )
+        full_axis.axhline(3.0, color="0.45", linewidth=0.8, linestyle="--", alpha=0.7)
         for window in windows:
             if (window.high - window.low) < 0.98 * full_width:
                 full_axis.axvspan(
                     window.low,
                     window.high,
-                    color="#5B8FF9",
-                    alpha=0.06,
+                    color = "#5B8FF9",
+                    alpha = 0.06,
                 )
         full_axis.set_title("Combined search statistics — full RM range")
         full_axis.set_xlabel(r"RM (rad m$^{-2}$)")
         full_axis.set_ylabel("Robust z across searched RM")
         full_axis.legend(loc="best", fontsize=8)
         peak_separation = abs(
-            method_peaks["time_pa_power"][0]
-            - method_peaks["linear_degree_stack"][0]
+            method_peaks["time_pa_power"][0] - method_peaks["linear_degree_stack"][0]
         )
         full_axis.text(
             0.02,
@@ -1877,11 +1802,11 @@ def write_plot(
                 rf"Method peak separation: {peak_separation:.0f} rad m$^{{-2}}$ "
                 f"= {peak_separation / rm_rmsf_fwhm:.2f} RMSF"
             ),
-            transform=full_axis.transAxes,
-            ha="left",
-            va="bottom",
-            fontsize=8,
-            bbox={
+            transform = full_axis.transAxes,
+            ha        = "left",
+            va        = "bottom",
+            fontsize  = 8,
+            bbox      = {
                 "boxstyle": "round,pad=0.3",
                 "facecolor": "white",
                 "edgecolor": "0.8",
@@ -1890,37 +1815,33 @@ def write_plot(
         )
 
         zoom_half_width = max(4.0 * rm_rmsf_fwhm, 10.0 * rm_step)
-        zoom_low = max(float(rm_grid[0]), primary_peak_rm - zoom_half_width)
-        zoom_high = min(float(rm_grid[-1]), primary_peak_rm + zoom_half_width)
-        zoom_mask = (rm_grid >= zoom_low) & (rm_grid <= zoom_high)
+        zoom_low        = max(float(rm_grid[0]), primary_peak_rm - zoom_half_width)
+        zoom_high       = min(float(rm_grid[-1]), primary_peak_rm + zoom_half_width)
+        zoom_mask       = (rm_grid >= zoom_low) & (rm_grid <= zoom_high)
         for method in PRIMARY_METHODS:
             zoom_axis.plot(
                 rm_grid[zoom_mask],
                 method_z[method][zoom_mask],
-                color=colors[method],
-                linewidth=1.8,
-                label=labels[method],
+                color     = colors[method],
+                linewidth = 1.8,
+                label     = labels[method],
             )
         zoom_axis.axvspan(
             primary_peak_rm - 0.5 * rm_rmsf_fwhm,
             primary_peak_rm + 0.5 * rm_rmsf_fwhm,
-            color=colors["time_pa_power"],
-            alpha=0.08,
-            label="One RMSF FWHM",
+            color = colors["time_pa_power"],
+            alpha = 0.08,
+            label = "One RMSF FWHM",
         )
         zoom_axis.axvline(
             primary_peak_rm,
-            color=colors["time_pa_power"],
-            linestyle="--",
-            linewidth=1.3,
+            color     = colors["time_pa_power"],
+            linestyle = "--",
+            linewidth = 1.3,
         )
         zoom_axis.axhline(0.0, color="0.45", linewidth=0.8)
-        zoom_axis.axhline(
-            3.0, color="0.45", linewidth=0.8, linestyle="--", alpha=0.7
-        )
-        if max(
-            float(np.nanmax(curve[zoom_mask])) for curve in method_z.values()
-        ) > 30:
+        zoom_axis.axhline(3.0, color="0.45", linewidth=0.8, linestyle="--", alpha=0.7)
+        if max(float(np.nanmax(curve[zoom_mask])) for curve in method_z.values()) > 30:
             zoom_axis.set_yscale("symlog", linthresh=3.0, linscale=1.0)
         zoom_axis.set_xlim(zoom_low, zoom_high)
         zoom_axis.set_title(
@@ -1938,59 +1859,55 @@ def write_plot(
                     0.5,
                     0.5,
                     f"{labels[method]}\nEmpirical null disabled (--n-null 0)",
-                    ha="center",
-                    va="center",
-                    transform=axis.transAxes,
-                    fontsize=12,
+                    ha        = "center",
+                    va        = "center",
+                    transform = axis.transAxes,
+                    fontsize  = 12,
                 )
                 axis.set_xticks([])
                 axis.set_yticks([])
                 continue
 
-            values = null_maxima[f"{method}__{primary_window.name}"]
-            observed = float(cast(Any, row["observed_null_grid_peak_robust_z"]))
-            p95 = float(cast(Any, row["null_p95_max_statistic"]))
-            p99 = float(cast(Any, row["null_p99_max_statistic"]))
-            ratio = observed / max(p99, np.finfo(float).tiny)
-            use_log_x = (
-                observed > 5.0 * p99
-                and np.all(values > 0)
-                and observed > 0
-            )
+            values    = null_maxima[f"{method}__{primary_window.name}"]
+            observed  = float(cast(Any, row["observed_null_grid_peak_robust_z"]))
+            p95       = float(cast(Any, row["null_p95_max_statistic"]))
+            p99       = float(cast(Any, row["null_p99_max_statistic"]))
+            ratio     = observed / max(p99, np.finfo(float).tiny)
+            use_log_x = observed > 5.0 * p99 and np.all(values > 0) and observed > 0
             if use_log_x:
                 lower = max(float(np.min(values)) * 0.95, np.finfo(float).tiny)
-                bins = np.geomspace(lower, observed * 1.08, 46).tolist()
+                bins  = np.geomspace(lower, observed * 1.08, 46).tolist()
                 axis.set_xscale("log")
             else:
                 bins = 42
             axis.hist(
                 values,
-                bins=bins,
-                color=colors[method],
-                alpha=0.7,
-                edgecolor="white",
-                linewidth=0.35,
+                bins      = bins,
+                color     = colors[method],
+                alpha     = 0.7,
+                edgecolor = "white",
+                linewidth = 0.35,
             )
             axis.axvspan(p95, p99, color="#F3C969", alpha=0.2)
             axis.axvline(
                 p95,
-                color="#B7791F",
-                linestyle="--",
-                linewidth=1.0,
-                label=f"null p95={p95:.3g}",
+                color     = "#B7791F",
+                linestyle = "--",
+                linewidth = 1.0,
+                label     = f"null p95={p95:.3g}",
             )
             axis.axvline(
                 p99,
-                color="#9C4221",
-                linestyle=":",
-                linewidth=1.3,
-                label=f"null p99={p99:.3g}",
+                color     = "#9C4221",
+                linestyle = ":",
+                linewidth = 1.3,
+                label     = f"null p99={p99:.3g}",
             )
             axis.axvline(
                 observed,
-                color="#C53030",
-                linewidth=2.0,
-                label=f"observed={observed:.3g} ({ratio:.2f}× p99)",
+                color     = "#C53030",
+                linewidth = 2.0,
+                label     = f"observed={observed:.3g} ({ratio:.2f}× p99)",
             )
             detected = float(cast(Any, row["empirical_p"])) <= 0.01
             axis.set_title(
@@ -2012,12 +1929,12 @@ def write_plot(
                     "rad m$^{-2}$\n"
                     f"{p_text(method)}"
                 ),
-                transform=axis.transAxes,
-                ha="left",
-                va="top",
-                fontsize=9,
-                color="#147D64" if detected else "0.3",
-                bbox={
+                transform = axis.transAxes,
+                ha        = "left",
+                va        = "top",
+                fontsize  = 9,
+                color     = "#147D64" if detected else "0.3",
+                bbox      = {
                     "boxstyle": "round,pad=0.35",
                     "facecolor": "white",
                     "edgecolor": "#9AE6B4" if detected else "0.8",
@@ -2027,9 +1944,9 @@ def write_plot(
 
         fig.savefig(
             output_path,
-            dpi=220,
-            bbox_inches="tight",
-            facecolor="white",
+            dpi         = 220,
+            bbox_inches = "tight",
+            facecolor   = "white",
         )
     plt.close(fig)
 
@@ -2076,7 +1993,7 @@ def build_run_summary(
     所有非有限浮点数先转为 ``None``，确保使用 ``allow_nan=False`` 仍能写出
     标准 JSON。
     """
-    detection_threshold = 0.01
+    detection_threshold                     = 0.01
     method_results: dict[str, MethodResult] = {}
     for method in PRIMARY_METHODS:
         selected = summary_table[
@@ -2092,7 +2009,7 @@ def build_run_summary(
         method_loo = leave_one_out[leave_one_out["method"] == method]
         if method_loo.empty:
             loo_stable_fraction = None
-            loo_max_shift_rmsf = None
+            loo_max_shift_rmsf  = None
         else:
             loo_stable_fraction = float(
                 cast(pd.Series, method_loo["stable_within_one_rmsf"])
@@ -2103,15 +2020,9 @@ def build_run_summary(
                 method_loo["peak_shift_rmsf"].max()
             )
         method_results[method] = {
-            "peak_rm_rad_m2": finite_float_or_none(
-                row.get("fine_grid_peak_rm")
-            ),
-            "peak_statistic": finite_float_or_none(
-                row.get("fine_grid_peak_statistic")
-            ),
-            "peak_robust_z": finite_float_or_none(
-                row.get("fine_grid_peak_robust_z")
-            ),
+            "peak_rm_rad_m2": finite_float_or_none(row.get("fine_grid_peak_rm")),
+            "peak_statistic": finite_float_or_none(row.get("fine_grid_peak_statistic")),
+            "peak_robust_z": finite_float_or_none(row.get("fine_grid_peak_robust_z")),
             "empirical_p_rm_contrast": p_value,
             "null_exceedances": (
                 int(cast(Any, row["contrast_null_exceedances"]))
@@ -2120,9 +2031,7 @@ def build_run_summary(
                 else None
             ),
             "detected_p_le_0_01": (
-                bool(p_value <= detection_threshold)
-                if p_value is not None
-                else None
+                bool(p_value <= detection_threshold) if p_value is not None else None
             ),
             "leave_one_out_stable_fraction": loo_stable_fraction,
             "leave_one_out_max_shift_rmsf": loo_max_shift_rmsf,
@@ -2135,18 +2044,16 @@ def build_run_summary(
             if peak_rm is not None:
                 method_rms.append(peak_rm)
     if len(method_rms) == len(PRIMARY_METHODS):
-        peak_separation = abs(float(method_rms[0]) - float(method_rms[1]))
-        peak_separation_rmsf = peak_separation / float(
-            rm_grid_info["rmsf_fwhm"]
-        )
-        methods_consistent = peak_separation_rmsf <= 1.0
+        peak_separation      = abs(float(method_rms[0]) - float(method_rms[1]))
+        peak_separation_rmsf = peak_separation / float(rm_grid_info["rmsf_fwhm"])
+        methods_consistent   = peak_separation_rmsf <= 1.0
     else:
-        peak_separation = None
+        peak_separation      = None
         peak_separation_rmsf = None
-        methods_consistent = None
+        methods_consistent   = None
 
     detections: list[bool] = []
-    marginal: list[bool] = []
+    marginal: list[bool]   = []
     for result in method_results.values():
         detected = result["detected_p_le_0_01"]
         if detected is not None:
@@ -2168,11 +2075,7 @@ def build_run_summary(
             if methods_consistent
             else "one_method_detected_peak_disagreement"
         )
-    elif (
-        len(marginal) == len(PRIMARY_METHODS)
-        and all(marginal)
-        and methods_consistent
-    ):
+    elif len(marginal) == len(PRIMARY_METHODS) and all(marginal) and methods_consistent:
         status = "marginal_both_methods"
     else:
         status = "no_robust_detection"
@@ -2183,12 +2086,8 @@ def build_run_summary(
     selected_peak_snr = np.asarray(
         [burst.peak_snr for burst in bursts], dtype=np.float64
     )
-    channel_counts = np.asarray(
-        [burst.n_channel for burst in bursts], dtype=np.int64
-    )
-    i_snr_equivalent = math.sqrt(
-        float(global_time_info["selected_i_snr_squared_sum"])
-    )
+    channel_counts   = np.asarray([burst.n_channel for burst in bursts], dtype=np.int64)
+    i_snr_equivalent = math.sqrt(float(global_time_info["selected_i_snr_squared_sum"]))
     return {
         "schema_version": 1,
         "run_label": args.run_label,
@@ -2196,55 +2095,37 @@ def build_run_summary(
         "input": {
             "cal_dir": str(args.cal_dir.resolve()),
             "h5_file_count": len(files),
-            "selected_h5_file_count": len(
-                {str(burst.file_path) for burst in bursts}
-            ),
+            "selected_h5_file_count": len({str(burst.file_path) for burst in bursts}),
             "candidate_component_count": int(
                 global_time_info["candidate_component_count"]
             ),
             "selected_component_count": len(bursts),
-            "selected_component_ids": [
-                burst.component_id for burst in bursts
-            ],
+            "selected_component_ids": [burst.component_id for burst in bursts],
         },
         "time_selection": {
             "strategy": global_time_info["strategy"],
-            "candidate_sample_count": int(
-                global_time_info["candidate_sample_count"]
-            ),
-            "selected_sample_count": int(
-                global_time_info["selected_sample_count"]
-            ),
+            "candidate_sample_count": int(global_time_info["candidate_sample_count"]),
+            "selected_sample_count": int(global_time_info["selected_sample_count"]),
             "selected_i_snr_cutoff": finite_float_or_none(
                 global_time_info["selected_snr_min"]
             ),
-            "selected_i_snr_median": float(
-                np.median(selected_sample_snr)
-            ),
+            "selected_i_snr_median": float(np.median(selected_sample_snr)),
             "selected_i_snr_max": float(np.max(selected_sample_snr)),
             "selected_i_snr_squared_fraction": finite_float_or_none(
                 global_time_info["selected_i_snr_squared_fraction"]
             ),
             "i_snr_equivalent": i_snr_equivalent,
             "component_peak_i_snr_min": float(np.min(selected_peak_snr)),
-            "component_peak_i_snr_median": float(
-                np.median(selected_peak_snr)
-            ),
+            "component_peak_i_snr_median": float(np.median(selected_peak_snr)),
             "component_peak_i_snr_max": float(np.max(selected_peak_snr)),
         },
         "frequency": {
             "requested_min_mhz": args.freq_min,
             "requested_max_mhz": args.freq_max,
-            "actual_min_mhz": min(
-                float(burst.freq_mhz.min()) for burst in bursts
-            ),
-            "actual_max_mhz": max(
-                float(burst.freq_mhz.max()) for burst in bursts
-            ),
+            "actual_min_mhz": min(float(burst.freq_mhz.min()) for burst in bursts),
+            "actual_max_mhz": max(float(burst.freq_mhz.max()) for burst in bursts),
             "usable_channel_count_min": int(np.min(channel_counts)),
-            "usable_channel_count_median": float(
-                np.median(channel_counts)
-            ),
+            "usable_channel_count_median": float(np.median(channel_counts)),
             "usable_channel_count_max": int(np.max(channel_counts)),
         },
         "rm_search": {
@@ -2294,15 +2175,15 @@ def write_no_eligible_result(
     候选规模、门限、频段、警告及脚本哈希；只有依赖 RM 曲线的压缩包不生成。
     """
     candidate_samples = int(sum(burst.n_time for burst in loaded_bursts))
-    candidate_files = len({str(burst.file_path) for burst in loaded_bursts})
+    candidate_files   = len({str(burst.file_path) for burst in loaded_bursts})
     candidate_snr = np.asarray(
         [burst.peak_snr for burst in loaded_bursts], dtype=np.float64
     )
     if args.freq_min is None and args.freq_max is None:
         frequency_text = "all available frequencies"
     else:
-        low = "band start" if args.freq_min is None else f"{args.freq_min:g}"
-        high = "band end" if args.freq_max is None else f"{args.freq_max:g}"
+        low            = "band start" if args.freq_min is None else f"{args.freq_min:g}"
+        high           = "band end" if args.freq_max is None else f"{args.freq_max:g}"
         frequency_text = f"{low}–{high} MHz"
     message = (
         "No burst component survived the configured Stokes-I selection "
@@ -2477,19 +2358,19 @@ def write_no_eligible_result(
             0.5,
             0.62,
             args.run_label or "Stacked-RM search",
-            ha="center",
-            va="center",
-            fontsize=22,
-            weight="bold",
+            ha       = "center",
+            va       = "center",
+            fontsize = 22,
+            weight   = "bold",
         )
         axis.text(
             0.5,
             0.42,
             "No eligible Stokes-I burst component",
-            ha="center",
-            va="center",
-            fontsize=17,
-            color="#9C4221",
+            ha       = "center",
+            va       = "center",
+            fontsize = 17,
+            color    = "#9C4221",
         )
         axis.text(
             0.5,
@@ -2500,16 +2381,16 @@ def write_no_eligible_result(
                 f"sample S/N ≥ {args.min_time_snr:g} · "
                 f"{frequency_text}"
             ),
-            ha="center",
-            va="center",
-            fontsize=12,
-            color="0.3",
+            ha       = "center",
+            va       = "center",
+            fontsize = 12,
+            color    = "0.3",
         )
         figure.savefig(
             output_dir / "burst_sync_rm.png",
-            dpi=180,
-            bbox_inches="tight",
-            facecolor="white",
+            dpi         = 180,
+            bbox_inches = "tight",
+            facecolor   = "white",
         )
         plt.close(figure)
     (output_dir / "burst_sync_rm_summary.txt").write_text(
@@ -2563,12 +2444,12 @@ def main(argv: list[str] | None = None) -> int:
     # ---- 1. 参数、搜索窗口和输入文件 ----
     args = parse_args(argv)
     validate_args(args)
-    cal_dir = args.cal_dir.resolve()
+    cal_dir    = args.cal_dir.resolve()
     output_dir = args.output_dir.resolve()
     if output_dir.exists():
         raise FileExistsError(f"Refusing to reuse output directory: {output_dir}")
     windows = parse_search_windows(args.test_window, args.rm_min, args.rm_max)
-    files = discover_h5_files(cal_dir, args.file_list, args.recursive)
+    files   = discover_h5_files(cal_dir, args.file_list, args.recursive)
 
     # ---- 2. 读取 H5、减脉冲外基线并构造候选分量 ----
     # 输出目录在输入全部通过基础校验后才创建，并且从不复用旧目录，避免新旧
@@ -2576,7 +2457,7 @@ def main(argv: list[str] | None = None) -> int:
     output_dir.mkdir(parents=True)
     print(f"Found {len(files)} calibrated H5 files in {cal_dir}", flush=True)
     bursts: list[BurstRMData] = []
-    warnings: list[str] = []
+    warnings: list[str]       = []
     load_options: LoadFileOptions = {
         "freq_min": args.freq_min,
         "freq_max": args.freq_max,
@@ -2593,15 +2474,15 @@ def main(argv: list[str] | None = None) -> int:
     executor: ProcessPoolExecutor | None
     if args.load_workers == 1:
         loaded_files = map(load_file_components_worker, payloads)
-        executor = None
+        executor     = None
     else:
         print(
             f"Loading H5 files with {args.load_workers} spawned workers...",
             flush=True,
         )
         executor = ProcessPoolExecutor(
-            max_workers=args.load_workers,
-            mp_context=multiprocessing.get_context("spawn"),
+            max_workers = args.load_workers,
+            mp_context  = multiprocessing.get_context("spawn"),
         )
         loaded_files = executor.map(
             load_file_components_worker,
@@ -2616,9 +2497,8 @@ def main(argv: list[str] | None = None) -> int:
         ):
             bursts.extend(components)
             warnings.extend(file_warnings)
-            if (
-                args.load_workers > 1
-                and (index % progress_step == 0 or index == len(files))
+            if args.load_workers > 1 and (
+                index % progress_step == 0 or index == len(files)
             ):
                 print(
                     f"  loaded {index}/{len(files)} H5 files",
@@ -2632,11 +2512,7 @@ def main(argv: list[str] | None = None) -> int:
     # 先按每个分量的 I 峰值淘汰过弱候选，再执行跨分量的统一时间点前缀优化。
     # 若没有合格分量，仍写出结构完整、状态明确的结果集后正常退出。
     loaded_bursts = bursts
-    bursts = [
-        burst
-        for burst in loaded_bursts
-        if burst.peak_snr >= args.min_peak_snr
-    ]
+    bursts        = [burst for burst in loaded_bursts if burst.peak_snr >= args.min_peak_snr]
     bursts.sort(key=lambda burst: burst.peak_snr, reverse=True)
     if args.max_bursts is not None:
         bursts = bursts[: args.max_bursts]
@@ -2650,22 +2526,19 @@ def main(argv: list[str] | None = None) -> int:
                 "run after.burst_detect before burst_sync_rm"
             )
         write_no_eligible_result(
-            args=args,
-            files=files,
-            loaded_bursts=loaded_bursts,
-            output_dir=output_dir,
-            warnings=warnings,
+            args          = args,
+            files         = files,
+            loaded_bursts = loaded_bursts,
+            output_dir    = output_dir,
+            warnings      = warnings,
         )
         print(
-            "DONE status=no_eligible_components "
-            f"output={output_dir}",
+            f"DONE status=no_eligible_components output={output_dir}",
             flush=True,
         )
         return 0
     disambiguate_component_ids(bursts)
-    bursts, global_time_info, time_sample_table = select_global_time_samples(
-        bursts
-    )
+    bursts, global_time_info, time_sample_table = select_global_time_samples(bursts)
     if not bursts:
         raise RuntimeError("Global Stokes-I time selection retained no components")
 
@@ -2707,9 +2580,7 @@ def main(argv: list[str] | None = None) -> int:
         lambda2_sets,
         oversample=NULL_RM_GRID_OVERSAMPLE,
     )
-    weights = curve_weights(
-        bursts, args.curve_weighting, args.max_weight_ratio
-    )
+    weights = curve_weights(bursts, args.curve_weighting, args.max_weight_ratio)
 
     individual: dict[str, dict[str, np.ndarray]] = {}
     print(
@@ -2751,53 +2622,37 @@ def main(argv: list[str] | None = None) -> int:
             null_grid,
             windows,
             weights,
-            n_null=args.n_null,
-            pool_size=args.null_pool_size,
-            seed=args.seed,
-            chunk_size=args.transform_chunk_size,
+            n_null     = args.n_null,
+            pool_size  = args.null_pool_size,
+            seed       = args.seed,
+            chunk_size = args.transform_chunk_size,
         )
         summary_table = fine_table.merge(
             null_table,
-            on=["method", "method_role", "window"],
-            how="left",
+            on  = ["method", "method_role", "window"],
+            how = "left",
         )
     else:
         summary_table = fine_table
 
     # ---- 6. 写出表格化测量结果与逐一剔除稳定性检查 ----
-    member_string = ";".join(burst.component_id for burst in bursts)
-    channel_counts = np.asarray(
-        [burst.n_channel for burst in bursts], dtype=np.int64
-    )
+    member_string  = ";".join(burst.component_id for burst in bursts)
+    channel_counts = np.asarray([burst.n_channel for burst in bursts], dtype=np.int64)
     run_metadata = {
         "run_label": args.run_label,
         "n_input_h5_files": len(files),
-        "n_selected_h5_files": len(
-            {str(burst.file_path) for burst in bursts}
-        ),
-        "n_candidate_components": int(
-            global_time_info["candidate_component_count"]
-        ),
+        "n_selected_h5_files": len({str(burst.file_path) for burst in bursts}),
+        "n_candidate_components": int(global_time_info["candidate_component_count"]),
         "n_members": len(bursts),
         "members": member_string,
-        "n_candidate_time_samples": int(
-            global_time_info["candidate_sample_count"]
-        ),
-        "n_selected_time_samples": int(
-            global_time_info["selected_sample_count"]
-        ),
+        "n_candidate_time_samples": int(global_time_info["candidate_sample_count"]),
+        "n_selected_time_samples": int(global_time_info["selected_sample_count"]),
         "i_snr_equivalent": math.sqrt(
             float(global_time_info["selected_i_snr_squared_sum"])
         ),
-        "selected_i_snr_cutoff": float(
-            global_time_info["selected_snr_min"]
-        ),
-        "selected_i_snr_median": float(
-            global_time_info["selected_snr_median"]
-        ),
-        "selected_i_snr_max": float(
-            global_time_info["selected_snr_max"]
-        ),
+        "selected_i_snr_cutoff": float(global_time_info["selected_snr_min"]),
+        "selected_i_snr_median": float(global_time_info["selected_snr_median"]),
+        "selected_i_snr_max": float(global_time_info["selected_snr_max"]),
         "requested_frequency_min_mhz": args.freq_min,
         "requested_frequency_max_mhz": args.freq_max,
         "actual_frequency_min_mhz": min(
@@ -2829,20 +2684,12 @@ def main(argv: list[str] | None = None) -> int:
         combined,
         float(rm_grid_info["rmsf_fwhm"]),
     )
-    leave_one_out.to_csv(
-        output_dir / "leave_one_burst_out.csv", index=False
-    )
+    leave_one_out.to_csv(output_dir / "leave_one_burst_out.csv", index=False)
 
-    time_sample_table.to_csv(
-        output_dir / "time_sample_selection.csv", index=False
-    )
-    candidate_counts = (
-        time_sample_table.groupby("component_id").size().to_dict()
-    )
-    selection_rows = []
-    for rank, (burst, weight) in enumerate(
-        zip(bursts, weights, strict=True), start=1
-    ):
+    time_sample_table.to_csv(output_dir / "time_sample_selection.csv", index=False)
+    candidate_counts = time_sample_table.groupby("component_id").size().to_dict()
+    selection_rows   = []
+    for rank, (burst, weight) in enumerate(zip(bursts, weights, strict=True), start=1):
         selection_rows.append(
             {
                 "rank": rank,
@@ -2877,9 +2724,7 @@ def main(argv: list[str] | None = None) -> int:
                 "offpulse_sample_count": int(burst.p_noise.shape[0]),
             }
         )
-    pd.DataFrame(selection_rows).to_csv(
-        output_dir / "selected_bursts.csv", index=False
-    )
+    pd.DataFrame(selection_rows).to_csv(output_dir / "selected_bursts.csv", index=False)
 
     # ---- 7. 归档可复算曲线、零分布和实际抽样池 ----
     curve_archive: dict[str, np.ndarray] = {"rm_grid": rm_grid}
@@ -2889,18 +2734,14 @@ def main(argv: list[str] | None = None) -> int:
         for name, curve in individual[burst.component_id].items():
             curve_archive[f"{burst.component_id}__{name}"] = curve
     savez_compressed = cast(Any, np.savez_compressed)
-    savez_compressed(
-        output_dir / "burst_sync_rm_curves.npz", **curve_archive
-    )
+    savez_compressed(output_dir / "burst_sync_rm_curves.npz", **curve_archive)
     if null_archive is not None and pool_archive is not None:
         savez_compressed(
             output_dir / "offpulse_null_maxima.npz",
             rm_grid=null_grid,
             **null_archive,
         )
-        savez_compressed(
-            output_dir / "offpulse_pool_indices.npz", **pool_archive
-        )
+        savez_compressed(output_dir / "offpulse_pool_indices.npz", **pool_archive)
 
     # ---- 8. 生成诊断图、机器可读摘要和完整运行清单 ----
     write_plot(
@@ -2918,15 +2759,15 @@ def main(argv: list[str] | None = None) -> int:
     )
 
     run_summary = build_run_summary(
-        args=args,
-        files=files,
-        bursts=bursts,
-        global_time_info=global_time_info,
-        summary_table=summary_table,
-        leave_one_out=leave_one_out,
-        primary_window=primary_window,
-        rm_grid_info=rm_grid_info,
-        warnings=warnings,
+        args             = args,
+        files            = files,
+        bursts           = bursts,
+        global_time_info = global_time_info,
+        summary_table    = summary_table,
+        leave_one_out    = leave_one_out,
+        primary_window   = primary_window,
+        rm_grid_info     = rm_grid_info,
+        warnings         = warnings,
     )
     (output_dir / "run_summary.json").write_text(
         json.dumps(run_summary, indent=2, allow_nan=False) + "\n",
@@ -2956,12 +2797,8 @@ def main(argv: list[str] | None = None) -> int:
             ],
         },
         "selected_components": [row["component_id"] for row in selection_rows],
-        "time_sample_selection_table": str(
-            output_dir / "time_sample_selection.csv"
-        ),
-        "leave_one_burst_out_table": str(
-            output_dir / "leave_one_burst_out.csv"
-        ),
+        "time_sample_selection_table": str(output_dir / "time_sample_selection.csv"),
+        "leave_one_burst_out_table": str(output_dir / "leave_one_burst_out.csv"),
         "run_summary": str(output_dir / "run_summary.json"),
         "pixel_mask": "not read or applied",
         "channel_mask_policy": (
@@ -3058,3 +2895,5 @@ def main(argv: list[str] | None = None) -> int:
 
 if __name__ == "__main__":
     raise SystemExit(main())
+
+# fmt: on

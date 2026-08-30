@@ -1,3 +1,5 @@
+# fmt: off
+
 import numpy as np
 import pytest
 
@@ -59,15 +61,15 @@ def test_find_raw_fits_honors_frozen_manifest_order(tmp_path):
 
 def test_cut_group_writes_negative_start_with_n_token(monkeypatch, tmp_path):
     row = cut_burst_fits.BurstRow(
-        raw_dir=tmp_path / "raw",
-        project="P001",
-        raw_name="RAWTEST",
-        date="20260728",
-        beam=1,
-        dm=100.0,
-        toa_sec=0.0,
-        start_sample=-4,
-        segment_length=8,
+        raw_dir        = tmp_path / "raw",
+        project        = "P001",
+        raw_name       = "RAWTEST",
+        date           = "20260728",
+        beam           = 1,
+        dm             = 100.0,
+        toa_sec        = 0.0,
+        start_sample   = -4,
+        segment_length = 8,
     )
     written = []
     monkeypatch.setattr(
@@ -107,13 +109,13 @@ def test_cut_group_writes_negative_start_with_n_token(monkeypatch, tmp_path):
 
     cut_burst_fits.cut_group(
         [row],
-        output_root=tmp_path / "output",
-        output_name="FRBTEST",
-        segment_length=4096,
-        overwrite=False,
-        copy_first_fits=False,
+        output_root     = tmp_path / "output",
+        output_name     = "FRBTEST",
+        segment_length  = 4096,
+        overwrite       = False,
+        copy_first_fits = False,
     )
 
-    assert written[0].name == (
-        "FRBTEST-20260728-M01-0001-n000000004.fits"
-    )
+    assert written[0].name == ("FRBTEST-20260728-M01-0001-n000000004.fits")
+
+# fmt: on

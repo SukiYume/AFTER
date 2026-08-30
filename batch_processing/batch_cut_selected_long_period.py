@@ -1,3 +1,5 @@
+# fmt: off
+
 """Cut selected CHIME/ILTJ long-period transient candidates.
 
 This wrapper reads Selected_LongPeriod_Burst.txt, which is a Burst.txt-like
@@ -17,12 +19,12 @@ from collections import defaultdict
 from multiprocessing import Pool
 from pathlib import Path
 
-SCRIPT_DIR = Path(__file__).resolve().parent
+SCRIPT_DIR  = Path(__file__).resolve().parent
 PROJECT_DIR = SCRIPT_DIR.parent
 if str(PROJECT_DIR) not in sys.path:
     sys.path.insert(0, str(PROJECT_DIR))
 
-DEFAULT_PLAN = SCRIPT_DIR / "Selected_LongPeriod_Burst.txt"
+DEFAULT_PLAN        = SCRIPT_DIR / "Selected_LongPeriod_Burst.txt"
 DEFAULT_OUTPUT_ROOT = "/path/to/after_data/LPT_Selected_Cut"
 
 
@@ -51,10 +53,10 @@ def read_plan(path: Path) -> list[dict]:
                 raise ValueError(f"Malformed row {path}:{line_no}: {line.rstrip()}")
             if len(parts) >= 12 and ":" in parts[8] and ":" in parts[9]:
                 selected_images = parts[10]
-                note = parts[11]
+                note            = parts[11]
             else:
                 selected_images = parts[8] if len(parts) > 8 else ""
-                note = parts[9] if len(parts) > 9 else ""
+                note            = parts[9] if len(parts) > 9 else ""
 
             row = {
                 "line_no": line_no,
@@ -94,7 +96,9 @@ def clear_existing_outputs(output_root: Path, rows: list[dict]) -> None:
         save_path = output_root / row["name"] / row["date"]
         if not save_path.exists():
             continue
-        for path in save_path.glob(f"{row['name']}-{row['date']}-M{row['beam']:02d}-*.h5"):
+        for path in save_path.glob(
+            f"{row['name']}-{row['date']}-M{row['beam']:02d}-*.h5"
+        ):
             path.unlink()
         obs_json = save_path / "obs_info.json"
         if obs_json.exists():
@@ -130,8 +134,10 @@ def run_group(group_key, rows, output_root: Path, workers: int, dry_run: bool):
     if not cal_dst.exists():
         shutil.copy2(data_path / file_list[0], cal_dst)
 
-    calc_dispersion_shift, cut_one_burst, read_obs_info, save_obs_json = load_cut_helpers()
-    info = read_obs_info(str(data_path), file_list)
+    calc_dispersion_shift, cut_one_burst, read_obs_info, save_obs_json = (
+        load_cut_helpers()
+    )
+    info              = read_obs_info(str(data_path), file_list)
     shifts, max_shift = calc_dispersion_shift(dm, info["freq"], info["time_reso"])
     cut_args = [
         (
@@ -184,17 +190,17 @@ def parse_args():
 
 
 def main():
-    args = parse_args()
-    plan_path = Path(args.plan_txt)
+    args        = parse_args()
+    plan_path   = Path(args.plan_txt)
     output_root = Path(args.output_root)
 
     rows = read_plan(plan_path)
     if args.only_source:
         wanted = set(args.only_source)
-        rows = [row for row in rows if row["name"] in wanted]
+        rows   = [row for row in rows if row["name"] in wanted]
     if args.only_date:
         wanted = set(args.only_date)
-        rows = [row for row in rows if row["date"] in wanted]
+        rows   = [row for row in rows if row["date"] in wanted]
     if not rows:
         raise SystemExit(f"No rows selected from {plan_path}")
 
@@ -218,7 +224,9 @@ def main():
     results = []
     for key, group_rows in sorted(grouped.items(), key=lambda item: item[0]):
         group_rows = sorted(group_rows, key=lambda row: row["time"])
-        results.append(run_group(key, group_rows, output_root, args.workers, args.dry_run))
+        results.append(
+            run_group(key, group_rows, output_root, args.workers, args.dry_run)
+        )
 
     print("Cut summary:")
     for result in results:
@@ -230,3 +238,5 @@ def main():
 
 if __name__ == "__main__":
     main()
+
+# fmt: on

@@ -1,4 +1,6 @@
 # -*- coding: utf-8 -*-
+# fmt: off
+
 """
 根据 burst_results.csv 生成单文件静态观测面板（A3 横向海报版）。
 
@@ -38,7 +40,6 @@ from cycler import cycler
 from matplotlib import font_manager
 from matplotlib.colors import LinearSegmentedColormap
 
-
 # =========================================================================== #
 # 一、全局配置：配色、字号、物理常数、列定义
 # =========================================================================== #
@@ -71,15 +72,19 @@ SEQUENTIAL = LinearSegmentedColormap.from_list(
 # 离散类别色（直方图、分立标记用），都取自与 chrome 同一族系，互不冲突；同时作为
 # matplotlib 的默认 prop_cycle 兜底色序。
 CYCLE = [
-    PALETTE["blue"], PALETTE["teal"], PALETTE["gold"],
-    PALETTE["rose"], PALETTE["violet"], PALETTE["green"],
+    PALETTE["blue"],
+    PALETTE["teal"],
+    PALETTE["gold"],
+    PALETTE["rose"],
+    PALETTE["violet"],
+    PALETTE["green"],
 ]
 
 # 所有图（含偏振这类双子图）都用同一个约 4:3 的长宽比渲染，配合 CSS 里同比例的卡片框，
 # 各图便排成整齐的每行 4 个的统一网格。
-FIG_SIZE = (5.6, 4.2)
+FIG_SIZE      = (5.6, 4.2)
 FIG_SIZE_WIDE = (11.4, 4.2)
-FIGURE_DPI = 160              # 内嵌图 PNG 的渲染分辨率
+FIGURE_DPI    = 160  # 内嵌图 PNG 的渲染分辨率
 
 # --- fluence × bandwidth 汇总（显示在顶部指标栏）-------------------------- #
 # CSV 里的 fluence 是谱通量积分（Jy·ms），在每个 burst 各自的带宽上测得，所以逐条
@@ -88,19 +93,56 @@ MHZ_TO_GHZ = 1.0e-3
 
 # 读入 CSV 后强制转成数值的列（缺失或脏值转为 NaN）。
 NUMERIC_COLUMNS = [
-    "burst_idx", "toa_mjd", "flux_peak", "flux_err", "flux_err_sys",
-    "fluence", "fluence_err", "fluence_err_sys", "width", "width_err",
-    "width_gauss", "width_gauss_err", "snr", "freq_low", "freq_high",
-    "bandwidth", "bandwidth_gauss", "bandwidth_gauss_err", "dm", "dm_err",
-    "rm", "rm_err", "rm_significance", "linear_frac", "linear_frac_err",
-    "circular_frac", "circular_frac_err", "center_freq",
+    "burst_idx",
+    "toa_mjd",
+    "flux_peak",
+    "flux_err",
+    "flux_err_sys",
+    "fluence",
+    "fluence_err",
+    "fluence_err_sys",
+    "width",
+    "width_err",
+    "width_gauss",
+    "width_gauss_err",
+    "snr",
+    "freq_low",
+    "freq_high",
+    "bandwidth",
+    "bandwidth_gauss",
+    "bandwidth_gauss_err",
+    "dm",
+    "dm_err",
+    "rm",
+    "rm_err",
+    "rm_significance",
+    "linear_frac",
+    "linear_frac_err",
+    "circular_frac",
+    "circular_frac_err",
+    "center_freq",
 ]
 
 # 明细表展示的列及顺序（实际只渲染数据里真正存在的那些）。
 DETAIL_COLUMNS = [
-    "burst_no", "file_name", "burst_idx", "time_s", "toa_mjd", "snr",
-    "flux_peak", "fluence", "width", "freq_low", "freq_high", "bandwidth",
-    "dm", "dm_err", "rm", "rm_significance", "linear_frac", "circular_frac",
+    "burst_no",
+    "file_name",
+    "burst_idx",
+    "time_s",
+    "toa_mjd",
+    "snr",
+    "flux_peak",
+    "fluence",
+    "width",
+    "freq_low",
+    "freq_high",
+    "bandwidth",
+    "dm",
+    "dm_err",
+    "rm",
+    "rm_significance",
+    "linear_frac",
+    "circular_frac",
 ]
 
 # 明细表列名 → 中文表头。
@@ -136,36 +178,44 @@ def parse_args():
     目录也默认取 CSV 所在目录；SNR、DM 误差和 RM 显著性阈值只影响面板中的
     提示、筛选或展示，不会回写原始测量结果。
     """
-    parser = argparse.ArgumentParser(description="根据 burst_results.csv 生成静态观测面板")
+    parser = argparse.ArgumentParser(
+        description="根据 burst_results.csv 生成静态观测面板"
+    )
     parser.add_argument("--csv", required=True, help="burst_results.csv 路径")
     parser.add_argument(
         "--output",
-        default=None,
-        help="输出 HTML 路径；默认写到 CSV 同目录的 burst_dashboard.html",
+        default = None,
+        help    = "输出 HTML 路径；默认写到 CSV 同目录的 burst_dashboard.html",
     )
     parser.add_argument(
         "--analysis-dir",
-        default=None,
-        help="逐 burst analysis 目录；默认与 CSV 同目录",
+        default = None,
+        help    = "逐 burst analysis 目录；默认与 CSV 同目录",
     )
     parser.add_argument("--source", default=None, help="源名，例如 FRB121102")
     parser.add_argument("--date", default=None, help="观测日期，例如 20260626")
     parser.add_argument("--title", default=None, help="面板标题")
     parser.add_argument(
         "--reference-dm",
-        type=float,
-        default=None,
-        help="参考 DM；提供后会在 DM 图中画水平线",
+        type    = float,
+        default = None,
+        help    = "参考 DM；提供后会在 DM 图中画水平线",
     )
-    parser.add_argument("--snr-threshold", type=float, default=5.0, help="低 SNR 提示阈值")
-    parser.add_argument("--dm-err-threshold", type=float, default=5.0, help="DM 误差提示阈值")
+    parser.add_argument(
+        "--snr-threshold", type=float, default=5.0, help="低 SNR 提示阈值"
+    )
+    parser.add_argument(
+        "--dm-err-threshold", type=float, default=5.0, help="DM 误差提示阈值"
+    )
     parser.add_argument(
         "--rm-significance-threshold",
-        type=float,
-        default=5.0,
-        help="RM 可靠性显著性阈值",
+        type    = float,
+        default = 5.0,
+        help    = "RM 可靠性显著性阈值",
     )
-    parser.add_argument("--top-n", type=int, default=10, help="动态谱画廊展示的最高 SNR 数量")
+    parser.add_argument(
+        "--top-n", type=int, default=10, help="动态谱画廊展示的最高 SNR 数量"
+    )
     return parser.parse_args()
 
 
@@ -193,15 +243,15 @@ def load_results(csv_path, rm_threshold):
 
     # 有 TOA 就用 TOA 算相对时间（秒）并按时间排序；否则退化为按文件顺序。
     if "toa_mjd" in df.columns and bool(df["toa_mjd"].notna().any()):
-        first_toa = df["toa_mjd"].min()
+        first_toa    = df["toa_mjd"].min()
         df["time_s"] = (df["toa_mjd"] - first_toa) * 86400.0
-        sort_cols = ["toa_mjd", "file_name", "burst_idx"]
+        sort_cols    = ["toa_mjd", "file_name", "burst_idx"]
     else:
         df["time_s"] = np.arange(len(df), dtype=float)
-        sort_cols = ["file_name", "burst_idx"]
+        sort_cols    = ["file_name", "burst_idx"]
 
-    df = df.sort_values(sort_cols).reset_index(drop=True)
-    df["burst_no"] = np.arange(1, len(df) + 1)
+    df                = df.sort_values(sort_cols).reset_index(drop=True)
+    df["burst_no"]    = np.arange(1, len(df) + 1)
     df["burst_label"] = df["burst_no"].map(lambda value: f"B{value:03d}")
 
     # rm_reliable：只有显著性达到阈值才算「可靠 RM」，下游据此决定是否展示偏振。
@@ -216,17 +266,17 @@ def load_results(csv_path, rm_threshold):
 def infer_metadata(df, csv_path, source=None, date=None, title=None):
     """从文件名 / 路径里推断源名、观测日期、波束号；命令行显式传入的优先。"""
     inferred_source = source
-    inferred_date = date
-    beam = None
+    inferred_date   = date
+    beam            = None
 
     # 典型文件名形如 FRB121102-20260626-M01-...，从中抽源名、日期、波束。
     if "file_name" in df.columns and df["file_name"].notna().any():
         sample = str(df["file_name"].dropna().iloc[0])
-        match = re.search(r"^(?P<source>.+?)-(?P<date>\d{8})-M(?P<beam>\d{2})-", sample)
+        match  = re.search(r"^(?P<source>.+?)-(?P<date>\d{8})-M(?P<beam>\d{2})-", sample)
         if match:
             inferred_source = inferred_source or match.group("source")
-            inferred_date = inferred_date or match.group("date")
-            beam = f"M{match.group('beam')}"
+            inferred_date   = inferred_date or match.group("date")
+            beam            = f"M{match.group('beam')}"
 
     # 文件名里没日期，再尝试从路径中找一段 8 位数字当日期。
     csv_path = Path(csv_path)
@@ -237,8 +287,8 @@ def infer_metadata(df, csv_path, source=None, date=None, title=None):
                 break
 
     inferred_source = inferred_source or "Unknown source"
-    inferred_date = inferred_date or "Unknown date"
-    title = title or f"{inferred_source} {inferred_date} 观测分析面板"
+    inferred_date   = inferred_date or "Unknown date"
+    title           = title or f"{inferred_source} {inferred_date} 观测分析面板"
     return {
         "source": inferred_source,
         "date": inferred_date,
@@ -250,15 +300,23 @@ def infer_metadata(df, csv_path, source=None, date=None, title=None):
 def compute_overview(df):
     """会话级汇总统计，单一数据源同时供顶部抬头与指标栏使用，避免在两处重复计算。"""
     has_snr = "snr" in df.columns and df["snr"].notna().any()
-    span_s = (df["time_s"].max() - df["time_s"].min()) if "time_s" in df.columns else float("nan")
+    span_s = (
+        (df["time_s"].max() - df["time_s"].min())
+        if "time_s" in df.columns
+        else float("nan")
+    )
     peak_idx = df["snr"].idxmax() if has_snr else None
     return {
         "burst_count": len(df),
         "file_count": df["file_name"].nunique() if "file_name" in df.columns else 0,
         "span_s": span_s,
-        "span_min": span_s / 60.0 if isinstance(span_s, float) and math.isfinite(span_s) else float("nan"),
+        "span_min": span_s / 60.0
+        if isinstance(span_s, float) and math.isfinite(span_s)
+        else float("nan"),
         "peak_snr": df["snr"].max() if has_snr else float("nan"),
-        "peak_time_min": (df.loc[peak_idx, "time_s"] / 60.0) if peak_idx is not None else float("nan"),
+        "peak_time_min": (df.loc[peak_idx, "time_s"] / 60.0)
+        if peak_idx is not None
+        else float("nan"),
         "reliable_rm": int(df["rm_reliable"].sum()),
     }
 
@@ -305,8 +363,8 @@ def fmt_sci(value, sig=2, suffix=""):
         return "—"
     if not math.isfinite(v) or v == 0:
         return "—"
-    exp = int(math.floor(math.log10(abs(v))))
-    mant = v / 10.0 ** exp
+    exp  = int(math.floor(math.log10(abs(v))))
+    mant = v / 10.0**exp
     return f"{mant:.{sig - 1}f}×10{str(exp).translate(_SUPERSCRIPT)}{suffix}"
 
 
@@ -329,7 +387,13 @@ def fluence_bandwidth_jy_ms_ghz(df):
 def figure_to_data_uri(fig):
     """把一个 matplotlib figure 存成 PNG 并编码成 base64 data URI，随后关闭释放。"""
     buffer = io.BytesIO()
-    fig.savefig(buffer, format="png", dpi=FIGURE_DPI, bbox_inches="tight", facecolor=fig.get_facecolor())
+    fig.savefig(
+        buffer,
+        format      = "png",
+        dpi         = FIGURE_DPI,
+        bbox_inches = "tight",
+        facecolor   = fig.get_facecolor(),
+    )
     plt.close(fig)
     encoded = base64.b64encode(buffer.getvalue()).decode("ascii")
     return f"data:image/png;base64,{encoded}"
@@ -337,7 +401,7 @@ def figure_to_data_uri(fig):
 
 def png_file_to_data_uri(path):
     """把磁盘上已有的 PNG 文件读进来编码成 data URI（画廊嵌图用）。"""
-    data = Path(path).read_bytes()
+    data    = Path(path).read_bytes()
     encoded = base64.b64encode(data).decode("ascii")
     return f"data:image/png;base64,{encoded}"
 
@@ -357,8 +421,11 @@ def setup_plot_style():
     installed = {f.name for f in font_manager.fontManager.ttflist}
     preferred = [name for name in ("Inter", "Noto Sans SC") if name in installed]
     font_stack = preferred + [
-        "Microsoft YaHei", "SimHei", "Noto Sans CJK SC",
-        "Arial Unicode MS", "DejaVu Sans",
+        "Microsoft YaHei",
+        "SimHei",
+        "Noto Sans CJK SC",
+        "Arial Unicode MS",
+        "DejaVu Sans",
     ]
 
     plt.rcParams.update(
@@ -399,7 +466,7 @@ def scaled_sizes(values, low=42, high=240):
     vals = np.asarray(pd.to_numeric(values, errors="coerce"), dtype=float).reshape(-1)
     if np.count_nonzero(~np.isnan(vals)) == 0:
         return np.full(vals.size, (low + high) / 2)
-    filled = np.where(np.isnan(vals), np.nanmedian(vals), vals)
+    filled     = np.where(np.isnan(vals), np.nanmedian(vals), vals)
     vmin, vmax = np.nanmin(filled), np.nanmax(filled)
     if np.isclose(vmin, vmax):
         return np.full(vals.size, (low + high) / 2)
@@ -408,12 +475,23 @@ def scaled_sizes(values, low=42, high=240):
 
 def add_no_data(ax, message="无可用数据"):
     """在某个轴上画一句居中的占位提示，并关掉坐标轴（缺数据时用）。"""
-    ax.text(0.5, 0.5, message, ha="center", va="center", color=PALETTE["muted"], fontsize=12)
+    ax.text(
+        0.5, 0.5, message, ha="center", va="center", color=PALETTE["muted"], fontsize=12
+    )
     ax.set_axis_off()
 
 
-def draw_hist(ax, values, color, *, bins, logx=False, median=False,
-              median_color=None, median_label=None):
+def draw_hist(
+    ax,
+    values,
+    color,
+    *,
+    bins,
+    logx=False,
+    median=False,
+    median_color=None,
+    median_label=None,
+):
     """所有分布面板共用的一套柔和直方图画法。
 
     柱子用半透明填充 + 同色描边 + 柱间留细缝（rwidth），比实心高饱和色块克制得多；
@@ -424,15 +502,30 @@ def draw_hist(ax, values, color, *, bins, logx=False, median=False,
     if values.size == 0:
         add_no_data(ax)
         return
-    ax.hist(values, bins=bins, color=color, alpha=0.5, edgecolor=color,
-            linewidth=1.15, rwidth=0.9, zorder=2)
+    ax.hist(
+        values,
+        bins      = bins,
+        color     = color,
+        alpha     = 0.5,
+        edgecolor = color,
+        linewidth = 1.15,
+        rwidth    = 0.9,
+        zorder    = 2,
+    )
     if logx:
         ax.set_xscale("log")
     if median:
-        med = float(np.median(values))
+        med   = float(np.median(values))
         label = median_label.format(med=med) if median_label else None
-        ax.axvline(med, color=median_color or PALETTE["ink"], linestyle=(0, (4, 2)),
-                   linewidth=1.2, alpha=0.9 if median_color else 0.5, zorder=3, label=label)
+        ax.axvline(
+            med,
+            color     = median_color or PALETTE["ink"],
+            linestyle = (0, (4, 2)),
+            linewidth = 1.2,
+            alpha     = 0.9 if median_color else 0.5,
+            zorder    = 3,
+            label     = label,
+        )
     ax.margins(x=0.02)
 
 
@@ -449,21 +542,36 @@ def style_colorbar(cbar, label):
 def plot_timeline(df, snr_threshold):
     """01 时间分布：SNR 随观测内 TOA 变化，点大小/颜色编码 fluence。"""
     fig, ax = plt.subplots(figsize=FIG_SIZE)
-    x = df["time_s"] / 60.0
-    y = df["snr"] if "snr" in df.columns else pd.Series(np.nan, index=df.index)
-    sizes = scaled_sizes(df["fluence"] if "fluence" in df.columns else y)
+    x       = df["time_s"] / 60.0
+    y       = df["snr"] if "snr" in df.columns else pd.Series(np.nan, index=df.index)
+    sizes   = scaled_sizes(df["fluence"] if "fluence" in df.columns else y)
 
     if y.notna().any():
         has_fluence = "fluence" in df.columns and df["fluence"].notna().any()
-        colors = df["fluence"] if has_fluence else y
+        colors      = df["fluence"] if has_fluence else y
         scatter = ax.scatter(
-            x, y, s=sizes, c=colors, cmap=SEQUENTIAL,
-            edgecolor="white", linewidth=0.7, alpha=0.92, zorder=3,
+            x,
+            y,
+            s         = sizes,
+            c         = colors,
+            cmap      = SEQUENTIAL,
+            edgecolor = "white",
+            linewidth = 0.7,
+            alpha     = 0.92,
+            zorder    = 3,
         )
-        style_colorbar(fig.colorbar(scatter, ax=ax, pad=0.015),
-                       "Fluence (Jy ms)" if has_fluence else "SNR")
-        ax.axhline(snr_threshold, color=PALETTE["gold"], linestyle="--",
-                   linewidth=1.3, label=f"SNR = {snr_threshold:g}", zorder=2)
+        style_colorbar(
+            fig.colorbar(scatter, ax=ax, pad=0.015),
+            "Fluence (Jy ms)" if has_fluence else "SNR",
+        )
+        ax.axhline(
+            snr_threshold,
+            color     = PALETTE["gold"],
+            linestyle = "--",
+            linewidth = 1.3,
+            label     = f"SNR = {snr_threshold:g}",
+            zorder    = 2,
+        )
         ax.legend(loc="upper left", frameon=False)
         ax.set_title("Burst SNR 时间分布")
         ax.set_xlabel("距离首个 burst 的时间 (min)")
@@ -481,19 +589,41 @@ def plot_dm(df, reference_dm, dm_err_threshold):
         return figure_to_data_uri(fig)
 
     x = df["time_s"] / 60.0
-    dm_err = df["dm_err"] if "dm_err" in df.columns else pd.Series(np.nan, index=df.index)
+    dm_err = (
+        df["dm_err"] if "dm_err" in df.columns else pd.Series(np.nan, index=df.index)
+    )
     high_err = (dm_err > dm_err_threshold).fillna(False)
-    normal = ~high_err
+    normal   = ~high_err
 
-    ax.scatter(x[normal], df.loc[normal, "dm"], s=60, color=PALETTE["blue"],
-               edgecolor="white", linewidth=0.7, label=f"DM err ≤ {dm_err_threshold:g}", zorder=3)
+    ax.scatter(
+        x[normal],
+        df.loc[normal, "dm"],
+        s         = 60,
+        color     = PALETTE["blue"],
+        edgecolor = "white",
+        linewidth = 0.7,
+        label     = f"DM err ≤ {dm_err_threshold:g}",
+        zorder    = 3,
+    )
     if high_err.any():
-        ax.scatter(x[high_err], df.loc[high_err, "dm"], s=72, facecolor="none",
-                   edgecolor=PALETTE["gold"], linewidth=1.6,
-                   label=f"DM err > {dm_err_threshold:g}", zorder=3)
+        ax.scatter(
+            x[high_err],
+            df.loc[high_err, "dm"],
+            s         = 72,
+            facecolor = "none",
+            edgecolor = PALETTE["gold"],
+            linewidth = 1.6,
+            label     = f"DM err > {dm_err_threshold:g}",
+            zorder    = 3,
+        )
     if reference_dm is not None:
-        ax.axhline(reference_dm, color=PALETTE["rose"], linestyle="--",
-                   linewidth=1.3, label=f"参考 DM {reference_dm:g}")
+        ax.axhline(
+            reference_dm,
+            color     = PALETTE["rose"],
+            linestyle = "--",
+            linewidth = 1.3,
+            label     = f"参考 DM {reference_dm:g}",
+        )
 
     ax.set_title("DM 搜索结果")
     ax.set_xlabel("距离首个 burst 的时间 (min)")
@@ -504,16 +634,27 @@ def plot_dm(df, reference_dm, dm_err_threshold):
 
 def plot_flux_fluence_width(df):
     """03 能量与宽度：width–fluence 散点，颜色编码 SNR、点大小编码峰值流量。"""
-    fig, ax = plt.subplots(figsize=FIG_SIZE)
+    fig, ax  = plt.subplots(figsize=FIG_SIZE)
     required = {"width", "fluence", "snr"}
     if not required.issubset(df.columns) or df[list(required)].dropna().empty:
         add_no_data(ax)
         return figure_to_data_uri(fig)
 
     data = df.dropna(subset=["width", "fluence", "snr"]).copy()
-    sizes = scaled_sizes(data["flux_peak"] if "flux_peak" in data.columns else data["snr"], 44, 210)
-    scatter = ax.scatter(data["width"], data["fluence"], s=sizes, c=data["snr"],
-                         cmap=SEQUENTIAL, edgecolor="white", linewidth=0.7, alpha=0.9, zorder=3)
+    sizes = scaled_sizes(
+        data["flux_peak"] if "flux_peak" in data.columns else data["snr"], 44, 210
+    )
+    scatter = ax.scatter(
+        data["width"],
+        data["fluence"],
+        s         = sizes,
+        c         = data["snr"],
+        cmap      = SEQUENTIAL,
+        edgecolor = "white",
+        linewidth = 0.7,
+        alpha     = 0.9,
+        zorder    = 3,
+    )
     # fluence 跨越一个数量级以上时切到对数纵轴，避免小值被压扁。
     if data["fluence"].min() > 0 and data["fluence"].max() / data["fluence"].min() > 12:
         ax.set_yscale("log")
@@ -532,39 +673,57 @@ def plot_frequency_coverage(df):
         add_no_data(ax)
         return figure_to_data_uri(fig)
 
-    data = df.dropna(subset=["freq_low", "freq_high"])
-    lows = data["freq_low"].to_numpy(dtype=float)
+    data  = df.dropna(subset=["freq_low", "freq_high"])
+    lows  = data["freq_low"].to_numpy(dtype=float)
     highs = data["freq_high"].to_numpy(dtype=float)
 
     # 扫描线：每个 freq_low 处 +1、每个 freq_high 处 -1，前缀和即「该频率被多少
     # burst 覆盖」。这样无论 burst 数多少，复杂度都只是一次排序。
     points = np.concatenate([lows, highs])
     deltas = np.concatenate([np.ones_like(lows), -np.ones_like(highs)])
-    order = np.argsort(points, kind="mergesort")
-    xs = points[order]
-    occ = np.cumsum(deltas[order])
+    order  = np.argsort(points, kind="mergesort")
+    xs     = points[order]
+    occ    = np.cumsum(deltas[order])
 
     fig, (ax_top, ax_bot) = plt.subplots(
-        2, 1, figsize=FIG_SIZE, sharex=True,
-        gridspec_kw={"height_ratios": [3, 1.1], "hspace": 0.1},
+        2,
+        1,
+        figsize     = FIG_SIZE,
+        sharex      = True,
+        gridspec_kw = {"height_ratios": [3, 1.1], "hspace": 0.1},
     )
 
-    ax_top.fill_between(xs, occ, step="post", color=PALETTE["blue"], alpha=0.18, zorder=2)
+    ax_top.fill_between(
+        xs, occ, step="post", color=PALETTE["blue"], alpha=0.18, zorder=2
+    )
     ax_top.step(xs, occ, where="post", color=PALETTE["blue"], linewidth=1.9, zorder=3)
     peak = int(occ.max()) if len(occ) else 0
-    ax_top.axhline(peak, color=PALETTE["gold"], linestyle="--", linewidth=1.2,
-                   label=f"峰值覆盖 {peak} 个 burst")
+    ax_top.axhline(
+        peak,
+        color     = PALETTE["gold"],
+        linestyle = "--",
+        linewidth = 1.2,
+        label     = f"峰值覆盖 {peak} 个 burst",
+    )
     ax_top.set_ylabel("覆盖该频率的 burst 数")
     ax_top.set_ylim(bottom=0)
     ax_top.set_title(f"频率覆盖占用（共 {len(data)} 个 burst）")
-    ax_top.legend(loc="upper left", bbox_to_anchor=(0.02, 0.90),
-                  frameon=False, borderaxespad=0.0)
+    ax_top.legend(
+        loc="upper left", bbox_to_anchor=(0.02, 0.90), frameon=False, borderaxespad=0.0
+    )
 
     # 下方直方图：优先用 center_freq 列，缺失则取 (low+high)/2。
-    center = data["center_freq"] if "center_freq" in data.columns and data["center_freq"].notna().any() \
+    center = (
+        data["center_freq"]
+        if "center_freq" in data.columns and data["center_freq"].notna().any()
         else pd.Series((lows + highs) / 2.0, index=data.index)
-    draw_hist(ax_bot, center.dropna(), PALETTE["teal"],
-              bins=min(60, max(12, int(np.sqrt(len(data)) * 2))))
+    )
+    draw_hist(
+        ax_bot,
+        center.dropna(),
+        PALETTE["teal"],
+        bins=min(60, max(12, int(np.sqrt(len(data)) * 2))),
+    )
     ax_bot.set_ylabel("中心频率\n直方")
     ax_bot.set_xlabel("Frequency (MHz)")
     return figure_to_data_uri(fig)
@@ -572,7 +731,7 @@ def plot_frequency_coverage(df):
 
 def plot_distributions(df):
     """05 属性分布：SNR / fluence(对数) / width / bandwidth 的 2×2 直方图。"""
-    fig, axes = plt.subplots(2, 2, figsize=FIG_SIZE)
+    fig, axes                     = plt.subplots(2, 2, figsize=FIG_SIZE)
     ax_snr, ax_flu, ax_wid, ax_bw = axes.ravel()
 
     def panel(ax, col, title, color, *, logx=False):
@@ -593,7 +752,7 @@ def plot_distributions(df):
                 add_no_data(ax)
                 return
             n_bins = min(24, max(6, int(np.sqrt(len(vals)))))
-            bins = np.logspace(np.log10(vals.min()), np.log10(vals.max()), n_bins + 1)
+            bins   = np.logspace(np.log10(vals.min()), np.log10(vals.max()), n_bins + 1)
         else:
             bins = min(20, max(6, int(np.sqrt(len(vals)))))
         draw_hist(ax, vals, color, bins=bins, logx=logx)
@@ -620,16 +779,24 @@ def plot_waiting_time(df):
         return figure_to_data_uri(fig)
 
     toa = df["toa_mjd"].dropna().sort_values().to_numpy(dtype=float)
-    dt = np.diff(toa) * 86400.0   # MJD 差转秒
-    dt = dt[dt > 0]
+    dt  = np.diff(toa) * 86400.0  # MJD 差转秒
+    dt  = dt[dt > 0]
     if dt.size == 0:
         add_no_data(ax, "无有效 waiting time")
         return figure_to_data_uri(fig)
 
     n_bins = min(28, max(6, int(np.sqrt(dt.size) * 1.5)))
-    bins = np.logspace(np.log10(dt.min()), np.log10(dt.max()), n_bins + 1)
-    draw_hist(ax, dt, PALETTE["blue"], bins=bins, logx=True, median=True,
-              median_color=PALETTE["gold"], median_label="中位数 {med:.1f} s")
+    bins   = np.logspace(np.log10(dt.min()), np.log10(dt.max()), n_bins + 1)
+    draw_hist(
+        ax,
+        dt,
+        PALETTE["blue"],
+        bins         = bins,
+        logx         = True,
+        median       = True,
+        median_color = PALETTE["gold"],
+        median_label = "中位数 {med:.1f} s",
+    )
     ax.set_title("Waiting time 分布")
     ax.set_xlabel("相邻 burst 间隔 (s)")
     ax.set_ylabel("Count")
@@ -639,27 +806,59 @@ def plot_waiting_time(df):
 
 def plot_polarization(df):
     """偏振与 RM：仅含可靠 RM 的 burst，左 RM、右线/圆偏振分数（左右并排两连图）。"""
-    data = df[df["rm_reliable"]].copy()
+    data                 = df[df["rm_reliable"]].copy()
     fig, (ax_rm, ax_pol) = plt.subplots(1, 2, figsize=FIG_SIZE_WIDE)
     fig.subplots_adjust(wspace=0.32)
     x = data["time_s"] / 60.0
 
     rm_err = data["rm_err"] if "rm_err" in data.columns else None
-    ax_rm.errorbar(x, data["rm"], yerr=rm_err, fmt="o", color=PALETTE["blue"],
-                   ecolor=PALETTE["line"], elinewidth=1.2, capsize=3,
-                   markeredgecolor="white", markersize=7, zorder=3)
+    ax_rm.errorbar(
+        x,
+        data["rm"],
+        yerr            = rm_err,
+        fmt             = "o",
+        color           = PALETTE["blue"],
+        ecolor          = PALETTE["line"],
+        elinewidth      = 1.2,
+        capsize         = 3,
+        markeredgecolor = "white",
+        markersize      = 7,
+        zorder          = 3,
+    )
     ax_rm.set_ylabel("RM (rad m$^{-2}$)")
     ax_rm.set_xlabel("距离首个 burst 的时间 (min)")
     ax_rm.set_title("可靠 RM")
 
     lin_err = data["linear_frac_err"] if "linear_frac_err" in data.columns else None
     cir_err = data["circular_frac_err"] if "circular_frac_err" in data.columns else None
-    ax_pol.errorbar(x, data["linear_frac"], yerr=lin_err, fmt="s", color=PALETTE["teal"],
-                    ecolor=PALETTE["line"], elinewidth=1.1, capsize=3,
-                    markeredgecolor="white", markersize=7, label="线偏振 L/I", zorder=3)
-    ax_pol.errorbar(x, data["circular_frac"], yerr=cir_err, fmt="^", color=PALETTE["rose"],
-                    ecolor=PALETTE["line"], elinewidth=1.1, capsize=3,
-                    markeredgecolor="white", markersize=7, label="圆偏振 V/I", zorder=3)
+    ax_pol.errorbar(
+        x,
+        data["linear_frac"],
+        yerr            = lin_err,
+        fmt             = "s",
+        color           = PALETTE["teal"],
+        ecolor          = PALETTE["line"],
+        elinewidth      = 1.1,
+        capsize         = 3,
+        markeredgecolor = "white",
+        markersize      = 7,
+        label           = "线偏振 L/I",
+        zorder          = 3,
+    )
+    ax_pol.errorbar(
+        x,
+        data["circular_frac"],
+        yerr            = cir_err,
+        fmt             = "^",
+        color           = PALETTE["rose"],
+        ecolor          = PALETTE["line"],
+        elinewidth      = 1.1,
+        capsize         = 3,
+        markeredgecolor = "white",
+        markersize      = 7,
+        label           = "圆偏振 V/I",
+        zorder          = 3,
+    )
     ax_pol.axhline(0, color=PALETTE["muted"], linewidth=0.8)
     ax_pol.set_ylabel("偏振分数 (%)")
     ax_pol.set_xlabel("距离首个 burst 的时间 (min)")
@@ -676,7 +875,9 @@ def plot_cumulative_fluence(df):
         return figure_to_data_uri(fig)
 
     # 把 fluence 降序排列，秩即「不小于该值的 burst 数」N(>F)。
-    f = np.sort(df.loc[df["fluence"] > 0, "fluence"].dropna().to_numpy(dtype=float))[::-1]
+    f = np.sort(df.loc[df["fluence"] > 0, "fluence"].dropna().to_numpy(dtype=float))[
+        ::-1
+    ]
     n = np.arange(1, f.size + 1)
     ax.fill_between(f, n, step="post", color=PALETTE["blue"], alpha=0.12, zorder=2)
     ax.step(f, n, where="post", color=PALETTE["blue"], linewidth=1.8, zorder=3)
@@ -741,13 +942,15 @@ def build_hero_strip(df):
         f'x2="{W - pad_r:.1f}" y2="{base_y:.1f}"/>'
     ]
     for x, h, sv in zip(xs, hs, s):
-        opacity = 0.32 + 0.68 * (sv / smax)   # S/N 越高越不透明
+        opacity = 0.32 + 0.68 * (sv / smax)  # S/N 越高越不透明
         parts.append(
             f'<line class="strip-mark" x1="{x:.1f}" y1="{base_y:.1f}" '
             f'x2="{x:.1f}" y2="{base_y - h:.1f}" style="opacity:{opacity:.2f}"/>'
         )
-    peak = int(np.argmax(s))   # 最强事件用一个小圆点高亮
-    parts.append(f'<circle class="strip-peak" cx="{xs[peak]:.1f}" cy="{base_y - hs[peak]:.1f}" r="3.4"/>')
+    peak = int(np.argmax(s))  # 最强事件用一个小圆点高亮
+    parts.append(
+        f'<circle class="strip-peak" cx="{xs[peak]:.1f}" cy="{base_y - hs[peak]:.1f}" r="3.4"/>'
+    )
 
     return (
         f'<svg class="strip" viewBox="0 0 {W:.0f} {H:.0f}" '
@@ -760,47 +963,51 @@ def build_gallery(df, analysis_dir, top_n):
     if "snr" not in df.columns or not df["snr"].notna().any():
         return ""
 
-    top = df.dropna(subset=["snr"]).sort_values("snr", ascending=False).head(top_n)
+    top          = df.dropna(subset=["snr"]).sort_values("snr", ascending=False).head(top_n)
     analysis_dir = Path(analysis_dir)
-    items = []
+    items        = []
 
     for _, row in top.iterrows():
-        stem = str(row.get("file_name", "")).removesuffix(".h5")
-        folder = analysis_dir / stem
+        stem      = str(row.get("file_name", "")).removesuffix(".h5")
+        folder    = analysis_dir / stem
         burst_idx = int(row["burst_idx"]) if pd.notna(row.get("burst_idx")) else 0
-        reliable = bool(row.get("rm_reliable", False))
+        reliable  = bool(row.get("rm_reliable", False))
 
         # RM 可靠优先用合成偏振图，否则退回动态谱；两者都没有则显示占位。
-        uri = None
+        uri  = None
         kind = ""
         if reliable:
             pol_png = folder / "combined_polarization.png"
             if pol_png.exists():
-                uri = png_file_to_data_uri(pol_png)
+                uri  = png_file_to_data_uri(pol_png)
                 kind = "combined_polarization"
         if uri is None:
             ds_path = folder / "dynamic_spectrum.png"
             if ds_path.exists():
-                uri = png_file_to_data_uri(ds_path)
+                uri  = png_file_to_data_uri(ds_path)
                 kind = "dynamic_spectrum"
 
         snr_text = fmt_value(row.get("snr"), 1)
         flu_text = fmt_value(row.get("fluence"), 3)
-        tag = "POL" if kind == "combined_polarization" else "WATERFALL"
+        tag      = "POL" if kind == "combined_polarization" else "WATERFALL"
 
         # 有图就用 :target 做纯 CSS 灯箱：点击缩略图放大到全屏遮罩、点右上角 × 关闭，
         # 复用同一张已内嵌的图（不重复体积）。缺图则只显示占位、不可点。
         label = str(row["burst_label"])
         if uri is None:
             fig_open = '<figure class="plate">'
-            media = (f'<div class="plate-img"><div class="plate-missing">image not found'
-                     f'<br><span>{escape(stem)}</span></div></div>')
+            media = (
+                f'<div class="plate-img"><div class="plate-missing">image not found'
+                f"<br><span>{escape(stem)}</span></div></div>"
+            )
             close = ""
         else:
-            lb = f"lb-{escape(label)}"
+            lb       = f"lb-{escape(label)}"
             fig_open = f'<figure class="plate" id="{lb}">'
-            media = (f'<a class="plate-zoom" href="#{lb}">'
-                     f'<div class="plate-img"><img src="{uri}" alt="{escape(stem)}" loading="lazy"></div></a>')
+            media = (
+                f'<a class="plate-zoom" href="#{lb}">'
+                f'<div class="plate-img"><img src="{uri}" alt="{escape(stem)}" loading="lazy"></div></a>'
+            )
             close = '<a class="plate-close" href="#" aria-label="关闭放大图">×</a>'
 
         items.append(
@@ -828,19 +1035,26 @@ def build_gallery(df, analysis_dir, top_n):
 def build_cards(df, overview, snr_threshold, dm_err_threshold):
     """顶部 8 格指标栏。共享统计取自 overview，卡片专属的统计在此就地计算。"""
     burst_count = overview["burst_count"]
-    span_s = overview["span_s"]
-    low_snr = int((df["snr"] < snr_threshold).sum()) if "snr" in df.columns else 0
-    high_dm_err = int((df["dm_err"] > dm_err_threshold).sum()) if "dm_err" in df.columns else 0
+    span_s      = overview["span_s"]
+    low_snr     = int((df["snr"] < snr_threshold).sum()) if "snr" in df.columns else 0
+    high_dm_err = (
+        int((df["dm_err"] > dm_err_threshold).sum()) if "dm_err" in df.columns else 0
+    )
 
     # 事件率：需要有效 TOA 且时间跨度为正才计算，否则给「—」。
-    if "toa_mjd" in df.columns and df["toa_mjd"].notna().sum() >= 2 and span_s and span_s > 0:
+    if (
+        "toa_mjd" in df.columns
+        and df["toa_mjd"].notna().sum() >= 2
+        and span_s
+        and span_s > 0
+    ):
         rate_text = fmt_value(burst_count / (span_s / 3600.0), 1)
     else:
         rate_text = "—"
 
     fluence_bw = fluence_bandwidth_jy_ms_ghz(df)
     if fluence_bw:
-        energy_val = fmt_value(fluence_bw, 2, " Jy ms GHz")
+        energy_val  = fmt_value(fluence_bw, 2, " Jy ms GHz")
         energy_note = "sum(fluence x bandwidth_GHz)"
     else:
         energy_val, energy_note = "-", "missing fluence / bandwidth"
@@ -849,7 +1063,11 @@ def build_cards(df, overview, snr_threshold, dm_err_threshold):
         ("EVENTS", f"{burst_count}", f"{overview['file_count']} 个文件"),
         ("SPAN", fmt_value(overview["span_min"], 1, " min"), "按 TOA 计算"),
         ("RATE", rate_text, "events · h⁻¹"),
-        ("PEAK S/N", fmt_value(overview["peak_snr"], 1), f"{low_snr} 条 < {snr_threshold:g}"),
+        (
+            "PEAK S/N",
+            fmt_value(overview["peak_snr"], 1),
+            f"{low_snr} 条 < {snr_threshold:g}",
+        ),
         ("DM RANGE", stat_range(df, "dm", 1), f"{high_dm_err} 条高误差"),
         ("FLUENCE × BW", energy_val, energy_note),
         ("WIDTH", stat_range(df, "width", 1, " ms"), "fluence / peak"),
@@ -876,29 +1094,53 @@ def build_detail_table(df, show_pol, print_cap=200):
     """
     columns = [c for c in DETAIL_COLUMNS if c in df.columns]
     if not show_pol:
-        columns = [c for c in columns if c not in {"rm", "rm_significance", "linear_frac", "circular_frac"}]
-    header = "".join(f"<th>{escape(COLUMN_LABELS.get(col, col))}</th>" for col in columns)
+        columns = [
+            c
+            for c in columns
+            if c not in {"rm", "rm_significance", "linear_frac", "circular_frac"}
+        ]
+    header = "".join(
+        f"<th>{escape(COLUMN_LABELS.get(col, col))}</th>" for col in columns
+    )
 
     # 决定打印时要保留哪些 burst_no（按 S/N 取前 print_cap）。
     truncate = len(df) > print_cap and "snr" in df.columns and df["snr"].notna().any()
-    keep = set()
+    keep     = set()
     if truncate:
-        keep = set(df.dropna(subset=["snr"]).sort_values("snr", ascending=False)
-                   .head(print_cap)["burst_no"])
+        keep = set(
+            df.dropna(subset=["snr"])
+            .sort_values("snr", ascending=False)
+            .head(print_cap)["burst_no"]
+        )
 
     # 这些列按浮点格式化；其中部分（流量/DM 等）保留 3 位小数。
-    float_cols = {"time_s", "snr", "flux_peak", "fluence", "width", "freq_low",
-                  "freq_high", "bandwidth", "dm", "dm_err", "rm", "rm_significance",
-                  "linear_frac", "circular_frac"}
+    float_cols = {
+        "time_s",
+        "snr",
+        "flux_peak",
+        "fluence",
+        "width",
+        "freq_low",
+        "freq_high",
+        "bandwidth",
+        "dm",
+        "dm_err",
+        "rm",
+        "rm_significance",
+        "linear_frac",
+        "circular_frac",
+    }
     rows = []
     for _, row in df[columns].iterrows():
         cells = []
         for col in columns:
             value = row[col]
             if col == "toa_mjd":
-                text = fmt_value(value, 9)   # MJD 需要高精度
+                text = fmt_value(value, 9)  # MJD 需要高精度
             elif col in float_cols:
-                digits = 3 if col in {"flux_peak", "fluence", "dm", "rm_significance"} else 2
+                digits = (
+                    3 if col in {"flux_peak", "fluence", "dm", "rm_significance"} else 2
+                )
                 text = fmt_value(value, digits)
             else:
                 text = fmt_value(value)
@@ -909,14 +1151,16 @@ def build_detail_table(df, show_pol, print_cap=200):
 
     note = ""
     if truncate:
-        note = (f'<p class="cat-print-note">打印仅显示 S/N 最高的 {print_cap} 个 burst；'
-                f'完整 {len(df)} 行请在网页版滚动查看。</p>')
+        note = (
+            f'<p class="cat-print-note">打印仅显示 S/N 最高的 {print_cap} 个 burst；'
+            f"完整 {len(df)} 行请在网页版滚动查看。</p>"
+        )
     return f"""
     {note}
     <div class="table-wrap">
       <table>
         <thead><tr>{header}</tr></thead>
-        <tbody>{''.join(rows)}</tbody>
+        <tbody>{"".join(rows)}</tbody>
       </table>
     </div>
     """
@@ -1224,35 +1468,67 @@ def build_html(df, csv_path, output_path, analysis_dir, metadata, args):
     generated_at = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
 
     overview = compute_overview(df)
-    show_pol = bool(df["rm_reliable"].any())   # 有无可靠 RM 决定是否展示偏振面板
+    show_pol = bool(df["rm_reliable"].any())  # 有无可靠 RM 决定是否展示偏振面板
 
     # 每个条目是 (标题, 副标题, data_uri)。六个核心面板 + 两张累积图 + 偏振图共 8~9 张，
     # 排成每行 4 个的统一网格；不满一行的末行由 CSS 居中（见 .charts 的 flex 布局）。
     charts = [
-        ("Burst 时间分布", "SNR 随观测内 TOA 变化，点大小/颜色对应 fluence。", plot_timeline(df, args.snr_threshold)),
-        ("DM 搜索", "空心点表示 DM 误差超过阈值；参考 DM 仅作配置标尺。", plot_dm(df, args.reference_dm, args.dm_err_threshold)),
-        ("能量与宽度", "fluence、width、SNR 与 peak flux 的联合分布。", plot_flux_fluence_width(df)),
-        ("频率覆盖", "占用曲线表示每个频率被多少 burst 覆盖，下方为中心频率直方图。", plot_frequency_coverage(df)),
-        ("属性分布", "SNR、fluence（对数 bins）、width、bandwidth 的总体分布。", plot_distributions(df)),
+        (
+            "Burst 时间分布",
+            "SNR 随观测内 TOA 变化，点大小/颜色对应 fluence。",
+            plot_timeline(df, args.snr_threshold),
+        ),
+        (
+            "DM 搜索",
+            "空心点表示 DM 误差超过阈值；参考 DM 仅作配置标尺。",
+            plot_dm(df, args.reference_dm, args.dm_err_threshold),
+        ),
+        (
+            "能量与宽度",
+            "fluence、width、SNR 与 peak flux 的联合分布。",
+            plot_flux_fluence_width(df),
+        ),
+        (
+            "频率覆盖",
+            "占用曲线表示每个频率被多少 burst 覆盖，下方为中心频率直方图。",
+            plot_frequency_coverage(df),
+        ),
+        (
+            "属性分布",
+            "SNR、fluence（对数 bins）、width、bandwidth 的总体分布。",
+            plot_distributions(df),
+        ),
         ("Waiting time", "相邻 burst 时间间隔的对数分布。", plot_waiting_time(df)),
     ]
     # 两张累积图：各有数据时才加。
     if "fluence" in df.columns and (df["fluence"] > 0).any():
         charts.append(
-            ("累积通量分布", "log N(>F) 双对数；斜率即通量分布的幂律指数。", plot_cumulative_fluence(df))
+            (
+                "累积通量分布",
+                "log N(>F) 双对数；斜率即通量分布的幂律指数。",
+                plot_cumulative_fluence(df),
+            )
         )
     if "time_s" in df.columns and df["time_s"].notna().any():
         charts.append(
-            ("累积计数", "累积 burst 数随时间，成簇爆发呈台阶状。", plot_cumulative_count(df))
+            (
+                "累积计数",
+                "累积 burst 数随时间，成簇爆发呈台阶状。",
+                plot_cumulative_count(df),
+            )
         )
     if show_pol:
         charts.append(
-            ("偏振与 RM", "仅展示 RM 达到显著性阈值的 burst：RM、线偏振、圆偏振。", plot_polarization(df))
+            (
+                "偏振与 RM",
+                "仅展示 RM 达到显著性阈值的 burst：RM、线偏振、圆偏振。",
+                plot_polarization(df),
+            )
         )
 
     chart_html = "\n".join(
         f"""
-        <article class="panel{' panel-wide' if title == '偏振与 RM' else ''}">
+        <article class="panel{" panel-wide" if title == "偏振与 RM" else ""}">
           <div class="panel-head">
             <span class="panel-idx">{i:02d}</span>
             <div class="panel-titles">
@@ -1268,12 +1544,12 @@ def build_html(df, csv_path, output_path, analysis_dir, metadata, args):
 
     gallery_html = build_gallery(df, analysis_dir, args.top_n)
     detail_table = build_detail_table(df, show_pol)
-    cards = build_cards(df, overview, args.snr_threshold, args.dm_err_threshold)
-    strip = build_hero_strip(df)
+    cards        = build_cards(df, overview, args.snr_threshold, args.dm_err_threshold)
+    strip        = build_hero_strip(df)
 
     # 探测条下方图例里要用到的峰值读数。
     peak_snr_txt = fmt_value(overview["peak_snr"], 1)
-    peak_t_txt = fmt_value(overview["peak_time_min"], 1)
+    peak_t_txt   = fmt_value(overview["peak_time_min"], 1)
 
     strip_block = ""
     if strip:
@@ -1283,7 +1559,7 @@ def build_html(df, csv_path, output_path, analysis_dir, metadata, args):
         <div class="strip-legend">
           <span>+0 min</span>
           <span class="strip-note">每条竖线 = 一个 burst · 高度 ∝ S/N · 峰值 S/N {escape(peak_snr_txt)} @ +{escape(peak_t_txt)} min</span>
-          <span>+{escape(fmt_value(overview['span_min'], 1))} min</span>
+          <span>+{escape(fmt_value(overview["span_min"], 1))} min</span>
         </div>
       </div>"""
 
@@ -1292,8 +1568,8 @@ def build_html(df, csv_path, output_path, analysis_dir, metadata, args):
     if gallery_html:
         gal_note = (
             "按 S/N 从高到低；RM 可靠的 burst 展示 combined_polarization，其余展示 dynamic_spectrum。"
-            if show_pol else
-            "按 S/N 从高到低，展示每个 burst 所在文件的 dynamic_spectrum。"
+            if show_pol
+            else "按 S/N 从高到低，展示每个 burst 所在文件的 dynamic_spectrum。"
         )
         gallery_section = f"""
     <section class="block">
@@ -1325,7 +1601,7 @@ def build_html(df, csv_path, output_path, analysis_dir, metadata, args):
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>{escape(metadata['title'])}</title>
+  <title>{escape(metadata["title"])}</title>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=Noto+Sans+SC:wght@400;500;700&display=swap" rel="stylesheet">
@@ -1341,12 +1617,12 @@ def build_html(df, csv_path, output_path, analysis_dir, metadata, args):
     <header class="hero">
       <div class="hero-id">
         <div class="hero-eyebrow">FAST · L-BAND DETECTION LOG</div>
-        <h1 class="hero-title">{escape(metadata['source'])}</h1>
+        <h1 class="hero-title">{escape(metadata["source"])}</h1>
         <div class="hero-sub">
-          <span><b>{escape(metadata['date'])}</b></span><i>/</i>
-          <span>BEAM <b>{escape(metadata['beam'])}</b></span><i>/</i>
-          <span><b>{overview['burst_count']}</b> EVENTS</span><i>/</i>
-          <span><b>{overview['file_count']}</b> FILES</span>
+          <span><b>{escape(metadata["date"])}</b></span><i>/</i>
+          <span>BEAM <b>{escape(metadata["beam"])}</b></span><i>/</i>
+          <span><b>{overview["burst_count"]}</b> EVENTS</span><i>/</i>
+          <span><b>{overview["file_count"]}</b> FILES</span>
         </div>
       </div>{strip_block}
     </header>
@@ -1388,25 +1664,29 @@ def build_html(df, csv_path, output_path, analysis_dir, metadata, args):
 # =========================================================================== #
 def main():
     """命令行入口：读取结果、推断元信息、构建面板并以 UTF-8 写入磁盘。"""
-    args = parse_args()
+    args     = parse_args()
     csv_path = Path(args.csv)
-    output_path = Path(args.output) if args.output else csv_path.with_name("burst_dashboard.html")
+    output_path = (
+        Path(args.output) if args.output else csv_path.with_name("burst_dashboard.html")
+    )
     output_path.parent.mkdir(parents=True, exist_ok=True)
     analysis_dir = Path(args.analysis_dir) if args.analysis_dir else csv_path.parent
 
     df = load_results(csv_path, args.rm_significance_threshold)
-    metadata = infer_metadata(df, csv_path, source=args.source, date=args.date, title=args.title)
+    metadata = infer_metadata(
+        df, csv_path, source=args.source, date=args.date, title=args.title
+    )
     html = build_html(df, csv_path, output_path, analysis_dir, metadata, args)
     output_path.write_text(html, encoding="utf-8")
 
     print(f"[OK] Dashboard saved: {output_path}")
     print(f"  bursts: {len(df)}")
     print(f"  files: {df['file_name'].nunique() if 'file_name' in df.columns else 0}")
-    reliable_rm = np.count_nonzero(
-        np.asarray(df["rm_reliable"], dtype=bool)
-    )
+    reliable_rm = np.count_nonzero(np.asarray(df["rm_reliable"], dtype=bool))
     print(f"  reliable RM: {reliable_rm}/{len(df)}")
 
 
 if __name__ == "__main__":
     main()
+
+# fmt: on

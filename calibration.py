@@ -1,3 +1,5 @@
+# fmt: off
+
 """Backward-compatible launcher and import shim for :mod:`after.calibration`.
 
 Run this file from the repository root to keep the historical command:
@@ -14,3 +16,5 @@ if __name__ == "__main__":
     run_module("after.calibration", run_name="__main__", alter_sys=True)
 else:
     from after.calibration import *  # noqa: F401,F403
+
+# fmt: on

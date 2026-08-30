@@ -64,18 +64,18 @@ echo "================================================================"
 
 # CUDA_VISIBLE_DEVICES 已经把目标 GPU 重映射成 cuda:0
 python yolo_train.py "$model" \
-  --device       0 \
-  --data-path    "$data_path" \
-  --log-dir      "$log_dir" \
-  --batch-size   "$batch_size" \
-  --epochs       "$epochs" \
-  --patience     "$patience" \
-  --workers      "$workers" \
-  --mosaic-prob  "$mosaic_prob" \
-  --ema-decay    "$ema_decay" \
-  --ema-tau      "$ema_tau" \
-  --eval-conf-thr "$eval_conf_thr" \
-  --nms-iou-thr "$nms_iou_thr" \
-  --match-iou-thr "$match_iou_thr"
+  --device         0 \
+  --data-path      "$data_path" \
+  --log-dir        "$log_dir" \
+  --batch-size     "$batch_size" \
+  --epochs         "$epochs" \
+  --patience       "$patience" \
+  --workers        "$workers" \
+  --mosaic-prob    "$mosaic_prob" \
+  --ema-decay      "$ema_decay" \
+  --ema-tau        "$ema_tau" \
+  --eval-conf-thr  "$eval_conf_thr" \
+  --nms-iou-thr    "$nms_iou_thr" \
+  --match-iou-thr  "$match_iou_thr"
 
 echo "[done] $model finished at $(date)"

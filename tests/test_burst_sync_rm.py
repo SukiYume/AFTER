@@ -1,3 +1,5 @@
+# fmt: off
+
 import json
 
 import h5py
@@ -10,19 +12,19 @@ from after.burst_pol import RM_GRID_OVERSAMPLE, build_automatic_rm_grid
 
 
 def _write_synthetic_cal_h5(path, rm, pa_offset_deg, seed):
-    rng = np.random.default_rng(seed)
+    rng   = np.random.default_rng(seed)
     nsamp = 80
     nchan = 128
-    freq = np.linspace(1200.0, 1500.0, nchan)
+    freq  = np.linspace(1200.0, 1500.0, nchan)
     wave2 = (burst_sync_rm.C_M_S / (freq * 1e6)) ** 2
     wave2 -= np.mean(wave2)
 
-    data = rng.normal(0.0, 0.15, size=(4, nsamp, nchan))
+    data         = rng.normal(0.0, 0.15, size=(4, nsamp, nchan))
     signal_times = np.array([36, 37, 38])
     data[0, signal_times, :] += 12.0
     pa_deg = np.array([0.0, 60.0, 120.0]) + pa_offset_deg
     for time_index, pa in zip(signal_times, pa_deg):
-        phase = 2.0 * (np.deg2rad(pa) + rm * wave2)
+        phase        = 2.0 * (np.deg2rad(pa) + rm * wave2)
         polarization = 3.0 * np.exp(1j * phase)
         data[1, time_index, :] += polarization.real
         data[2, time_index, :] += polarization.imag
@@ -38,14 +40,10 @@ def _write_synthetic_cal_h5(path, rm, pa_offset_deg, seed):
         handle.create_dataset("data", data=data)
         handle.create_dataset("freq", data=freq)
         handle.create_dataset("rfi_channel", data=np.zeros(nchan, dtype=bool))
-        handle.create_dataset(
-            "burst_rfi_channel", data=np.zeros(nchan, dtype=bool)
-        )
+        handle.create_dataset("burst_rfi_channel", data=np.zeros(nchan, dtype=bool))
         # Deliberately mark every pixel. The joint-RM script must never read it.
-        handle.create_dataset(
-            "rfi_mask", data=np.ones((nsamp, nchan), dtype=bool)
-        )
-        handle.attrs["bursts"] = json.dumps([region])
+        handle.create_dataset("rfi_mask", data=np.ones((nsamp, nchan), dtype=bool))
+        handle.attrs["bursts"]    = json.dumps([region])
         handle.attrs["time_reso"] = 0.001
         handle.attrs["down_time"] = 1
         handle.attrs["down_freq"] = 1
@@ -56,15 +54,15 @@ def _load_synthetic_components(cal_dir):
     for path in sorted(cal_dir.glob("*_cal.h5")):
         loaded, warnings = burst_sync_rm.load_file_components(
             path,
-            freq_min=None,
-            freq_max=None,
-            min_time_snr=3.0,
-            min_channels=32,
-            stored_masks_only=True,
-            rfi_fft=False,
-            rfi_channel_sigma=6.0,
-            rfi_channel_window=31,
-            rfi_channel_grow=1,
+            freq_min           = None,
+            freq_max           = None,
+            min_time_snr       = 3.0,
+            min_channels       = 32,
+            stored_masks_only  = True,
+            rfi_fft            = False,
+            rfi_channel_sigma  = 6.0,
+            rfi_channel_window = 31,
+            rfi_channel_grow   = 1,
         )
         assert not warnings
         components.extend(loaded)
@@ -88,7 +86,7 @@ def test_two_pa_independent_methods_recover_common_rm(tmp_path):
         2,
     )
 
-    bursts = _load_synthetic_components(cal_dir)
+    bursts       = _load_synthetic_components(cal_dir)
     bursts, _, _ = burst_sync_rm.select_global_time_samples(bursts)
     assert len(bursts) == 2
     assert all(burst.n_time == 3 for burst in bursts)
@@ -100,7 +98,7 @@ def test_two_pa_independent_methods_recover_common_rm(tmp_path):
         )
         for burst in bursts
     }
-    weights = burst_sync_rm.curve_weights(bursts, "equal", 4.0)
+    weights  = burst_sync_rm.curve_weights(bursts, "equal", 4.0)
     combined = burst_sync_rm.combine_curves(bursts, individual, weights)
 
     assert set(combined) == {
@@ -117,8 +115,7 @@ def test_two_pa_independent_methods_recover_common_rm(tmp_path):
         for curves in individual.values()
     )
     assert all(
-        curves["time_pa_power_samples"].shape
-        == (burst.n_time, rm_grid.size)
+        curves["time_pa_power_samples"].shape == (burst.n_time, rm_grid.size)
         for burst, curves in zip(bursts, individual.values())
     )
     for method in burst_sync_rm.PRIMARY_METHODS:
@@ -127,7 +124,7 @@ def test_two_pa_independent_methods_recover_common_rm(tmp_path):
 
 
 def test_automatic_rm_grid_uses_rmsf_resolution():
-    lambda2_wide = np.linspace(0.04, 0.09, 128)
+    lambda2_wide   = np.linspace(0.04, 0.09, 128)
     lambda2_narrow = np.linspace(0.05, 0.07, 64)
     rm_grid, info = build_automatic_rm_grid(
         -50_000.0,
@@ -173,9 +170,9 @@ def test_primary_plot_window_uses_full_blind_search_not_first_window():
 
 
 def test_component_ids_expand_collisions_and_distinguish_beams(tmp_path):
-    first_path = tmp_path / "FRBTEST-20260718-M01-0211-027549018_cal.h5"
+    first_path  = tmp_path / "FRBTEST-20260718-M01-0211-027549018_cal.h5"
     second_path = tmp_path / "FRBTEST-20260718-M01-0211-027600287_cal.h5"
-    third_path = tmp_path / "FRBTEST-20260718-M02-0211-027549018_cal.h5"
+    third_path  = tmp_path / "FRBTEST-20260718-M02-0211-027549018_cal.h5"
     common = {
         "burst_idx": 0,
         "peak_snr": 10.0,
@@ -197,21 +194,21 @@ def test_component_ids_expand_collisions_and_distinguish_beams(tmp_path):
     }
     bursts = [
         burst_sync_rm.BurstRMData(
-            component_id="0211b0",
-            file_name=first_path.name,
-            file_path=first_path,
+            component_id = "0211b0",
+            file_name    = first_path.name,
+            file_path    = first_path,
             **common,
         ),
         burst_sync_rm.BurstRMData(
-            component_id="0211b0",
-            file_name=second_path.name,
-            file_path=second_path,
+            component_id = "0211b0",
+            file_name    = second_path.name,
+            file_path    = second_path,
             **common,
         ),
         burst_sync_rm.BurstRMData(
-            component_id="0211b0",
-            file_name=third_path.name,
-            file_path=third_path,
+            component_id = "0211b0",
+            file_name    = third_path.name,
+            file_path    = third_path,
             **common,
         ),
     ]
@@ -240,33 +237,31 @@ def test_global_i_selection_keeps_bright_shoulder_over_weak_peak(tmp_path):
         "final_rfi_count": 0,
     }
     bright = burst_sync_rm.BurstRMData(
-        component_id="brightb0",
-        file_name="FRBTEST-20260718-M01-0001-000000001_cal.h5",
-        file_path=tmp_path / "bright.h5",
-        peak_snr=30.0,
-        time_indices=np.array([10, 11]),
-        time_snr=np.array([30.0, 20.0]),
-        p_on=np.ones((2, 2), dtype=np.complex128),
-        i_time_total=np.array([30.0, 20.0]),
-        i_total=50.0,
+        component_id = "brightb0",
+        file_name    = "FRBTEST-20260718-M01-0001-000000001_cal.h5",
+        file_path    = tmp_path / "bright.h5",
+        peak_snr     = 30.0,
+        time_indices = np.array([10, 11]),
+        time_snr     = np.array([30.0, 20.0]),
+        p_on         = np.ones((2, 2), dtype=np.complex128),
+        i_time_total = np.array([30.0, 20.0]),
+        i_total      = 50.0,
         **common,
     )
     weak = burst_sync_rm.BurstRMData(
-        component_id="weakb0",
-        file_name="FRBTEST-20260718-M01-0002-000000002_cal.h5",
-        file_path=tmp_path / "weak.h5",
-        peak_snr=8.0,
-        time_indices=np.array([20]),
-        time_snr=np.array([8.0]),
-        p_on=np.ones((1, 2), dtype=np.complex128),
-        i_time_total=np.array([8.0]),
-        i_total=8.0,
+        component_id = "weakb0",
+        file_name    = "FRBTEST-20260718-M01-0002-000000002_cal.h5",
+        file_path    = tmp_path / "weak.h5",
+        peak_snr     = 8.0,
+        time_indices = np.array([20]),
+        time_snr     = np.array([8.0]),
+        p_on         = np.ones((1, 2), dtype=np.complex128),
+        i_time_total = np.array([8.0]),
+        i_total      = 8.0,
         **common,
     )
 
-    selected, info, table = burst_sync_rm.select_global_time_samples(
-        [bright, weak]
-    )
+    selected, info, table = burst_sync_rm.select_global_time_samples([bright, weak])
 
     assert [burst.component_id for burst in selected] == ["brightb0"]
     assert selected[0].time_indices.tolist() == [10, 11]
@@ -283,21 +278,21 @@ def test_nonfinite_iqu_samples_mask_whole_channels_before_rm(tmp_path):
     path = tmp_path / "FRBTEST-20260818-M01-0001-000000001_cal.h5"
     _write_synthetic_cal_h5(path, 1500.0, 0.0, 19)
     with h5py.File(path, "a") as handle:
-        data = handle["data"]
+        data            = handle["data"]
         data[1, 37, 10] = np.inf
-        data[2, 0, 11] = -np.inf
+        data[2, 0, 11]  = -np.inf
 
     components, warnings = burst_sync_rm.load_file_components(
         path,
-        freq_min=None,
-        freq_max=None,
-        min_time_snr=3.0,
-        min_channels=32,
-        stored_masks_only=True,
-        rfi_fft=False,
-        rfi_channel_sigma=6.0,
-        rfi_channel_window=31,
-        rfi_channel_grow=1,
+        freq_min           = None,
+        freq_max           = None,
+        min_time_snr       = 3.0,
+        min_channels       = 32,
+        stored_masks_only  = True,
+        rfi_fft            = False,
+        rfi_channel_sigma  = 6.0,
+        rfi_channel_window = 31,
+        rfi_channel_grow   = 1,
     )
 
     assert not warnings
@@ -310,10 +305,8 @@ def test_nonfinite_iqu_samples_mask_whole_channels_before_rm(tmp_path):
     assert np.all(np.isfinite(component.p_noise))
 
     selected, _, _ = burst_sync_rm.select_global_time_samples(components)
-    rm_grid = np.linspace(-3000.0, 3000.0, 301)
-    curves = burst_sync_rm.individual_rm_curves(
-        selected[0], rm_grid, chunk_size=64
-    )
+    rm_grid        = np.linspace(-3000.0, 3000.0, 301)
+    curves         = burst_sync_rm.individual_rm_curves(selected[0], rm_grid, chunk_size=64)
     assert all(np.all(np.isfinite(curve)) for curve in curves.values())
 
 
@@ -409,12 +402,10 @@ def test_main_writes_reproducible_direct_h5_products(tmp_path):
     with np.load(output_dir / "offpulse_null_maxima.npz") as null_maxima:
         assert all("burst_pa" not in name for name in null_maxima.files)
         assert any(
-            name.startswith("raw__time_pa_power__")
-            for name in null_maxima.files
+            name.startswith("raw__time_pa_power__") for name in null_maxima.files
         )
         assert any(
-            name.startswith("contrast__time_pa_power__")
-            for name in null_maxima.files
+            name.startswith("contrast__time_pa_power__") for name in null_maxima.files
         )
     assert {
         "empirical_p_raw_power",
@@ -498,3 +489,5 @@ def test_main_requires_burst_detect_regions(tmp_path):
                 "--stored-masks-only",
             ]
         )
+
+# fmt: on

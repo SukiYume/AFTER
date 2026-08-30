@@ -1,3 +1,5 @@
+# fmt: off
+
 """根据 ``Burst.txt`` 清单从原始 PSRFITS 中重新切出消色散后的 FITS。
 
 这个入口只负责“原始观测 -> burst FITS”，不做流量、偏振或噪声管定标。
@@ -63,13 +65,13 @@ class BurstRow:
     beam: int
     dm: float
     toa_sec: float
-    start_sample: int | None = None
-    output_file: str | None = None
-    segment_length: int | None = None
-    output_subdir: str | None = None
-    template_file: str | None = None
+    start_sample: int | None       = None
+    output_file: str | None        = None
+    segment_length: int | None     = None
+    output_subdir: str | None      = None
+    template_file: str | None      = None
     raw_file_manifest: Path | None = None
-    rebuild_status: str = "ready"
+    rebuild_status: str            = "ready"
 
 
 def infer_output_name(path: Path) -> str:
@@ -104,9 +106,9 @@ def read_burst_txt(path: Path, raw_root: Path | None = None) -> list[BurstRow]:
     else:
         lines = [line.split() for line in text_lines]
 
-    header = [item.lower() for item in lines[0]]
+    header   = [item.lower() for item in lines[0]]
     required = {"project", "name", "date", "beam", "dm", "time"}
-    missing = required.difference(header)
+    missing  = required.difference(header)
     if missing:
         raise ValueError(f"{path} 缺少列: {', '.join(sorted(missing))}")
     if "base" not in header and raw_root is None:
@@ -118,24 +120,24 @@ def read_burst_txt(path: Path, raw_root: Path | None = None) -> list[BurstRow]:
             raise ValueError(
                 f"{path}:{line_number} 列数为 {len(fields)}，表头为 {len(header)}"
             )
-        record = dict(zip(header, fields))
-        project = record["project"]
+        record   = dict(zip(header, fields))
+        project  = record["project"]
         raw_name = record["name"]
-        date = record["date"]
+        date     = record["date"]
         if raw_root is not None:
             data_root = raw_root
         else:
             # ``base`` 可以是 data31，也可以是 home/user/raw 这样的相对根路径。
             data_root = Path("/") / record["base"].lstrip("/")
         raw_file_manifest: Path | None = None
-        manifest_value = record.get("raw_file_manifest")
+        manifest_value                 = record.get("raw_file_manifest")
         if manifest_value:
             manifest_relative = Path(manifest_value)
             if manifest_relative.is_absolute() or ".." in manifest_relative.parts:
                 raise ValueError(
                     f"{path}:{line_number} raw_file_manifest 必须是清单目录内的相对路径"
                 )
-            manifest_root = path.parent.resolve()
+            manifest_root     = path.parent.resolve()
             raw_file_manifest = (manifest_root / manifest_relative).resolve()
             try:
                 raw_file_manifest.relative_to(manifest_root)
@@ -145,40 +147,45 @@ def read_burst_txt(path: Path, raw_root: Path | None = None) -> list[BurstRow]:
                 ) from exc
         rows.append(
             BurstRow(
-                raw_dir=data_root / project / raw_name / date,
-                project=project,
-                raw_name=raw_name,
-                date=date,
-                beam=int(record["beam"]),
-                dm=float(record["dm"]),
-                toa_sec=float(record["time"]),
-                start_sample=(
+                raw_dir           = data_root / project / raw_name / date,
+                project           = project,
+                raw_name          = raw_name,
+                date              = date,
+                beam              = int(record["beam"]),
+                dm                = float(record["dm"]),
+                toa_sec           = float(record["time"]),
+                start_sample      = (
                     int(record["start_sample"]) if "start_sample" in record else None
                 ),
-                output_file=record.get("output_file"),
-                segment_length=(
+                output_file       = record.get("output_file"),
+                segment_length    = (
                     int(record["segment_length"])
                     if "segment_length" in record
                     else None
                 ),
-                output_subdir=record.get("output_subdir"),
-                template_file=record.get("template_file"),
-                raw_file_manifest=raw_file_manifest,
-                rebuild_status=record.get("rebuild_status", "ready"),
+                output_subdir     = record.get("output_subdir"),
+                template_file     = record.get("template_file"),
+                raw_file_manifest = raw_file_manifest,
+                rebuild_status    = record.get("rebuild_status", "ready"),
             )
         )
-        if rows[-1].output_file and Path(rows[-1].output_file).name != rows[-1].output_file:
+        if (
+            rows[-1].output_file
+            and Path(rows[-1].output_file).name != rows[-1].output_file
+        ):
             raise ValueError(
                 f"{path}:{line_number} output_file 必须只是文件名，不能包含目录"
             )
-        if rows[-1].output_subdir and Path(rows[-1].output_subdir).name != rows[-1].output_subdir:
-            raise ValueError(
-                f"{path}:{line_number} output_subdir 必须是单层目录名"
-            )
-        if rows[-1].template_file and Path(rows[-1].template_file).name != rows[-1].template_file:
-            raise ValueError(
-                f"{path}:{line_number} template_file 必须只是文件名"
-            )
+        if (
+            rows[-1].output_subdir
+            and Path(rows[-1].output_subdir).name != rows[-1].output_subdir
+        ):
+            raise ValueError(f"{path}:{line_number} output_subdir 必须是单层目录名")
+        if (
+            rows[-1].template_file
+            and Path(rows[-1].template_file).name != rows[-1].template_file
+        ):
+            raise ValueError(f"{path}:{line_number} template_file 必须只是文件名")
         if not rows[-1].rebuild_status:
             raise ValueError(f"{path}:{line_number} rebuild_status 不能为空")
     if not rows:
@@ -229,7 +236,7 @@ def find_raw_fits(
         names = [entry.name for entry in entries if entry.is_file()]
 
     if raw_file_manifest is not None:
-        files = _read_raw_file_manifest(raw_file_manifest, beam)
+        files     = _read_raw_file_manifest(raw_file_manifest, beam)
         available = set(names)
         compressed = [
             name
@@ -296,20 +303,18 @@ def _write_cut_fits(
         if subint.data is None:
             raise ValueError(f"FITS SUBINT 无数据: {template_path}")
         nsblk = int(subint.header["NSBLK"])
-        npol = int(subint.header["NPOL"])
+        npol  = int(subint.header["NPOL"])
         nchan = int(subint.header["NCHAN"])
         if data.shape[0] % nsblk:
-            raise ValueError(
-                f"切片长度 {data.shape[0]} 不能被模板 NSBLK={nsblk} 整除"
-            )
+            raise ValueError(f"切片长度 {data.shape[0]} 不能被模板 NSBLK={nsblk} 整除")
         if data.shape[1:] != (npol, nchan):
             raise ValueError(
                 f"数据形状 {data.shape} 与模板 (NPOL={npol}, NCHAN={nchan}) 不一致"
             )
 
-        nrows = data.shape[0] // nsblk
-        subint.data = fits.FITS_rec.from_columns(subint.data.columns, nrows=nrows)
-        subint.data["DATA"] = data.reshape(nrows, nsblk, npol, nchan, 1)
+        nrows                   = data.shape[0] // nsblk
+        subint.data             = fits.FITS_rec.from_columns(subint.data.columns, nrows=nrows)
+        subint.data["DATA"]     = data.reshape(nrows, nsblk, npol, nchan, 1)
         subint.header["NAXIS2"] = nrows
 
         output_path.parent.mkdir(parents=True, exist_ok=True)
@@ -378,24 +383,22 @@ def cut_group(
 ) -> None:
     """处理同一原始目录、波束和 DM 下的一组爆发。"""
 
-    first = rows[0]
+    first                    = rows[0]
     effective_segment_length = first.segment_length or segment_length
     file_list = find_raw_fits(
         first.raw_dir,
         first.beam,
         first.raw_file_manifest,
     )
-    info = read_obs_info(str(first.raw_dir), file_list)
+    info              = read_obs_info(str(first.raw_dir), file_list)
     shifts, max_shift = calc_dispersion_shift(first.dm, info["freq"], info["time_reso"])
-    save_dir = output_root / output_name / (first.output_subdir or first.date)
+    save_dir          = output_root / output_name / (first.output_subdir or first.date)
     save_dir.mkdir(parents=True, exist_ok=True)
 
     if copy_first_fits:
         calibration_copy = save_dir / file_list[0]
         if overwrite or not calibration_copy.exists():
-            temp_copy = calibration_copy.with_name(
-                f"{calibration_copy.name}.tmp"
-            )
+            temp_copy = calibration_copy.with_name(f"{calibration_copy.name}.tmp")
             temp_copy.unlink(missing_ok=True)
             try:
                 shutil.copy2(first.raw_dir / file_list[0], temp_copy)
@@ -419,9 +422,7 @@ def cut_group(
             else int(row.toa_sec / info["time_reso"])
         )
         if center_sample < 0 or center_sample >= total_samples:
-            raise ValueError(
-                f"{row.date} TOA={row.toa_sec:.6f}s 超出观测范围"
-            )
+            raise ValueError(f"{row.date} TOA={row.toa_sec:.6f}s 超出观测范围")
         start_sample = (
             row.start_sample
             if row.start_sample is not None
@@ -434,7 +435,7 @@ def cut_group(
             start_sample,
             effective_segment_length + max_shift,
         )
-        data = dedisperse(segment, shifts, effective_segment_length)
+        data        = dedisperse(segment, shifts, effective_segment_length)
         fits_number = center_sample // int(info["file_nsamp"]) + 1
         start_token = (
             f"n{abs(start_sample):09d}" if start_sample < 0 else f"{start_sample:09d}"
@@ -450,27 +451,31 @@ def cut_group(
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--burst-txt", type=Path, required=True, help="Burst.txt 清单")
-    parser.add_argument("--output-root", type=Path, required=True, help="重建 FITS 的根目录")
+    parser.add_argument(
+        "--output-root", type=Path, required=True, help="重建 FITS 的根目录"
+    )
     parser.add_argument(
         "--raw-root",
-        type=Path,
-        help="覆盖清单中的 base；无 base 列的旧清单必须提供",
+        type = Path,
+        help = "覆盖清单中的 base；无 base 列的旧清单必须提供",
     )
     parser.add_argument("--output-name", help="输出 FRB 名；默认从清单文件名推断")
     parser.add_argument("--segment-length", type=int, default=4096)
-    parser.add_argument("--only-date", action="append", default=[], help="只处理指定日期，可重复")
+    parser.add_argument(
+        "--only-date", action="append", default=[], help="只处理指定日期，可重复"
+    )
     parser.add_argument("--limit", type=int, help="仅处理排序后的前 N 条，便于验证")
     parser.add_argument("--overwrite", action="store_true")
     parser.add_argument("--no-copy-first-fits", action="store_true")
     parser.add_argument(
         "--skip-blocked",
-        action="store_true",
-        help="跳过 rebuild_status 不是 ready* 的记录；默认遇到此类记录即停止",
+        action = "store_true",
+        help   = "跳过 rebuild_status 不是 ready* 的记录；默认遇到此类记录即停止",
     )
     parser.add_argument(
         "--dry-run",
-        action="store_true",
-        help="只检查清单、原始目录与未压缩 FITS，不读写 burst 数据",
+        action = "store_true",
+        help   = "只检查清单、原始目录与未压缩 FITS，不读写 burst 数据",
     )
     return parser.parse_args()
 
@@ -480,7 +485,7 @@ def main() -> None:
     rows = read_burst_txt(args.burst_txt, args.raw_root)
     if args.only_date:
         selected = set(args.only_date)
-        rows = [row for row in rows if row.date in selected]
+        rows     = [row for row in rows if row.date in selected]
     blocked = [row for row in rows if not row.rebuild_status.startswith("ready")]
     if blocked and not args.skip_blocked:
         statuses = sorted({row.rebuild_status for row in blocked})
@@ -515,10 +520,8 @@ def main() -> None:
             output_subdir,
             template_file,
             raw_file_manifest,
-        ), group_rows in sorted(
-            groups.items(), key=lambda item: str(item[0])
-        ):
-            files = find_raw_fits(raw_dir, beam, raw_file_manifest)
+        ), group_rows in sorted(groups.items(), key=lambda item: str(item[0])):
+            files  = find_raw_fits(raw_dir, beam, raw_file_manifest)
             length = row_segment_length or args.segment_length
             print(
                 f"  [可用] {date} M{beam:02d} DM={dm:g} N={length} "
@@ -530,13 +533,15 @@ def main() -> None:
     for group_rows in groups.values():
         cut_group(
             group_rows,
-            output_root=args.output_root,
-            output_name=output_name,
-            segment_length=args.segment_length,
-            overwrite=args.overwrite,
-            copy_first_fits=not args.no_copy_first_fits,
+            output_root     = args.output_root,
+            output_name     = output_name,
+            segment_length  = args.segment_length,
+            overwrite       = args.overwrite,
+            copy_first_fits = not args.no_copy_first_fits,
         )
 
 
 if __name__ == "__main__":
     main()
+
+# fmt: on

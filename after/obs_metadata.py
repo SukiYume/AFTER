@@ -1,3 +1,5 @@
+# fmt: off
+
 """汇总 burst H5 元数据并生成可信的 ``obs_info.json``。
 
 一个输出目录可能包含不同波束、DM 或裁切长度的爆发，因此不能拿“最后处理的一组”
@@ -15,16 +17,15 @@ from pathlib import Path
 import h5py
 import numpy as np
 
-
 # 这些字段既写入观测级摘要，也从每个 H5 独立读取，防止批处理中不同分组互相覆盖。
 _SUMMARY_FIELDS = (
-    'obs_start_mjd',
-    'nchan',
-    'time_reso',
-    'npol',
-    'beam',
-    'dm',
-    'segment_length',
+    "obs_start_mjd",
+    "nchan",
+    "time_reso",
+    "npol",
+    "beam",
+    "dm",
+    "segment_length",
 )
 
 
@@ -37,7 +38,7 @@ def _json_scalar(value):
     if isinstance(value, np.generic):
         value = value.item()
     if isinstance(value, bytes):
-        value = value.decode('utf-8', errors='replace')
+        value = value.decode("utf-8", errors="replace")
     if isinstance(value, float) and not math.isfinite(value):
         return None
     return value
@@ -55,7 +56,7 @@ def _collapse(values):
         if isinstance(value, (int, float)) and not isinstance(value, bool):
             return (0, float(value))
         if value is None:
-            return (2, '')
+            return (2, "")
         return (1, str(value))
 
     unique.sort(key=sort_key)
@@ -64,8 +65,7 @@ def _collapse(values):
 
 def _beam_from_filename(filename):
     """从文件名的独立 ``Mdd`` 段提取整数波束号；找不到时返回 ``None``。"""
-    match = re.search(r'(?:^|[-_])M(\d{2})(?=[-_.]|$)', filename,
-                      flags=re.IGNORECASE)
+    match = re.search(r"(?:^|[-_])M(\d{2})(?=[-_.]|$)", filename, flags=re.IGNORECASE)
     return int(match.group(1)) if match else None
 
 
@@ -79,7 +79,7 @@ def _normalize_beam(value, filename):
     if value is None:
         return _beam_from_filename(filename)
     if isinstance(value, str):
-        match = re.fullmatch(r'M?(\d+)', value, flags=re.IGNORECASE)
+        match = re.fullmatch(r"M?(\d+)", value, flags=re.IGNORECASE)
         if match:
             return int(match.group(1))
     if isinstance(value, (int, float)) and float(value).is_integer():
@@ -95,17 +95,15 @@ def build_obs_info(h5_files):
     """
     records = []
     for h5_path in sorted(Path(path) for path in h5_files):
-        with h5py.File(h5_path, 'r') as h5:
+        with h5py.File(h5_path, "r") as h5:
             record = {
-                field: _json_scalar(h5.attrs.get(field))
-                for field in _SUMMARY_FIELDS
+                field: _json_scalar(h5.attrs.get(field)) for field in _SUMMARY_FIELDS
             }
-            record['beam'] = _normalize_beam(
-                record['beam'], h5_path.name)
-            record['file'] = h5_path.name
-            record['toa_sec'] = _json_scalar(h5.attrs.get('toa_sec'))
-            if isinstance(record['toa_sec'], float):
-                record['toa_sec'] = round(record['toa_sec'], 4)
+            record["beam"]    = _normalize_beam(record["beam"], h5_path.name)
+            record["file"]    = h5_path.name
+            record["toa_sec"] = _json_scalar(h5.attrs.get("toa_sec"))
+            if isinstance(record["toa_sec"], float):
+                record["toa_sec"] = round(record["toa_sec"], 4)
             records.append(record)
 
     if not records:
@@ -115,13 +113,13 @@ def build_obs_info(h5_files):
         field: _collapse([record[field] for record in records])
         for field in _SUMMARY_FIELDS
     }
-    obs_info['bursts'] = [
+    obs_info["bursts"] = [
         {
-            'file': record['file'],
-            'toa_sec': record['toa_sec'],
-            'beam': record['beam'],
-            'dm': record['dm'],
-            'segment_length': record['segment_length'],
+            "file": record["file"],
+            "toa_sec": record["toa_sec"],
+            "beam": record["beam"],
+            "dm": record["dm"],
+            "segment_length": record["segment_length"],
         }
         for record in records
     ]
@@ -132,15 +130,17 @@ def write_obs_info_json(output_dir):
     """扫描一个观测目录中的未定标 H5，并写出汇总后的 ``obs_info.json``。"""
     output_path = Path(output_dir)
     h5_files = sorted(
-        path for path in output_path.iterdir()
-        if path.suffix == '.h5' and not path.name.endswith('_cal.h5')
+        path
+        for path in output_path.iterdir()
+        if path.suffix == ".h5" and not path.name.endswith("_cal.h5")
     )
     obs_info = build_obs_info(h5_files)
     if obs_info is None:
         return None
 
-    json_path = output_path / 'obs_info.json'
-    with json_path.open('w', encoding='utf-8') as stream:
-        json.dump(
-            obs_info, stream, indent=2, ensure_ascii=False, allow_nan=False)
+    json_path = output_path / "obs_info.json"
+    with json_path.open("w", encoding="utf-8") as stream:
+        json.dump(obs_info, stream, indent=2, ensure_ascii=False, allow_nan=False)
     return json_path
+
+# fmt: on

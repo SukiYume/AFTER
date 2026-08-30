@@ -1,3 +1,5 @@
+# fmt: off
+
 """
 偏振分析模块。
 
@@ -9,12 +11,14 @@
 # ruff: noqa: E741
 
 import os
-import numpy as np
+
 import matplotlib
-matplotlib.use('Agg')
+import numpy as np
+
+matplotlib.use("Agg")
 import matplotlib.pyplot as plt
-from matplotlib import gridspec
 import seaborn as sns  # noqa: F401  # 导入后会向 Matplotlib 注册 ``mako`` 等颜色映射
+from matplotlib import gridspec
 
 try:
     from numba import njit, prange
@@ -43,7 +47,7 @@ C_M_S = 299_792_458.0
 # RM 合成
 # ============================================================
 
-RM_GRID_OVERSAMPLE = 8.0
+RM_GRID_OVERSAMPLE      = 8.0
 MAX_AUTOMATIC_RM_POINTS = 2_000_001
 
 
@@ -69,12 +73,13 @@ def _lambda2_span(lambda2_sets):
             if np.isfinite(span) and span > 0:
                 spans.append(span)
     if not spans:
-        raise ValueError('自动 RM 网格至少需要两个不同的有效 λ² 频道')
+        raise ValueError("自动 RM 网格至少需要两个不同的有效 λ² 频道")
     return max(spans)
 
 
-def build_automatic_rm_grid(rm_min, rm_max, lambda2_sets,
-                            oversample=RM_GRID_OVERSAMPLE):
+def build_automatic_rm_grid(
+    rm_min, rm_max, lambda2_sets, oversample=RM_GRID_OVERSAMPLE
+):
     """根据 RMSF FWHM 自动生成 RM 网格。
 
     使用 ``FWHM_RMSF = 2√3 / Δλ²``，并让一个 RMSF FWHM 至少包含
@@ -97,38 +102,39 @@ def build_automatic_rm_grid(rm_min, rm_max, lambda2_sets,
     info : dict
         实际步长、点数、RMSF FWHM、Δλ² 和实际过采样数。
     """
-    rm_min = float(rm_min)
-    rm_max = float(rm_max)
+    rm_min     = float(rm_min)
+    rm_max     = float(rm_max)
     oversample = float(oversample)
     if not np.isfinite(rm_min) or not np.isfinite(rm_max):
-        raise ValueError('RM 搜索范围必须是有限数值')
+        raise ValueError("RM 搜索范围必须是有限数值")
     if rm_max <= rm_min:
-        raise ValueError('rm_max 必须大于 rm_min')
+        raise ValueError("rm_max 必须大于 rm_min")
     if not np.isfinite(oversample) or oversample <= 0:
-        raise ValueError('RM 网格 oversample 必须为正数')
+        raise ValueError("RM 网格 oversample 必须为正数")
 
     delta_lambda2 = _lambda2_span(lambda2_sets)
-    fwhm_rmsf = 2.0 * np.sqrt(3.0) / delta_lambda2
-    target_step = fwhm_rmsf / oversample
-    rm_range = rm_max - rm_min
-    n_intervals = max(2, int(np.ceil(rm_range / target_step)))
-    n_points = n_intervals + 1
+    fwhm_rmsf     = 2.0 * np.sqrt(3.0) / delta_lambda2
+    target_step   = fwhm_rmsf / oversample
+    rm_range      = rm_max - rm_min
+    n_intervals   = max(2, int(np.ceil(rm_range / target_step)))
+    n_points      = n_intervals + 1
     if n_points > MAX_AUTOMATIC_RM_POINTS:
         raise ValueError(
-            f'自动 RM 网格需要 {n_points} 点，超过安全上限 '
-            f'{MAX_AUTOMATIC_RM_POINTS}；请缩小 RM 范围')
+            f"自动 RM 网格需要 {n_points} 点，超过安全上限 "
+            f"{MAX_AUTOMATIC_RM_POINTS}；请缩小 RM 范围"
+        )
 
-    rm_grid = np.linspace(rm_min, rm_max, n_points, dtype=np.float64)
+    rm_grid     = np.linspace(rm_min, rm_max, n_points, dtype=np.float64)
     actual_step = float(rm_grid[1] - rm_grid[0])
     info = {
-        'rm_min': rm_min,
-        'rm_max': rm_max,
-        'n_rm': int(n_points),
-        'rm_step': actual_step,
-        'delta_lambda2': float(delta_lambda2),
-        'rmsf_fwhm': float(fwhm_rmsf),
-        'oversample_target': oversample,
-        'samples_per_fwhm': float(fwhm_rmsf / actual_step),
+        "rm_min": rm_min,
+        "rm_max": rm_max,
+        "n_rm": int(n_points),
+        "rm_step": actual_step,
+        "delta_lambda2": float(delta_lambda2),
+        "rmsf_fwhm": float(fwhm_rmsf),
+        "oversample_target": oversample,
+        "samples_per_fwhm": float(fwhm_rmsf / actual_step),
     }
     return rm_grid, info
 
@@ -136,23 +142,22 @@ def build_automatic_rm_grid(rm_min, rm_max, lambda2_sets,
 @njit(parallel=True)
 def _rm_synthesis_on_grid(I, Q, U, wave, rm_list):
     """在给定 RM 网格上执行 Numba 并行合成。"""
-    n_rm = rm_list.size
+    n_rm   = rm_list.size
     linear = np.zeros(n_rm)
 
     I_total = np.sum(I)
     if I_total == 0:
-        I_total = 1.0    # 避免除零，全零数据 → 线偏振度 = 0
+        I_total = 1.0  # 避免除零，全零数据 → 线偏振度 = 0
 
     for i in prange(n_rm):
-        PA = 2 * rm_list[i] * wave ** 2
-        cos_PA = np.cos(PA)
-        sin_PA = np.sin(PA)
+        PA        = 2 * rm_list[i] * wave**2
+        cos_PA    = np.cos(PA)
+        sin_PA    = np.sin(PA)
         # 反旋转 Q, U
-        Q_C =  cos_PA * Q + sin_PA * U
-        U_C = -sin_PA * Q + cos_PA * U
+        Q_C       = cos_PA * Q + sin_PA * U
+        U_C       = -sin_PA * Q + cos_PA * U
         # 频率求和后的线偏振幅
-        Lsum = np.sum(np.sqrt(np.sum(Q_C, axis=1) ** 2 +
-                               np.sum(U_C, axis=1) ** 2))
+        Lsum      = np.sum(np.sqrt(np.sum(Q_C, axis=1) ** 2 + np.sum(U_C, axis=1) ** 2))
         linear[i] = Lsum / I_total
 
     return linear
@@ -164,7 +169,8 @@ def rm_synthesis(I, Q, U, wave, rm_min=-10000, rm_max=10000):
     用户只指定 RM 范围；网格步长固定按 RMSF FWHM 的八分之一自动选择。
     """
     rm_list, info = build_automatic_rm_grid(
-        rm_min, rm_max, np.asarray(wave, dtype=np.float64) ** 2)
+        rm_min, rm_max, np.asarray(wave, dtype=np.float64) ** 2
+    )
     linear = _rm_synthesis_on_grid(I, Q, U, wave, rm_list)
     return rm_list, linear, info
 
@@ -172,6 +178,7 @@ def rm_synthesis(I, Q, U, wave, rm_min=-10000, rm_max=10000):
 # ============================================================
 # RM 峰值定位
 # ============================================================
+
 
 def find_rm(rm_list, linear_pol, snr, wave=None, significance_threshold=5.0):
     """定位 RM 曲线峰值，评估显著性，计算误差。
@@ -206,12 +213,12 @@ def find_rm(rm_list, linear_pol, snr, wave=None, significance_threshold=5.0):
         RM 峰值显著性 (peak - baseline) / σ_noise。
     """
     peak_idx = np.argmax(linear_pol)
-    rm_best = float(rm_list[peak_idx])
+    rm_best  = float(rm_list[peak_idx])
     peak_val = linear_pol[peak_idx]
 
     # ---- 1. 评估峰值显著性 ----
     # 用 MAD 估计 RM 合成曲线的噪声水平（鲁棒，不受峰值影响）
-    baseline = np.median(linear_pol)
+    baseline    = np.median(linear_pol)
     noise_sigma = np.median(np.abs(linear_pol - baseline)) * 1.4826
     if noise_sigma > 0:
         rm_significance = float((peak_val - baseline) / noise_sigma)
@@ -222,7 +229,7 @@ def find_rm(rm_list, linear_pol, snr, wave=None, significance_threshold=5.0):
     # ---- 2. 计算 RMSF 半高宽 ----
     if wave is not None and len(wave) > 1:
         # 理论公式: FWHM_RMSF ≈ 2√3 / (λ_max² − λ_min²)
-        lambda2 = wave ** 2
+        lambda2       = wave**2
         delta_lambda2 = np.max(lambda2) - np.min(lambda2)
         if delta_lambda2 > 0:
             fwhm_rmsf = 2.0 * np.sqrt(3.0) / delta_lambda2
@@ -233,7 +240,7 @@ def find_rm(rm_list, linear_pol, snr, wave=None, significance_threshold=5.0):
 
     # ---- 3. RM 误差 = FWHM / (2 × SNR) ----
     snr_safe = max(snr, 1.0)
-    rm_err = fwhm_rmsf / (2.0 * snr_safe)
+    rm_err   = fwhm_rmsf / (2.0 * snr_safe)
 
     # 峰值不显著时标记为不可靠
     if rm_significance < significance_threshold:
@@ -270,6 +277,7 @@ def _measure_fwhm(rm_list, linear_pol):
 # 法拉第反旋转
 # ============================================================
 
+
 def correct_rm(Q, U, freq, rm):
     """按给定 RM 对 Q, U 做法拉第反旋转。
 
@@ -283,16 +291,17 @@ def correct_rm(Q, U, freq, rm):
     -------
     Q_corr, U_corr : ndarray (nsamp, nchan)
     """
-    wave = C_M_S / (freq * 1e6)   # Hz → 波长 (m)
-    PA = 2 * rm * wave ** 2
-    Q_C =  np.cos(PA) * Q + np.sin(PA) * U
-    U_C = -np.sin(PA) * Q + np.cos(PA) * U
+    wave = C_M_S / (freq * 1e6)  # Hz → 波长 (m)
+    PA   = 2 * rm * wave**2
+    Q_C  = np.cos(PA) * Q + np.sin(PA) * U
+    U_C  = -np.sin(PA) * Q + np.cos(PA) * U
     return Q_C, U_C
 
 
 # ============================================================
 # 偏振信噪比 & 中心频率
 # ============================================================
+
 
 def calc_pol_snr(I_burst, freq, noise_I):
     """计算偏振信噪比、噪声 rms、强度加权中心频率。
@@ -318,14 +327,14 @@ def calc_pol_snr(I_burst, freq, noise_I):
     # 噪声 rms（保护空数组）
     if noise_I.size > 0 and noise_I.shape[0] > 1:
         noise_profile = np.nanmean(noise_I, axis=1)
-        rms = float(np.nanstd(noise_profile))
+        rms           = float(np.nanstd(noise_profile))
     else:
         rms = 0.0
 
     # 偏振 SNR（保护空爆发 / 零 rms）
     if I_burst.size > 0 and I_burst.shape[0] > 0 and rms > 0:
         burst_profile = np.nanmean(I_burst, axis=1)
-        snr = np.nansum(burst_profile) / np.sqrt(I_burst.shape[0]) / rms
+        snr           = np.nansum(burst_profile) / np.sqrt(I_burst.shape[0]) / rms
     else:
         snr = 0.0
 
@@ -347,6 +356,7 @@ def calc_pol_snr(I_burst, freq, noise_I):
 # ============================================================
 # 偏振位置角 (PA) 轮廓
 # ============================================================
+
 
 def calc_pa_profile(I, Q, U, V, burst_mask, freq_mask, noise_mask):
     """计算 PA 轮廓和归一化 Stokes 轮廓。
@@ -378,16 +388,22 @@ def calc_pa_profile(I, Q, U, V, burst_mask, freq_mask, noise_mask):
     rms_norm : float
         归一化后的噪声 rms。
     """
-    nsamp = I.shape[0]
+    nsamp        = I.shape[0]
     n_freq_valid = np.sum(freq_mask)
 
     # 无有效频率通道时返回全零/全 NaN
     if n_freq_valid == 0:
-        nan_arr = np.full(nsamp, np.nan)
+        nan_arr  = np.full(nsamp, np.nan)
         zero_arr = np.zeros(nsamp)
-        return (np.arange(nsamp, dtype=np.float64),
-                nan_arr.copy(), nan_arr.copy(),
-                zero_arr.copy(), zero_arr.copy(), zero_arr.copy(), 1.0)
+        return (
+            np.arange(nsamp, dtype=np.float64),
+            nan_arr.copy(),
+            nan_arr.copy(),
+            zero_arr.copy(),
+            zero_arr.copy(),
+            zero_arr.copy(),
+            1.0,
+        )
 
     # 在有效通道上取频率平均
     profile_I = np.nanmean(I[:, freq_mask], axis=1)
@@ -396,7 +412,7 @@ def calc_pa_profile(I, Q, U, V, burst_mask, freq_mask, noise_mask):
     profile_V = np.nanmean(V[:, freq_mask], axis=1)
 
     # 归一化因子（保护全 NaN / 全负值）
-    peak_I = np.nanmax(profile_I) if np.any(np.isfinite(profile_I)) else 0.0
+    peak_I     = np.nanmax(profile_I) if np.any(np.isfinite(profile_I)) else 0.0
     normfactor = peak_I if peak_I > 0 else 1.0
 
     # 噪声统计量（用 nanstd 处理残余 NaN）
@@ -417,17 +433,17 @@ def calc_pa_profile(I, Q, U, V, burst_mask, freq_mask, noise_mask):
         sigma_U = rms
 
     # PA 及其误差
-    PAV = np.rad2deg(np.arctan2(profile_U, profile_Q) / 2)
-    L2 = profile_Q ** 2 + profile_U ** 2
-    denom = 4 * L2 ** 2
+    PAV               = np.rad2deg(np.arctan2(profile_U, profile_Q) / 2)
+    L2                = profile_Q**2 + profile_U**2
+    denom             = 4 * L2**2
     denom[denom == 0] = 1.0
-    PAE = np.rad2deg(np.sqrt(
-        (profile_Q ** 2 * sigma_U ** 2 + profile_U ** 2 * sigma_Q ** 2)
-        / denom))
+    PAE = np.rad2deg(
+        np.sqrt((profile_Q**2 * sigma_U**2 + profile_U**2 * sigma_Q**2) / denom)
+    )
     PAT = np.arange(nsamp, dtype=np.float64)
 
     # 爆发区域外置 NaN，高误差点也置 NaN
-    burst_idx = burst_mask.astype(int)
+    burst_idx           = burst_mask.astype(int)
     PAV[burst_idx != 1] = np.nan
     PAE[burst_idx != 1] = np.nan
 
@@ -437,21 +453,22 @@ def calc_pa_profile(I, Q, U, V, burst_mask, freq_mask, noise_mask):
     if np.any(np.isfinite(burst_PAE)):
         pae_center = np.nanmedian(burst_PAE)
         pae_spread = np.nanstd(burst_PAE)
-        thres = pae_center + 2 * pae_spread
-        bad = PAE > thres
-        PAV[bad] = np.nan
-        PAE[bad] = np.nan
+        thres      = pae_center + 2 * pae_spread
+        bad        = PAE > thres
+        PAV[bad]   = np.nan
+        PAE[bad]   = np.nan
 
     # 线偏振: Wardle & Kronberg (1974) 去偏修正
     # 使用 Q/U 噪声的平均值作为偏振噪声 σ_p
-    sigma_p = np.sqrt((sigma_Q ** 2 + sigma_U ** 2) / 2)
-    profile_L = np.sqrt(profile_Q ** 2 + profile_U ** 2)
+    sigma_p   = np.sqrt((sigma_Q**2 + sigma_U**2) / 2)
+    profile_L = np.sqrt(profile_Q**2 + profile_U**2)
     if sigma_p > 0:
-        low_snr  = profile_L / sigma_p <= 1.57
-        high_snr = ~low_snr
-        profile_L[low_snr]  = 0
+        low_snr            = profile_L / sigma_p <= 1.57
+        high_snr           = ~low_snr
+        profile_L[low_snr] = 0
         profile_L[high_snr] = np.sqrt(
-            np.clip(profile_L[high_snr] ** 2 - sigma_p ** 2, 0, None))
+            np.clip(profile_L[high_snr] ** 2 - sigma_p**2, 0, None)
+        )
     # sigma_p == 0 时跳过去偏修正，保留原始 L（无法估计偏差）
 
     # 归一化
@@ -465,6 +482,7 @@ def calc_pa_profile(I, Q, U, V, burst_mask, freq_mask, noise_mask):
 # ============================================================
 # 偏振分数
 # ============================================================
+
 
 def calc_pol_fractions(profile_I, profile_L, profile_V, burst_mask, rms):
     """计算爆发区域的线偏振和圆偏振百分比。
@@ -486,19 +504,19 @@ def calc_pol_fractions(profile_I, profile_L, profile_V, burst_mask, rms):
         圆偏振分数及误差 (%)。
     """
     burst_idx = burst_mask.astype(int)
-    I_sum = profile_I[burst_idx == 1].sum()
-    L_sum = profile_L[burst_idx == 1].sum()
-    V_sum = profile_V[burst_idx == 1].sum()
+    I_sum     = profile_I[burst_idx == 1].sum()
+    L_sum     = profile_L[burst_idx == 1].sum()
+    V_sum     = profile_V[burst_idx == 1].sum()
 
     n_burst = np.sum(burst_idx == 1)
-    snr = I_sum / np.sqrt(n_burst) / rms if (rms > 0 and n_burst > 0) else 1.0
-    snr = max(snr, 1.0)
+    snr     = I_sum / np.sqrt(n_burst) / rms if (rms > 0 and n_burst > 0) else 1.0
+    snr     = max(snr, 1.0)
 
     if I_sum > 0:
-        linear_frac  = L_sum / I_sum * 100
-        linear_err   = np.sqrt(1 + L_sum ** 2 / I_sum ** 2) / snr * 100
+        linear_frac   = L_sum / I_sum * 100
+        linear_err    = np.sqrt(1 + L_sum**2 / I_sum**2) / snr * 100
         circular_frac = V_sum / I_sum * 100
-        circular_err  = np.sqrt(1 + V_sum ** 2 / I_sum ** 2) / snr * 100
+        circular_err  = np.sqrt(1 + V_sum**2 / I_sum**2) / snr * 100
     else:
         linear_frac = linear_err = circular_frac = circular_err = 0.0
 
@@ -509,8 +527,20 @@ def calc_pol_fractions(profile_I, profile_L, profile_V, burst_mask, rms):
 # 绘图
 # ============================================================
 
-def plot_polarization(PAT, PAV, PAE, profile_I, profile_L, profile_V,
-                      stokes_I_2d, freq, time_reso, save_path, fmt='png'):
+
+def plot_polarization(
+    PAT,
+    PAV,
+    PAE,
+    profile_I,
+    profile_L,
+    profile_V,
+    stokes_I_2d,
+    freq,
+    time_reso,
+    save_path,
+    fmt="png",
+):
     """三面板偏振图: PA、Stokes 轮廓、动态谱。
 
     fmt='png' 用于单 burst 输出; fmt='pdf' 用于跨爆发合并 (复刻老代码
@@ -520,61 +550,65 @@ def plot_polarization(PAT, PAV, PAE, profile_I, profile_L, profile_V,
     nsamp, nchan = stokes_I_2d.shape
 
     fig = plt.figure(figsize=(4, 5))
-    gs = gridspec.GridSpec(11, 1)
+    gs  = gridspec.GridSpec(11, 1)
     plt.subplots_adjust(hspace=0)
 
     ax0 = plt.subplot(gs[0:3, 0])
-    ax0.errorbar(PAT, PAV, PAE, color='r', fmt='.', capsize=3, lw=1, ms=1)
-    ax0.axhline( 90, ls='--', color='gray', alpha=0.5, lw=0.5)
-    ax0.axhline(-90, ls='--', color='gray', alpha=0.5, lw=0.5)
+    ax0.errorbar(PAT, PAV, PAE, color="r", fmt=".", capsize=3, lw=1, ms=1)
+    ax0.axhline(90, ls="--", color="gray", alpha=0.5, lw=0.5)
+    ax0.axhline(-90, ls="--", color="gray", alpha=0.5, lw=0.5)
     ax0.set_xticks([])
     ax0.set_xlim(0, nsamp)
     ax0.set_ylim(-120, 120)
-    ax0.set_ylabel('PA (deg)')
+    ax0.set_ylabel("PA (deg)")
 
     ax1 = plt.subplot(gs[3:6, 0])
-    ax1.step(PAT, profile_I, where='mid', color='gray',      alpha=0.8, label='I')
-    ax1.step(PAT, profile_L, where='mid', color='r',         alpha=0.8, label='L')
-    ax1.step(PAT, profile_V, where='mid', color='royalblue', alpha=0.8, label='V')
+    ax1.step(PAT, profile_I, where="mid", color="gray", alpha=0.8, label="I")
+    ax1.step(PAT, profile_L, where="mid", color="r", alpha=0.8, label="L")
+    ax1.step(PAT, profile_V, where="mid", color="royalblue", alpha=0.8, label="V")
     ax1.set_xlim(0, nsamp)
     ax1.set_xticks([])
-    ax1.set_ylabel('Intensity (abbr.)')
+    ax1.set_ylabel("Intensity (abbr.)")
 
-    ax2 = plt.subplot(gs[6:, 0])
+    ax2        = plt.subplot(gs[6:, 0])
     vmin, vmax = np.nanpercentile(stokes_I_2d, [5, 95])
-    ax2.imshow(stokes_I_2d.T, cmap='mako', vmin=vmin, vmax=vmax,
-               aspect='auto', origin='lower')
+    ax2.imshow(
+        stokes_I_2d.T, cmap="mako", vmin=vmin, vmax=vmax, aspect="auto", origin="lower"
+    )
     xticks = np.linspace(0, nsamp, 6)
     ax2.set_xticks(xticks)
     ax2.set_xticklabels((xticks * time_reso * 1e3).astype(int))
     yticks = np.linspace(0, nchan, 6)
     ax2.set_yticks(yticks)
     ax2.set_yticklabels(np.linspace(freq[0], freq[-1], 6).astype(int))
-    ax2.set_xlabel('Time (ms)')
-    ax2.set_ylabel('Frequency (MHz)')
+    ax2.set_xlabel("Time (ms)")
+    ax2.set_ylabel("Frequency (MHz)")
 
     fig.align_labels()
-    if fmt == 'pdf':
+    if fmt == "pdf":
         # 保存矢量 PDF (出版用), 并附带一张 PNG 供面板等位图场景直接嵌入,
         # 避免下游再依赖 PDF -> 位图转换 (如 pymupdf)。
-        plt.savefig(save_path, format='pdf', bbox_inches='tight')
-        plt.savefig(os.path.splitext(save_path)[0] + '.png',
-                    format='png', dpi=200, bbox_inches='tight')
+        plt.savefig(save_path, format="pdf", bbox_inches="tight")
+        plt.savefig(
+            os.path.splitext(save_path)[0] + ".png",
+            format      = "png",
+            dpi         = 200,
+            bbox_inches = "tight",
+        )
     else:
-        plt.savefig(save_path, format='png', dpi=300, bbox_inches='tight')
+        plt.savefig(save_path, format="png", dpi=300, bbox_inches="tight")
     plt.close()
 
 
 def plot_rm_synthesis(rm_list, linear_pol, rm_best, save_path):
     """RM 合成曲线。"""
     plt.figure(figsize=(5, 4))
-    plt.plot(rm_list, linear_pol * 100, color='royalblue', alpha=0.7)
-    plt.axvline(rm_best, color='red', ls='--', alpha=0.7,
-                label=f'RM={rm_best:.1f}')
-    plt.xlabel('RM (rad/m$^2$)')
-    plt.ylabel('Degree of Linear Polarization (%)')
+    plt.plot(rm_list, linear_pol * 100, color="royalblue", alpha=0.7)
+    plt.axvline(rm_best, color="red", ls="--", alpha=0.7, label=f"RM={rm_best:.1f}")
+    plt.xlabel("RM (rad/m$^2$)")
+    plt.ylabel("Degree of Linear Polarization (%)")
     plt.legend()
-    plt.savefig(save_path, format='png', dpi=300, bbox_inches='tight')
+    plt.savefig(save_path, format="png", dpi=300, bbox_inches="tight")
     plt.close()
 
 
@@ -582,9 +616,22 @@ def plot_rm_synthesis(rm_list, linear_pol, rm_best, save_path):
 # 一体化编排: 单个爆发的偏振分析
 # ============================================================
 
-def analyze_pol(I, Q, U, V, freq, time_reso, burst_mask, freq_index, noise_mask,
-                output_dir, burst_idx,
-                rm_min=-50000, rm_max=50000):
+
+def analyze_pol(
+    I,
+    Q,
+    U,
+    V,
+    freq,
+    time_reso,
+    burst_mask,
+    freq_index,
+    noise_mask,
+    output_dir,
+    burst_idx,
+    rm_min=-50000,
+    rm_max=50000,
+):
     """对单个爆发做完整的偏振分析并画图。
 
     上游 (burst_analysis.py) 已经把 RFI 和基线处理好, 这里只关心偏振本身:
@@ -614,79 +661,95 @@ def analyze_pol(I, Q, U, V, freq, time_reso, burst_mask, freq_index, noise_mask,
         供跨爆发合并 PDF 的轮廓数组: PAT, PAV, PAE, profile_I,
         profile_L, profile_V (都是 nsamp 长度, 爆发窗口外为 NaN)。
     """
-    wave = C_M_S / (freq * 1e6)   # 波长 (m)
+    wave = C_M_S / (freq * 1e6)  # 波长 (m)
 
     # 爆发强采样点 × 有效通道: 干净数据, NaN → 0 送入 numba。
     # burst_mask 可以是不连续的布尔门（例如多峰爆发中只保留超过半峰高的
     # 采样点），因此必须直接布尔索引；不能再用首尾切片把中间噪声带回来。
     if not np.any(burst_mask):
-        raise ValueError('burst_mask 没有有效时间采样点')
+        raise ValueError("burst_mask 没有有效时间采样点")
     if not np.any(freq_index):
-        raise ValueError('freq_index 没有有效频率通道')
-    burst_I     = np.nan_to_num(I[burst_mask][:, freq_index], nan=0.0)
-    burst_Q     = np.nan_to_num(Q[burst_mask][:, freq_index], nan=0.0)
-    burst_U     = np.nan_to_num(U[burst_mask][:, freq_index], nan=0.0)
-    burst_wave  = wave[freq_index]
+        raise ValueError("freq_index 没有有效频率通道")
+    burst_I    = np.nan_to_num(I[burst_mask][:, freq_index], nan=0.0)
+    burst_Q    = np.nan_to_num(Q[burst_mask][:, freq_index], nan=0.0)
+    burst_U    = np.nan_to_num(U[burst_mask][:, freq_index], nan=0.0)
+    burst_wave = wave[freq_index]
 
     # RM 合成
     rm_list_out, linear_pol, rm_grid_info = rm_synthesis(
-        burst_I, burst_Q, burst_U, burst_wave,
-        rm_min=rm_min, rm_max=rm_max)
+        burst_I, burst_Q, burst_U, burst_wave, rm_min=rm_min, rm_max=rm_max
+    )
     print(
-        f'    自动 RM 网格: {rm_grid_info["n_rm"]} 点, '
-        f'步长={rm_grid_info["rm_step"]:.3f} rad/m^2, '
-        f'RMSF FWHM={rm_grid_info["rmsf_fwhm"]:.3f} rad/m^2')
+        f"    自动 RM 网格: {rm_grid_info['n_rm']} 点, "
+        f"步长={rm_grid_info['rm_step']:.3f} rad/m^2, "
+        f"RMSF FWHM={rm_grid_info['rmsf_fwhm']:.3f} rad/m^2"
+    )
 
     # 偏振 SNR / 中心频率
-    noise_I = np.nan_to_num(I[noise_mask][:, freq_index], nan=0.0)
-    _, snr_pol, center_freq = calc_pol_snr(
-        burst_I, freq[freq_index], noise_I)
+    noise_I                 = np.nan_to_num(I[noise_mask][:, freq_index], nan=0.0)
+    _, snr_pol, center_freq = calc_pol_snr(burst_I, freq[freq_index], noise_I)
 
     rm_best, rm_err, rm_significance = find_rm(
-        rm_list_out, linear_pol, snr_pol, wave=burst_wave)
+        rm_list_out, linear_pol, snr_pol, wave=burst_wave
+    )
 
     if np.isnan(rm_err):
-        print(f'    RM 峰值不显著 (significance={rm_significance:.1f}), '
-              f'结果可能不可靠')
+        print(f"    RM 峰值不显著 (significance={rm_significance:.1f}), 结果可能不可靠")
 
-    plot_rm_synthesis(rm_list_out, linear_pol, rm_best,
-                      os.path.join(output_dir, f'burst{burst_idx}_rm.png'))
+    plot_rm_synthesis(
+        rm_list_out,
+        linear_pol,
+        rm_best,
+        os.path.join(output_dir, f"burst{burst_idx}_rm.png"),
+    )
 
     # RM 反旋转: 全频率做(NaN 通道不影响, 后面用 freq_index 过滤)
     Q_corr, U_corr = correct_rm(Q, U, freq, rm_best)
 
     # PA 轮廓 + 偏振分数
     PAT, PAV, PAE, prof_I, prof_L, prof_V, rms_norm = calc_pa_profile(
-        I, Q_corr, U_corr, V, burst_mask, freq_index, noise_mask)
+        I, Q_corr, U_corr, V, burst_mask, freq_index, noise_mask
+    )
 
     lin_frac, lin_err, circ_frac, circ_err = calc_pol_fractions(
-        prof_I, prof_L, prof_V, burst_mask, rms_norm)
+        prof_I, prof_L, prof_V, burst_mask, rms_norm
+    )
 
-    plot_polarization(PAT, PAV, PAE, prof_I, prof_L, prof_V,
-                      I, freq, time_reso,
-                      os.path.join(output_dir, f'burst{burst_idx}_pol.png'))
+    plot_polarization(
+        PAT,
+        PAV,
+        PAE,
+        prof_I,
+        prof_L,
+        prof_V,
+        I,
+        freq,
+        time_reso,
+        os.path.join(output_dir, f"burst{burst_idx}_pol.png"),
+    )
 
     scalars = {
-        'rm':                rm_best,
-        'rm_err':            rm_err,
-        'rm_significance':   rm_significance,
-        'rm_grid_size':      rm_grid_info['n_rm'],
-        'rm_grid_step':      rm_grid_info['rm_step'],
-        'rm_rmsf_fwhm':      rm_grid_info['rmsf_fwhm'],
-        'rm_grid_samples_per_fwhm':
-                             rm_grid_info['samples_per_fwhm'],
-        'linear_frac':       lin_frac,
-        'linear_frac_err':   lin_err,
-        'circular_frac':     circ_frac,
-        'circular_frac_err': circ_err,
-        'center_freq':       center_freq,
+        "rm": rm_best,
+        "rm_err": rm_err,
+        "rm_significance": rm_significance,
+        "rm_grid_size": rm_grid_info["n_rm"],
+        "rm_grid_step": rm_grid_info["rm_step"],
+        "rm_rmsf_fwhm": rm_grid_info["rmsf_fwhm"],
+        "rm_grid_samples_per_fwhm": rm_grid_info["samples_per_fwhm"],
+        "linear_frac": lin_frac,
+        "linear_frac_err": lin_err,
+        "circular_frac": circ_frac,
+        "circular_frac_err": circ_err,
+        "center_freq": center_freq,
     }
     pa_arrays = {
-        'PAT':       PAT,
-        'PAV':       PAV,
-        'PAE':       PAE,
-        'profile_I': prof_I,
-        'profile_L': prof_L,
-        'profile_V': prof_V,
+        "PAT": PAT,
+        "PAV": PAV,
+        "PAE": PAE,
+        "profile_I": prof_I,
+        "profile_L": prof_L,
+        "profile_V": prof_V,
     }
     return scalars, pa_arrays
+
+# fmt: on

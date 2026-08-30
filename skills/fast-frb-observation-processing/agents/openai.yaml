@@ -1,4 +1,8 @@
 interface:
   display_name: "AFTER FAST FRB Processing"
   short_description: "Run AFTER from TOA-guided cuts to analysis and dashboards."
-  default_prompt: "Use $fast-frb-observation-processing to install or validate AFTER, or process one FAST FRB observation from the earliest available product using the README for setup, CLI syntax, and schemas and the skill for preflight checks, review gates, verification, recovery, and reporting."
+  default_prompt: >-
+    Use $fast-frb-observation-processing to install or validate AFTER, or process
+    one FAST FRB observation from the earliest available product using the README
+    for setup, CLI syntax, and schemas and the skill for preflight checks, review
+    gates, verification, recovery, and reporting.

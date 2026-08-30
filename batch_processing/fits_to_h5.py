@@ -1,3 +1,5 @@
+# fmt: off
+
 """Convert legacy cut FITS burst files to the current H5 cut format.
 
 An input legacy tree can be arranged as::
@@ -34,14 +36,12 @@ import h5py
 import numpy as np
 from astropy.io import fits
 
-
 PROJECT_DIR = Path(__file__).resolve().parent.parent
-SCRIPT_DIR = Path(__file__).resolve().parent
+SCRIPT_DIR  = Path(__file__).resolve().parent
 if str(PROJECT_DIR) not in sys.path:
     sys.path.insert(0, str(PROJECT_DIR))
 
 from after.obs_metadata import write_obs_info_json  # noqa: E402
-
 
 DEFAULT_OUTPUT_ROOT = str(PROJECT_DIR / "H5_Cut")
 DEFAULT_CATALOG_DIR = SCRIPT_DIR
@@ -49,7 +49,7 @@ DEFAULT_CATALOG_DIR = SCRIPT_DIR
 
 def parse_old_filename(filename: str):
     """Parse legacy burst FITS metadata from its filename."""
-    date_pattern = r"\d{8}(?:_\d+)?"
+    date_pattern  = r"\d{8}(?:_\d+)?"
     # 观测起点附近的切片允许 start_sample < 0；AFTER 的文件名约定用
     # ``n`` 代替负号，例如 n000000123 表示 -123。
     start_pattern = r"n?\d{9}"
@@ -135,7 +135,9 @@ def parse_burst_catalog(catalog_dir: Path, prefix: str):
                     raw_name, beam, project, dm, date, toa = parts[:6]
                     base = ""
                 else:
-                    print(f"[WARN] skip malformed row {txt_path.name}:{line_no}: {line.rstrip()}")
+                    print(
+                        f"[WARN] skip malformed row {txt_path.name}:{line_no}: {line.rstrip()}"
+                    )
                     continue
                 try:
                     catalog[save_frb].append(
@@ -150,7 +152,9 @@ def parse_burst_catalog(catalog_dir: Path, prefix: str):
                         }
                     )
                 except ValueError:
-                    print(f"[WARN] skip unparsable row {txt_path.name}:{line_no}: {line.rstrip()}")
+                    print(
+                        f"[WARN] skip unparsable row {txt_path.name}:{line_no}: {line.rstrip()}"
+                    )
     return dict(catalog)
 
 
@@ -175,7 +179,7 @@ def read_obs_info(cal_fits_path: Path):
 def load_fits_data(filepath: Path):
     """Read legacy cut burst FITS data as (nsamp, npol, nchan)."""
     with fits.open(filepath) as hdul:
-        h1 = hdul[1].header
+        h1  = hdul[1].header
         raw = hdul[1].data["DATA"]
         return raw.reshape(h1["NAXIS2"] * h1["NSBLK"], h1["NPOL"], h1["NCHAN"])
 
@@ -212,19 +216,19 @@ def match_catalog_row(name_info, nsamp: int, info: dict, rows: list[dict]):
     if not rows:
         return None
 
-    time_reso = info["time_reso"]
+    time_reso  = info["time_reso"]
     file_nsamp = info["file_nsamp"]
-    tolerance = max(2, int(0.06 / time_reso))
+    tolerance  = max(2, int(0.06 / time_reso))
     candidates = []
 
     for row in rows:
         if row["beam"] != name_info["beam"]:
             continue
-        sample = int(row["time"] / time_reso)
-        expected_start = sample - nsamp // 2
+        sample               = int(row["time"] / time_reso)
+        expected_start       = sample - nsamp // 2
         expected_fits_number = sample // file_nsamp + 1
-        start_delta = abs(expected_start - name_info["start_sample"])
-        fits_delta = abs(expected_fits_number - name_info["fits_number"])
+        start_delta          = abs(expected_start - name_info["start_sample"])
+        fits_delta           = abs(expected_fits_number - name_info["fits_number"])
         if start_delta <= tolerance:
             candidates.append((fits_delta, start_delta, row))
 
@@ -238,23 +242,23 @@ def match_catalog_row(name_info, nsamp: int, info: dict, rows: list[dict]):
 def save_to_h5(save_path: Path, filename: str, data: np.ndarray, meta: dict):
     """Write H5 using the same dataset/attribute layout as :mod:`after.cut_burst_data`."""
     save_path.mkdir(parents=True, exist_ok=True)
-    filepath = save_path / filename
+    filepath  = save_path / filename
     temp_path = filepath.with_name(f"{filepath.name}.tmp")
     temp_path.unlink(missing_ok=True)
     try:
         with h5py.File(temp_path, "w") as f:
             f.create_dataset("data", data=data, compression="gzip", compression_opts=4)
             f.create_dataset("freq", data=meta["freq"])
-            f.attrs["start_sample"] = meta["start_sample"]
-            f.attrs["file_mjd"] = meta["file_mjd"]
-            f.attrs["toa_sec"] = meta["toa_sec"]
-            f.attrs["time_reso"] = meta["time_reso"]
-            f.attrs["npol"] = meta["npol"]
-            f.attrs["nchan"] = meta["nchan"]
+            f.attrs["start_sample"]   = meta["start_sample"]
+            f.attrs["file_mjd"]       = meta["file_mjd"]
+            f.attrs["toa_sec"]        = meta["toa_sec"]
+            f.attrs["time_reso"]      = meta["time_reso"]
+            f.attrs["npol"]           = meta["npol"]
+            f.attrs["nchan"]          = meta["nchan"]
             f.attrs["segment_length"] = meta["segment_length"]
-            f.attrs["obs_start_mjd"] = meta["obs_start_mjd"]
-            f.attrs["beam"] = meta["beam"]
-            f.attrs["dm"] = meta["dm"]
+            f.attrs["obs_start_mjd"]  = meta["obs_start_mjd"]
+            f.attrs["beam"]           = meta["beam"]
+            f.attrs["dm"]             = meta["dm"]
         os.replace(temp_path, filepath)
     finally:
         temp_path.unlink(missing_ok=True)
@@ -283,16 +287,16 @@ def convert_one_fits(args):
     if h5_path.exists() and not overwrite:
         return "exists"
 
-    data = load_fits_data(fits_path)
+    data  = load_fits_data(fits_path)
     nsamp = int(data.shape[0])
-    row = match_catalog_row(name_info, nsamp, info, rows)
+    row   = match_catalog_row(name_info, nsamp, info, rows)
     if row is None:
         toa_sec = (name_info["start_sample"] + nsamp // 2) * info["time_reso"]
-        dm = rows[0]["dm"] if rows else np.nan
+        dm      = rows[0]["dm"] if rows else np.nan
         matched = False
     else:
         toa_sec = row["time"]
-        dm = row["dm"]
+        dm      = row["dm"]
         matched = True
 
     start_sample = name_info["start_sample"]
@@ -318,15 +322,21 @@ def save_obs_json(output_dir: Path):
     write_obs_info_json(output_dir)
 
 
-def collect_tasks(asd_root: Path, output_root: Path, catalog_dir: Path,
-                  prefix: str, only: set[str], overwrite: bool,
-                  dry_run: bool = False):
+def collect_tasks(
+    asd_root: Path,
+    output_root: Path,
+    catalog_dir: Path,
+    prefix: str,
+    only: set[str],
+    overwrite: bool,
+    dry_run: bool = False,
+):
     catalog = parse_burst_catalog(catalog_dir, prefix)
     if not catalog:
         print(f"No {prefix}*_Burst.txt catalog rows found under {catalog_dir}")
         return [], []
 
-    tasks = []
+    tasks            = []
     date_output_dirs = set()
 
     frb_dirs = [
@@ -337,29 +347,45 @@ def collect_tasks(asd_root: Path, output_root: Path, catalog_dir: Path,
     print(f"Found {len(frb_dirs)} {prefix}* directories")
 
     for frb_path in frb_dirs:
-        rows = catalog.get(frb_path.name, [])
+        rows         = catalog.get(frb_path.name, [])
         rows_by_date = defaultdict(list)
         for row in rows:
             rows_by_date[row["date"]].append(row)
         if not rows:
-            print(f"[WARN] {frb_path.name}: no catalog rows, metadata will fall back to filename")
+            print(
+                f"[WARN] {frb_path.name}: no catalog rows, metadata will fall back to filename"
+            )
 
         frb_count = 0
-        for date_path in sorted(path for path in frb_path.iterdir() if is_date_dir(path)):
+        for date_path in sorted(
+            path for path in frb_path.iterdir() if is_date_dir(path)
+        ):
             output_path = output_root / frb_path.name / date_path.name
-            cal_path = copy_cal_files(date_path, output_path, overwrite, dry_run)
+            cal_path    = copy_cal_files(date_path, output_path, overwrite, dry_run)
             if cal_path is None:
-                print(f"[WARN] {frb_path.name}/{date_path.name}: no *_0001.fits calibration file")
+                print(
+                    f"[WARN] {frb_path.name}/{date_path.name}: no *_0001.fits calibration file"
+                )
                 continue
 
             info = read_obs_info(cal_path)
             burst_files = [
                 path
                 for path in sorted(date_path.iterdir())
-                if path.is_file() and path.suffix == ".fits" and parse_old_filename(path.name) is not None
+                if path.is_file()
+                and path.suffix == ".fits"
+                and parse_old_filename(path.name) is not None
             ]
             for burst_path in burst_files:
-                tasks.append((str(burst_path), str(output_path), rows_by_date[date_path.name], info, overwrite))
+                tasks.append(
+                    (
+                        str(burst_path),
+                        str(output_path),
+                        rows_by_date[date_path.name],
+                        info,
+                        overwrite,
+                    )
+                )
             frb_count += len(burst_files)
             if burst_files:
                 date_output_dirs.add(output_path)
@@ -373,8 +399,8 @@ def parse_args():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument(
         "--asd-root",
-        required=True,
-        help="待迁移的旧 burst FITS 根目录；必须显式指定，避免误扫目录",
+        required = True,
+        help     = "待迁移的旧 burst FITS 根目录；必须显式指定，避免误扫目录",
     )
     parser.add_argument("--output-root", default=DEFAULT_OUTPUT_ROOT)
     parser.add_argument("--catalog-dir", default=str(DEFAULT_CATALOG_DIR))
@@ -383,22 +409,32 @@ def parse_args():
     parser.add_argument("--overwrite", action="store_true")
     parser.add_argument(
         "--dry-run",
-        action="store_true",
-        help="只统计待转换文件，不创建或修改输出文件",
+        action = "store_true",
+        help   = "只统计待转换文件，不创建或修改输出文件",
     )
-    parser.add_argument("--only", nargs="*", default=None, help="Optional FRB directory names to process")
+    parser.add_argument(
+        "--only",
+        nargs   = "*",
+        default = None,
+        help    = "Optional FRB directory names to process",
+    )
     return parser.parse_args()
 
 
 def main():
-    args = parse_args()
-    asd_root = Path(args.asd_root)
+    args        = parse_args()
+    asd_root    = Path(args.asd_root)
     output_root = Path(args.output_root)
     catalog_dir = Path(args.catalog_dir)
-    only = set(args.only or [])
+    only        = set(args.only or [])
 
     tasks, date_output_dirs = collect_tasks(
-        asd_root, output_root, catalog_dir, args.frb_prefix, only, args.overwrite,
+        asd_root,
+        output_root,
+        catalog_dir,
+        args.frb_prefix,
+        only,
+        args.overwrite,
         args.dry_run,
     )
     if not tasks:
@@ -429,3 +465,5 @@ def main():
 
 if __name__ == "__main__":
     main()
+
+# fmt: on

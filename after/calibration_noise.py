@@ -1,3 +1,5 @@
+# fmt: off
+
 """FAST 噪声管折叠与定标诊断图。
 
 SEARCH 模式的四路偏振数据按 ``AABBCRCI`` 排列，即 AA、BB、Re(AB*)、
@@ -34,18 +36,17 @@ matplotlib.use("Agg")
 # 必须先选择无界面绘图后端，再导入 pyplot。
 import matplotlib.pyplot as plt  # noqa: E402  # 必须在选择无界面后端后导入
 
-
-NOISE_CLOCK_PRODUCT = 4096 * 4096 * 12
-DEFAULT_SCIENCE_BAND_MHZ = (1050.0, 1450.0)
+NOISE_CLOCK_PRODUCT       = 4096 * 4096 * 12
+DEFAULT_SCIENCE_BAND_MHZ  = (1050.0, 1450.0)
 DEFAULT_DIAGNOSTIC_BLOCKS = 31
-DEFAULT_CHANNEL_CHUNK = 256
-SMOOTHING_CHANNELS = 31
-PHASE_REFERENCE_MHZ = 1250.0
+DEFAULT_CHANNEL_CHUNK     = 256
+SMOOTHING_CHANNELS        = 31
+PHASE_REFERENCE_MHZ       = 1250.0
 
-BLACK = "#000000"
-BLUE = "#0072B2"
-ORANGE = "#D55E00"
-GREEN = "#009E73"
+BLACK   = "#000000"
+BLUE    = "#0072B2"
+ORANGE  = "#D55E00"
+GREEN   = "#009E73"
 MAGENTA = "#CC79A7"
 
 
@@ -128,10 +129,10 @@ def _frequency_axis(hdul: fits.HDUList, nchan: int) -> np.ndarray:
         if frequency.size == nchan:
             return frequency
 
-    primary = cast(Any, hdul[0]).header
+    primary    = cast(Any, hdul[0]).header
     sub_header = subint.header
-    centre = primary.get("OBSFREQ", sub_header.get("OBSFREQ"))
-    bandwidth = primary.get("OBSBW", sub_header.get("OBSBW"))
+    centre     = primary.get("OBSFREQ", sub_header.get("OBSFREQ"))
+    bandwidth  = primary.get("OBSBW", sub_header.get("OBSBW"))
     if centre is None or bandwidth is None:
         return np.arange(nchan, dtype=float)
     channel_width = float(bandwidth) / nchan
@@ -163,16 +164,16 @@ def compute_noise_cal_fold(
         hdu = cast(Any, hdul[1])
         if hdu.data is None:
             raise ValueError(f"FITS SUBINT table has no data: {path}")
-        header = hdu.header
-        nsub = int(header["NAXIS2"])
-        nsblk = int(header["NSBLK"])
-        npol = int(header["NPOL"])
-        nchan = int(header["NCHAN"])
+        header    = hdu.header
+        nsub      = int(header["NAXIS2"])
+        nsblk     = int(header["NSBLK"])
+        npol      = int(header["NPOL"])
+        nchan     = int(header["NCHAN"])
         time_reso = float(header["TBIN"])
         if npol < 2:
             raise ValueError(f"噪声管 FITS 至少需要 2 路偏振，实际为 {npol}")
 
-        raw = np.asarray(hdu.data["DATA"]).reshape(nsub * nsblk, npol, nchan)
+        raw           = np.asarray(hdu.data["DATA"]).reshape(nsub * nsblk, npol, nchan)
         frequency_mhz = _frequency_axis(hdul, nchan)
 
         period_samples = int(NOISE_CLOCK_PRODUCT / (time_reso * 1e9))
@@ -188,7 +189,7 @@ def compute_noise_cal_fold(
             )
 
         n_samples_used = n_periods * period_samples
-        periodic = raw[:n_samples_used].reshape(n_periods, period_samples, npol, nchan)
+        periodic       = raw[:n_samples_used].reshape(n_periods, period_samples, npol, nchan)
 
         # 先沿频率平均，得到方波轮廓和分时段稳定性图需要的小数组。
         # 显式使用 float64，保持旧版 np.mean 的数值行为。
@@ -200,22 +201,18 @@ def compute_noise_cal_fold(
             dtype=np.float64,
         )
 
-        power = np.asarray(
-            np.mean(folded_native[:, :2], axis=1), dtype=np.float64
-        )
+        power             = np.asarray(np.mean(folded_native[:, :2], axis=1), dtype=np.float64)
         threshold_on_mask = power > np.mean(power)
         if threshold_on_mask.all() or (~threshold_on_mask).all():
             raise ValueError("无法分离噪声管 on/off 状态")
 
-        nblocks = min(diagnostic_blocks, n_periods)
-        edges = np.linspace(0, n_periods, nblocks + 1, dtype=int)
+        nblocks      = min(diagnostic_blocks, n_periods)
+        edges        = np.linspace(0, n_periods, nblocks + 1, dtype=int)
         block_native = np.empty((nblocks, period_samples, npol), dtype=np.float64)
         for iblock in range(nblocks):
             start, stop = edges[iblock : iblock + 2]
             block_native[iblock] = np.asarray(
-                np.mean(
-                    per_period_native[start:stop], axis=0, dtype=np.float64
-                ),
+                np.mean(per_period_native[start:stop], axis=0, dtype=np.float64),
                 dtype=np.float64,
             )
 
@@ -225,33 +222,27 @@ def compute_noise_cal_fold(
         for first in range(0, nchan, channel_chunk):
             last = min(first + channel_chunk, nchan)
             folded_chunk = np.asarray(
-                np.mean(
-                    periodic[:, :, :, first:last], axis=0, dtype=np.float64
-                ),
+                np.mean(periodic[:, :, :, first:last], axis=0, dtype=np.float64),
                 dtype=np.float64,
             )
             noise_on = np.asarray(
-                np.mean(
-                    folded_chunk[threshold_on_mask], axis=0, dtype=np.float64
-                ),
+                np.mean(folded_chunk[threshold_on_mask], axis=0, dtype=np.float64),
                 dtype=np.float64,
             )
             noise_off = np.asarray(
-                np.mean(
-                    folded_chunk[~threshold_on_mask], axis=0, dtype=np.float64
-                ),
+                np.mean(folded_chunk[~threshold_on_mask], axis=0, dtype=np.float64),
                 dtype=np.float64,
             )
             noise_cal[:, first:last] = noise_on - noise_off
 
     return NoiseCalFold(
-        source_path=path,
-        frequency_mhz=frequency_mhz,
-        noise_cal=noise_cal,
-        folded_native=folded_native,
-        block_native=block_native,
-        period_samples=period_samples,
-        n_periods=n_periods,
+        source_path    = path,
+        frequency_mhz  = frequency_mhz,
+        noise_cal      = noise_cal,
+        folded_native  = folded_native,
+        block_native   = block_native,
+        period_samples = period_samples,
+        n_periods      = n_periods,
     )
 
 
@@ -262,13 +253,13 @@ def compute_noise_cal_fold(
 
 def _best_half_cycle_start(profile: np.ndarray) -> int:
     """在圆周轮廓上寻找积分功率最大的半周期起点。"""
-    profile = np.asarray(profile, dtype=float)
-    nbin = profile.size
-    half = nbin // 2
-    doubled = np.concatenate((profile, profile))
+    profile    = np.asarray(profile, dtype=float)
+    nbin       = profile.size
+    half       = nbin // 2
+    doubled    = np.concatenate((profile, profile))
     cumulative = np.concatenate(([0.0], np.cumsum(doubled)))
-    starts = np.arange(nbin)
-    sums = cumulative[starts + half] - cumulative[starts]
+    starts     = np.arange(nbin)
+    sums       = cumulative[starts + half] - cumulative[starts]
     return int(np.nanargmax(sums))
 
 
@@ -332,7 +323,7 @@ def _science_mask(
 ) -> tuple[np.ndarray, tuple[float, float]]:
     """选择科学频段；非标准接收机数据退回到中间 80% 频段。"""
     low, high = map(float, science_band_mhz)
-    mask = (frequency_mhz >= low) & (frequency_mhz <= high)
+    mask      = (frequency_mhz >= low) & (frequency_mhz <= high)
     if np.count_nonzero(mask) >= 4:
         return mask, (low, high)
 
@@ -355,33 +346,33 @@ def _diagnostic_label(path: Path) -> str:
 
 def _prepare_fold_diagnostic(folded: NoiseCalFold) -> _FoldDiagnostic:
     """计算折叠相位轮廓和分时段稳定性，供 A/B/C 图共用。"""
-    native = folded.folded_native[:, :4]
-    block_native = folded.block_native[:, :, :4]
-    stokes = native_to_stokes(native)
-    block_stokes = native_to_stokes(block_native)
+    native          = folded.folded_native[:, :4]
+    block_native    = folded.block_native[:, :, :4]
+    stokes          = native_to_stokes(native)
+    block_stokes    = native_to_stokes(block_native)
     nblock, nbin, _ = block_stokes.shape
-    phase = np.arange(nbin, dtype=float) / nbin
+    phase           = np.arange(nbin, dtype=float) / nbin
 
     # 噪声管占空比为 50%；在圆周相位上寻找 Stokes I 总功率最大的半周期。
     start_bin = _best_half_cycle_start(stokes[:, 0])
-    stop_bin = (start_bin + nbin // 2) % nbin
-    on_mask = _circular_half_mask(nbin, start_bin)
+    stop_bin  = (start_bin + nbin // 2) % nbin
+    on_mask   = _circular_half_mask(nbin, start_bin)
 
-    stokes_on = np.nanmedian(stokes[on_mask], axis=0)
+    stokes_on  = np.nanmedian(stokes[on_mask], axis=0)
     stokes_off = np.nanmedian(stokes[~on_mask], axis=0)
-    delta_i = float(stokes_on[0] - stokes_off[0])
+    delta_i    = float(stokes_on[0] - stokes_off[0])
     if not np.isfinite(delta_i) or delta_i <= 0:
         raise ValueError(f"折叠后的 Stokes I 跳变量不是正数：{delta_i}")
     normalized_stokes = (stokes - stokes_off) / delta_i
-    native_off = np.nanmedian(native[~on_mask], axis=0)
+    native_off        = np.nanmedian(native[~on_mask], axis=0)
     normalized_native = (
         (native - native_off) * np.asarray((1.0, 1.0, 2.0, 2.0)) / delta_i
     )
 
     # 每个时间块使用相同的 on/off 相位，比较方波幅度和边沿是否随时间漂移。
     block_profiles = block_stokes[:, :, 0]
-    block_off = np.nanmedian(block_profiles[:, ~on_mask], axis=1)
-    block_steps = np.nanmedian(block_profiles[:, on_mask], axis=1) - block_off
+    block_off      = np.nanmedian(block_profiles[:, ~on_mask], axis=1)
+    block_steps    = np.nanmedian(block_profiles[:, on_mask], axis=1) - block_off
     if np.any(~np.isfinite(block_steps)) or np.any(block_steps <= 0):
         raise ValueError("至少一个诊断时间块的 Stokes I 跳变量不是正数")
     normalized_block_i = (block_profiles - block_off[:, None]) / block_steps[:, None]
@@ -400,16 +391,16 @@ def _prepare_fold_diagnostic(folded: NoiseCalFold) -> _FoldDiagnostic:
         step_cv = 0.0
 
     return _FoldDiagnostic(
-        phase=phase,
-        normalized_native=normalized_native,
-        normalized_stokes=normalized_stokes,
-        normalized_block_i=normalized_block_i,
-        block_start_min=int(np.min(block_starts)),
-        block_start_max=int(np.max(block_starts)),
-        minimum_correlation=float(np.nanmin(correlations)),
-        on_start_bin=start_bin,
-        on_stop_bin=stop_bin,
-        step_cv_percent=step_cv,
+        phase               = phase,
+        normalized_native   = normalized_native,
+        normalized_stokes   = normalized_stokes,
+        normalized_block_i  = normalized_block_i,
+        block_start_min     = int(np.min(block_starts)),
+        block_start_max     = int(np.max(block_starts)),
+        minimum_correlation = float(np.nanmin(correlations)),
+        on_start_bin        = start_bin,
+        on_stop_bin         = stop_bin,
+        step_cv_percent     = step_cv,
     )
 
 
@@ -426,24 +417,24 @@ def _prepare_band_diagnostic(
     band_mask, plotted_band = _science_mask(frequency, science_band_mhz)
 
     # 先排除无效或非正响应通道，再剔除低于中值 5% 的坏通道。
-    finite = np.isfinite(noise_cal).all(axis=0) & np.isfinite(frequency)
+    finite   = np.isfinite(noise_cal).all(axis=0) & np.isfinite(frequency)
     positive = (aa > 0) & (bb > 0) & (delta_i_channel > 0)
-    initial = band_mask & finite & positive
+    initial  = band_mask & finite & positive
     if np.count_nonzero(initial) < 4:
         raise ValueError("科学频段内的正响应通道不足 4 个")
     median_i = float(np.nanmedian(delta_i_channel[initial]))
-    valid = initial & (delta_i_channel > 0.05 * median_i)
+    valid    = initial & (delta_i_channel > 0.05 * median_i)
     if np.count_nonzero(valid) < 4:
         raise ValueError("科学频段内可用于噪声管诊断的通道不足 4 个")
 
-    nchan = frequency.size
-    auto_raw = np.full((2, nchan), np.nan)
+    nchan              = frequency.size
+    auto_raw           = np.full((2, nchan), np.nan)
     auto_raw[0, valid] = aa[valid] / np.nanmedian(aa[valid])
     auto_raw[1, valid] = bb[valid] / np.nanmedian(bb[valid])
 
     # 只有交叉项振幅非零的通道才有定义良好的 cos、sin 和相位。
     cross_amplitude = np.hypot(delta_u, delta_v)
-    phase_valid = valid & np.isfinite(cross_amplitude) & (cross_amplitude > 0)
+    phase_valid     = valid & np.isfinite(cross_amplitude) & (cross_amplitude > 0)
     if np.count_nonzero(phase_valid) < 4:
         raise ValueError("具有有效交叉项相位的通道不足 4 个")
     phase_components_raw = np.full((2, nchan), np.nan)
@@ -458,8 +449,8 @@ def _prepare_band_diagnostic(
         np.arctan2(delta_v[phase_valid], delta_u[phase_valid])
     )
 
-    gain_raw = np.full(nchan, np.nan)
-    gain_raw[valid] = 10.0 * np.log10(aa[valid] / bb[valid])
+    gain_raw               = np.full(nchan, np.nan)
+    gain_raw[valid]        = 10.0 * np.log10(aa[valid] / bb[valid])
     polarized_fraction_raw = np.full(nchan, np.nan)
     polarized_fraction_raw[valid] = (
         np.sqrt(delta_q[valid] ** 2 + delta_u[valid] ** 2 + delta_v[valid] ** 2)
@@ -473,13 +464,13 @@ def _prepare_band_diagnostic(
     phase_smooth = np.rad2deg(
         np.arctan2(phase_components_smooth[1], phase_components_smooth[0])
     )
-    gain_smooth = _moving_nanmedian(gain_raw)
+    gain_smooth               = _moving_nanmedian(gain_raw)
     polarized_fraction_smooth = _moving_nanmedian(polarized_fraction_raw)
 
     phase_fit_mask = band_mask & np.isfinite(phase_smooth)
     if np.count_nonzero(phase_fit_mask) < 2:
         raise ValueError("可用于拟合交叉项相位的通道不足 2 个")
-    unwrapped_phase = np.rad2deg(np.unwrap(np.deg2rad(phase_smooth[phase_fit_mask])))
+    unwrapped_phase  = np.rad2deg(np.unwrap(np.deg2rad(phase_smooth[phase_fit_mask])))
     slope, intercept = np.polyfit(frequency[phase_fit_mask], unwrapped_phase, 1)
     phase_at_reference = float(
         (slope * PHASE_REFERENCE_MHZ + intercept + 180.0) % 360.0 - 180.0
@@ -487,23 +478,23 @@ def _prepare_band_diagnostic(
     delay_ns = float(slope * 1000.0 / 360.0)
 
     return _BandDiagnostic(
-        frequency=frequency,
-        valid=valid,
-        phase_valid=phase_valid,
-        plotted_band=plotted_band,
-        auto_raw=auto_raw,
-        auto_smooth=auto_smooth,
-        phase_components_raw=phase_components_raw,
-        phase_components_smooth=phase_components_smooth,
-        phase_raw=phase_raw,
-        phase_smooth=phase_smooth,
-        gain_raw=gain_raw,
-        gain_smooth=gain_smooth,
-        polarized_fraction_raw=polarized_fraction_raw,
-        polarized_fraction_smooth=polarized_fraction_smooth,
-        phase_at_reference_deg=phase_at_reference,
-        phase_slope_deg_per_mhz=float(slope),
-        differential_delay_ns=delay_ns,
+        frequency                 = frequency,
+        valid                     = valid,
+        phase_valid               = phase_valid,
+        plotted_band              = plotted_band,
+        auto_raw                  = auto_raw,
+        auto_smooth               = auto_smooth,
+        phase_components_raw      = phase_components_raw,
+        phase_components_smooth   = phase_components_smooth,
+        phase_raw                 = phase_raw,
+        phase_smooth              = phase_smooth,
+        gain_raw                  = gain_raw,
+        gain_smooth               = gain_smooth,
+        polarized_fraction_raw    = polarized_fraction_raw,
+        polarized_fraction_smooth = polarized_fraction_smooth,
+        phase_at_reference_deg    = phase_at_reference,
+        phase_slope_deg_per_mhz   = float(slope),
+        differential_delay_ns     = delay_ns,
     )
 
 
@@ -556,19 +547,19 @@ def _plot_fold_profile(
         ax.plot(
             fold_data.phase,
             values[:, index],
-            lw=1.25,
-            color=color,
-            label=label,
+            lw    = 1.25,
+            color = color,
+            label = label,
         )
-    nbin = fold_data.phase.size
+    nbin        = fold_data.phase.size
     start_phase = fold_data.on_start_bin / nbin
-    stop_phase = fold_data.on_stop_bin / nbin
+    stop_phase  = fold_data.on_stop_bin / nbin
     _shade_on_phase(ax, start_phase, stop_phase)
     ax.set(
-        title=title,
-        xlabel="Fold phase",
-        ylabel="Off-subtracted / ΔI",
-        xlim=(0, 1),
+        title  = title,
+        xlabel = "Fold phase",
+        ylabel = "Off-subtracted / ΔI",
+        xlim   = (0, 1),
     )
     ax.grid(alpha=0.18)
     ax.legend(ncol=legend_columns, frameon=False, loc="best")
@@ -583,26 +574,26 @@ def _plot_alignment_panel(
     nblock, nbin = fold_data.normalized_block_i.shape
     image = ax.imshow(
         fold_data.normalized_block_i,
-        origin="lower",
-        aspect="auto",
-        extent=(0.0, 1.0, -0.5, nblock - 0.5),
-        interpolation="nearest",
-        cmap="cividis",
-        vmin=-0.05,
-        vmax=1.05,
+        origin        = "lower",
+        aspect        = "auto",
+        extent        = (0.0, 1.0, -0.5, nblock - 0.5),
+        interpolation = "nearest",
+        cmap          = "cividis",
+        vmin          = -0.05,
+        vmax          = 1.05,
     )
     for transition_bin in (fold_data.on_start_bin, fold_data.on_stop_bin):
         ax.axvline(
             transition_bin / nbin,
-            color="white",
-            lw=1.0,
-            ls="--",
-            alpha=0.9,
+            color = "white",
+            lw    = 1.0,
+            ls    = "--",
+            alpha = 0.9,
         )
     ax.set(
-        title=f"C  Phase alignment over {nblock} time blocks",
-        xlabel="Fold phase",
-        ylabel="Time block",
+        title  = f"C  Phase alignment over {nblock} time blocks",
+        xlabel = "Fold phase",
+        ylabel = "Time block",
     )
     ax.text(
         0.98,
@@ -610,12 +601,12 @@ def _plot_alignment_panel(
         f"start bins {fold_data.block_start_min}–{fold_data.block_start_max}\n"
         f"ΔI CV {fold_data.step_cv_percent:.3f}%\n"
         f"min corr {fold_data.minimum_correlation:.6f}",
-        transform=ax.transAxes,
-        ha="right",
-        va="bottom",
-        fontsize=9.5,
-        color="white",
-        bbox={
+        transform = ax.transAxes,
+        ha        = "right",
+        va        = "bottom",
+        fontsize  = 9.5,
+        color     = "white",
+        bbox      = {
             "boxstyle": "round,pad=0.35",
             "facecolor": "black",
             "alpha": 0.55,
@@ -627,50 +618,50 @@ def _plot_alignment_panel(
 
 def _plot_phase_panel(ax: Axes, band_data: _BandDiagnostic) -> None:
     """绘制 D 图：交叉项的 cos、sin 和相位。"""
-    frequency = band_data.frequency
-    valid = band_data.phase_valid
-    cos_raw, sin_raw = band_data.phase_components_raw
+    frequency              = band_data.frequency
+    valid                  = band_data.phase_valid
+    cos_raw, sin_raw       = band_data.phase_components_raw
     cos_smooth, sin_smooth = band_data.phase_components_smooth
 
     ax.scatter(
         frequency[valid],
         cos_raw[valid],
-        s=3,
-        alpha=0.06,
-        color=ORANGE,
-        rasterized=True,
+        s          = 3,
+        alpha      = 0.06,
+        color      = ORANGE,
+        rasterized = True,
     )
     ax.scatter(
         frequency[valid],
         sin_raw[valid],
-        s=3,
-        alpha=0.06,
-        color=GREEN,
-        rasterized=True,
+        s          = 3,
+        alpha      = 0.06,
+        color      = GREEN,
+        rasterized = True,
     )
     line_cos = ax.plot(
         frequency,
         cos_smooth,
-        color=ORANGE,
-        lw=1.55,
-        label="U/C = cos φ",
+        color = ORANGE,
+        lw    = 1.55,
+        label = "U/C = cos φ",
     )[0]
     line_sin = ax.plot(
         frequency,
         sin_smooth,
-        color=GREEN,
-        lw=1.55,
-        label="V/C = sin φ",
+        color = GREEN,
+        lw    = 1.55,
+        label = "V/C = sin φ",
     )[0]
 
     # cos/sin 的物理范围是 [-1, 1]；上方额外留白专门放 legend。
     component_ylim = (-1.08, 1.35)
     ax.set(
-        title="D  Noise-cal cross-hand phase from Stokes U/V",
-        xlabel="Frequency (MHz)",
-        ylabel="Normalized cross-hand components",
-        xlim=band_data.plotted_band,
-        ylim=component_ylim,
+        title  = "D  Noise-cal cross-hand phase from Stokes U/V",
+        xlabel = "Frequency (MHz)",
+        ylabel = "Normalized cross-hand components",
+        xlim   = band_data.plotted_band,
+        ylim   = component_ylim,
     )
     ax.axhline(0.0, color="#777777", lw=0.8, ls="--")
     ax.grid(alpha=0.18)
@@ -679,17 +670,17 @@ def _plot_phase_panel(ax: Axes, band_data: _BandDiagnostic) -> None:
     ax2.scatter(
         frequency[valid],
         band_data.phase_raw[valid],
-        s=3,
-        alpha=0.04,
-        color=BLACK,
-        rasterized=True,
+        s          = 3,
+        alpha      = 0.04,
+        color      = BLACK,
+        rasterized = True,
     )
     line_phase = ax2.plot(
         frequency,
         band_data.phase_smooth,
-        color=BLACK,
-        lw=1.25,
-        label="φ = atan2(V, U)",
+        color = BLACK,
+        lw    = 1.25,
+        label = "φ = atan2(V, U)",
     )[0]
     # 相位轴也在顶部留出 legend 空间，保持上一版诊断图的显示范围。
     ax2.set_ylim(-185.0, 225.0)
@@ -701,9 +692,9 @@ def _plot_phase_panel(ax: Axes, band_data: _BandDiagnostic) -> None:
             str(line_sin.get_label()),
             str(line_phase.get_label()),
         ],
-        ncol=3,
-        frameon=False,
-        loc="upper center",
+        ncol    = 3,
+        frameon = False,
+        loc     = "upper center",
     )
     ax.text(
         0.02,
@@ -711,10 +702,10 @@ def _plot_phase_panel(ax: Axes, band_data: _BandDiagnostic) -> None:
         f"φ({PHASE_REFERENCE_MHZ:.0f} MHz) = "
         f"{band_data.phase_at_reference_deg:.1f}°\n"
         f"τdiff = {band_data.differential_delay_ns:.2f} ns",
-        transform=ax.transAxes,
-        va="bottom",
-        fontsize=9.3,
-        bbox={
+        transform = ax.transAxes,
+        va        = "bottom",
+        fontsize  = 9.3,
+        bbox      = {
             "boxstyle": "round,pad=0.35",
             "facecolor": "white",
             "alpha": 0.86,
@@ -726,31 +717,31 @@ def _plot_phase_panel(ax: Axes, band_data: _BandDiagnostic) -> None:
 def _plot_bandpass_panel(ax: Axes, band_data: _BandDiagnostic) -> None:
     """绘制 E 图：AA、BB 的 on−off 归一化带通。"""
     frequency = band_data.frequency
-    valid = band_data.valid
+    valid     = band_data.valid
     for index, (label, color) in enumerate((("ΔAA", BLUE), ("ΔBB", ORANGE))):
-        raw = band_data.auto_raw[index]
+        raw    = band_data.auto_raw[index]
         smooth = band_data.auto_smooth[index]
         ax.scatter(
             frequency[valid],
             raw[valid],
-            s=3,
-            alpha=0.08,
-            color=color,
-            rasterized=True,
+            s          = 3,
+            alpha      = 0.08,
+            color      = color,
+            rasterized = True,
         )
         ax.plot(
             frequency,
             smooth,
-            lw=1.6,
-            color=color,
-            label=f"{label} ({SMOOTHING_CHANNELS}-ch median)",
+            lw    = 1.6,
+            color = color,
+            label = f"{label} ({SMOOTHING_CHANNELS}-ch median)",
         )
     ax.set_ylim(*_robust_limits(band_data.auto_raw[:, valid], 0.5, 99.5, 0.08))
     ax.set(
-        title="E  On−off auto-correlation bandpass",
-        xlabel="Frequency (MHz)",
-        ylabel="Normalized response",
-        xlim=band_data.plotted_band,
+        title  = "E  On−off auto-correlation bandpass",
+        xlabel = "Frequency (MHz)",
+        ylabel = "Normalized response",
+        xlim   = band_data.plotted_band,
     )
     ax.grid(alpha=0.18)
     ax.legend(frameon=False, loc="best")
@@ -759,28 +750,28 @@ def _plot_bandpass_panel(ax: Axes, band_data: _BandDiagnostic) -> None:
 def _plot_amplitude_panel(ax: Axes, band_data: _BandDiagnostic) -> None:
     """绘制 F 图：差分增益和噪声管偏振度。"""
     frequency = band_data.frequency
-    valid = band_data.valid
+    valid     = band_data.valid
     ax.scatter(
         frequency[valid],
         band_data.gain_raw[valid],
-        s=3,
-        alpha=0.08,
-        color=BLUE,
-        rasterized=True,
+        s          = 3,
+        alpha      = 0.08,
+        color      = BLUE,
+        rasterized = True,
     )
     line_gain = ax.plot(
         frequency,
         band_data.gain_smooth,
-        color=BLUE,
-        lw=1.6,
-        label="Differential gain",
+        color = BLUE,
+        lw    = 1.6,
+        label = "Differential gain",
     )[0]
     ax.set(
-        title="F  Single-axis amplitude observables",
-        xlabel="Frequency (MHz)",
-        ylabel="10 log10(ΔAA/ΔBB) (dB)",
-        xlim=band_data.plotted_band,
-        ylim=_robust_limits(band_data.gain_raw[valid], 0.5, 99.5, 0.10),
+        title  = "F  Single-axis amplitude observables",
+        xlabel = "Frequency (MHz)",
+        ylabel = "10 log10(ΔAA/ΔBB) (dB)",
+        xlim   = band_data.plotted_band,
+        ylim   = _robust_limits(band_data.gain_raw[valid], 0.5, 99.5, 0.10),
     )
     ax.grid(alpha=0.18)
 
@@ -788,17 +779,17 @@ def _plot_amplitude_panel(ax: Axes, band_data: _BandDiagnostic) -> None:
     ax2.scatter(
         frequency[valid],
         band_data.polarized_fraction_raw[valid],
-        s=3,
-        alpha=0.06,
-        color=GREEN,
-        rasterized=True,
+        s          = 3,
+        alpha      = 0.06,
+        color      = GREEN,
+        rasterized = True,
     )
     line_pol = ax2.plot(
         frequency,
         band_data.polarized_fraction_smooth,
-        color=GREEN,
-        lw=1.35,
-        label="Polarized fraction",
+        color = GREEN,
+        lw    = 1.35,
+        label = "Polarized fraction",
     )[0]
     pol_low, pol_high = _robust_limits(
         band_data.polarized_fraction_raw[valid], 0.5, 99.5, 0.10
@@ -809,8 +800,8 @@ def _plot_amplitude_panel(ax: Axes, band_data: _BandDiagnostic) -> None:
     ax.legend(
         [line_gain, line_pol],
         [str(line_gain.get_label()), str(line_pol.get_label())],
-        frameon=False,
-        loc="best",
+        frameon = False,
+        loc     = "best",
     )
 
 
@@ -823,9 +814,9 @@ def _draw_diagnostic_figure(
     fig, axes = plt.subplots(3, 2, figsize=(16, 14), dpi=150)
     fig.suptitle(
         f"FAST Noise-Cal Fold Diagnostic — {_diagnostic_label(folded.source_path)}",
-        fontsize=19,
-        fontweight="bold",
-        y=0.985,
+        fontsize   = 19,
+        fontweight = "bold",
+        y          = 0.985,
     )
 
     _plot_fold_profile(
@@ -859,10 +850,10 @@ def _draw_diagnostic_figure(
         0.012,
         "Input products: AABBCRCI.  D: C = sqrt(U²+V²), cos φ = U/C, "
         "sin φ = V/C, φ = atan2(V,U).  Leakage terms are outside this diagnostic.",
-        ha="center",
-        va="bottom",
-        fontsize=9.3,
-        color="#444444",
+        ha       = "center",
+        va       = "bottom",
+        fontsize = 9.3,
+        color    = "#444444",
     )
     fig.tight_layout(rect=(0.025, 0.035, 0.985, 0.965), h_pad=2.0, w_pad=1.6)
     return fig
@@ -901,8 +892,8 @@ def plot_noise_cal_diagnostic(
     # 先完成两组数据推导，再按 A→F 顺序绘图；绘图过程不接触定标量计算。
     fold_data = _prepare_fold_diagnostic(folded)
     band_data = _prepare_band_diagnostic(folded, science_band_mhz)
-    metrics = _build_metrics(folded, fold_data, band_data)
-    figure = _draw_diagnostic_figure(folded, fold_data, band_data)
+    metrics   = _build_metrics(folded, fold_data, band_data)
+    figure    = _draw_diagnostic_figure(folded, fold_data, band_data)
     _save_figure(figure, output)
     return metrics
 
@@ -962,13 +953,13 @@ def _parse_args() -> argparse.Namespace:
     output_group.add_argument("--output", default=None, help="诊断图 PNG 路径")
     parser.add_argument(
         "--science-min",
-        type=float,
-        default=DEFAULT_SCIENCE_BAND_MHZ[0],
+        type    = float,
+        default = DEFAULT_SCIENCE_BAND_MHZ[0],
     )
     parser.add_argument(
         "--science-max",
-        type=float,
-        default=DEFAULT_SCIENCE_BAND_MHZ[1],
+        type    = float,
+        default = DEFAULT_SCIENCE_BAND_MHZ[1],
     )
     parser.add_argument("--no-diagnostic", action="store_true", help="只折叠，不画图")
     return parser.parse_args()
@@ -979,13 +970,15 @@ def _main() -> None:
     args = _parse_args()
     result = fold_noise_cal(
         args.cal_fits,
-        diagnostic_dir=args.output_dir,
-        diagnostic_path=args.output,
-        make_diagnostic=not args.no_diagnostic,
-        science_band_mhz=(args.science_min, args.science_max),
+        diagnostic_dir   = args.output_dir,
+        diagnostic_path  = args.output,
+        make_diagnostic  = not args.no_diagnostic,
+        science_band_mhz = (args.science_min, args.science_max),
     )
     print(f"noise_cal shape={result.shape}, dtype={result.dtype}")
 
 
 if __name__ == "__main__":
     _main()
+
+# fmt: on
