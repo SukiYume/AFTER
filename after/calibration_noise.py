@@ -165,11 +165,10 @@ def compute_noise_cal_fold(
     channel_chunk: int = DEFAULT_CHANNEL_CHUNK,
     noise_period_s: float = DEFAULT_NOISE_PERIOD_S,
 ) -> NoiseCalFold:
-    """折叠一个 FAST 噪声管 FITS，并保持旧定标算法的数值结果。
+    """折叠一个 FAST 噪声管 FITS，计算定标所需的 on−off。
 
-    ``noise_cal`` 仍是 :mod:`calibration` 原实现使用的 on−off。绘图所需的
-    时间轮廓单独累计，不能反过来改变定标量；频率方向分块处理，避免读取
-    4096 通道、数 GB FITS 时出现过高的瞬时内存占用。
+    绘图所需的时间轮廓单独累计，不参与 ``noise_cal`` 计算；频率方向分块
+    处理，避免读取 4096 通道、数 GB FITS 时出现过高的瞬时内存占用。
     """
     path = Path(cal_fits_path).expanduser().resolve()
     if diagnostic_blocks < 1:
@@ -220,7 +219,7 @@ def compute_noise_cal_fold(
         periodic       = raw[:n_samples_used].reshape(n_periods, period_samples, npol, nchan)
 
         # 先沿频率平均，得到方波轮廓和分时段稳定性图需要的小数组。
-        # 显式使用 float64，保持旧版 np.mean 的数值行为。
+        # 使用 float64 累计折叠统计量，避免低精度累计误差。
         per_period_native = np.asarray(
             np.mean(periodic, axis=3, dtype=np.float64), dtype=np.float64
         )
@@ -243,8 +242,8 @@ def compute_noise_cal_fold(
                 dtype=np.float64,
             )
 
-        # 按频率分块折叠，计算与旧版完全相同的 noise_on - noise_off，
-        # 但不创建约 0.5 GB 的完整折叠数据立方。
+        # 按频率分块计算 noise_on - noise_off，避免创建约 0.5 GB 的完整
+        # 折叠数据立方。
         noise_cal = np.empty((npol, nchan), dtype=np.float64)
         for first in range(0, nchan, channel_chunk):
             last = min(first + channel_chunk, nchan)

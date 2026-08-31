@@ -79,9 +79,9 @@ def parse_dm_file(path):
         return f"{sign}{dd}d{mm}m{ss}s"
 
     sources = []
-    with open(path, "r", encoding="utf-8") as f:
-        for line_no, line in enumerate(f, start=1):
-            line = line.strip()
+    with open(path, encoding="utf-8") as f:
+        for line_no, raw_line in enumerate(f, start=1):
+            line = raw_line.strip()
             if not line or line.startswith("#"):
                 continue
             parts = line.split()

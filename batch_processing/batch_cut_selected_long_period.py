@@ -1,12 +1,10 @@
 # fmt: off
 
-"""Cut selected CHIME/ILTJ long-period transient candidates.
+"""按清单切出选定的 CHIME/ILTJ 长周期暂现源候选体。
 
-This wrapper reads Selected_LongPeriod_Burst.txt, which is a Burst.txt-like
-table with an extra row-level segment_length plus short image provenance
-columns. It uses the same cut_burst_data helpers as batch_cut_burst_data.py,
-but writes outputs under {output_root}/{source}/{date}/ and honors each row's
-segment length.
+``Selected_LongPeriod_Burst.txt`` 在 Burst.txt 字段之外，为每一行提供
+``segment_length`` 和图像来源字段。输出写入
+``{output_root}/{source}/{date}/``，每组数据使用清单指定的片段长度。
 """
 
 from __future__ import annotations
@@ -24,19 +22,15 @@ PROJECT_DIR = SCRIPT_DIR.parent
 if str(PROJECT_DIR) not in sys.path:
     sys.path.insert(0, str(PROJECT_DIR))
 
+from after.cut_burst_data import (  # noqa: E402  # 先把仓库根目录加入 sys.path
+    calc_dispersion_shift,
+    cut_one_burst,
+    read_obs_info,
+    save_obs_json,
+)
+
 DEFAULT_PLAN        = SCRIPT_DIR / "Selected_LongPeriod_Burst.txt"
 DEFAULT_OUTPUT_ROOT = "/path/to/after_data/LPT_Selected_Cut"
-
-
-def load_cut_helpers():
-    from after.cut_burst_data import (
-        calc_dispersion_shift,
-        cut_one_burst,
-        read_obs_info,
-        save_obs_json,
-    )
-
-    return calc_dispersion_shift, cut_one_burst, read_obs_info, save_obs_json
 
 
 def read_plan(path: Path) -> list[dict]:
@@ -134,9 +128,6 @@ def run_group(group_key, rows, output_root: Path, workers: int, dry_run: bool):
     if not cal_dst.exists():
         shutil.copy2(data_path / file_list[0], cal_dst)
 
-    calc_dispersion_shift, cut_one_burst, read_obs_info, save_obs_json = (
-        load_cut_helpers()
-    )
     info              = read_obs_info(str(data_path), file_list)
     shifts, max_shift = calc_dispersion_shift(dm, info["freq"], info["time_reso"])
     cut_args = [
@@ -164,7 +155,7 @@ def run_group(group_key, rows, output_root: Path, workers: int, dry_run: bool):
         for cut_arg in cut_args:
             cut_one_burst(*cut_arg)
 
-    save_obs_json(str(save_path), info, dm)
+    save_obs_json(str(save_path))
     return {
         "source": source,
         "date": date,
@@ -223,7 +214,7 @@ def main():
     print(f"Loaded {len(rows)} rows in {len(grouped)} cut groups")
     results = []
     for key, group_rows in sorted(grouped.items(), key=lambda item: item[0]):
-        group_rows = sorted(group_rows, key=lambda row: row["time"])
+        group_rows.sort(key=lambda row: row["time"])
         results.append(
             run_group(key, group_rows, output_root, args.workers, args.dry_run)
         )

@@ -23,9 +23,7 @@ from matplotlib import gridspec
 try:
     from numba import njit, prange
 except ImportError:
-    # RM 网格构建和联合 RM 流程本身不依赖 Numba。若当前 Numba 与 NumPy
-    # 暂时不兼容，仍允许模块正常导入；此时合成内核按普通 Python/NumPy
-    # 执行，计算公式不变，只是速度可能较慢。
+    # Numba 不可用时，RM 合成内核按相同公式在 Python/NumPy 路径执行。
     def njit(*decorator_args, **_decorator_kwargs):
         """在 Numba 不可用时提供不改变函数的 ``njit`` 兼容装饰器。"""
         if len(decorator_args) == 1 and callable(decorator_args[0]):
@@ -443,13 +441,12 @@ def calc_pa_profile(I, Q, U, V, burst_mask, freq_mask, noise_mask):
     PAT = np.arange(nsamp, dtype=np.float64)
 
     # 爆发区域外置 NaN，高误差点也置 NaN
-    burst_idx           = burst_mask.astype(int)
-    PAV[burst_idx != 1] = np.nan
-    PAE[burst_idx != 1] = np.nan
+    PAV[~burst_mask] = np.nan
+    PAE[~burst_mask] = np.nan
 
     # PA 误差阈值: 爆发区误差中心 + 2σ。仅用 2σ 会在误差近似常量时
     # 得到接近零的阈值，从而误删所有有效 PA 点。
-    burst_PAE = PAE[burst_idx == 1]
+    burst_PAE = PAE[burst_mask]
     if np.any(np.isfinite(burst_PAE)):
         pae_center = np.nanmedian(burst_PAE)
         pae_spread = np.nanstd(burst_PAE)
@@ -503,12 +500,10 @@ def calc_pol_fractions(profile_I, profile_L, profile_V, burst_mask, rms):
     circular_frac, circular_err : float
         圆偏振分数及误差 (%)。
     """
-    burst_idx = burst_mask.astype(int)
-    I_sum     = profile_I[burst_idx == 1].sum()
-    L_sum     = profile_L[burst_idx == 1].sum()
-    V_sum     = profile_V[burst_idx == 1].sum()
-
-    n_burst = np.sum(burst_idx == 1)
+    I_sum   = profile_I[burst_mask].sum()
+    L_sum   = profile_L[burst_mask].sum()
+    V_sum   = profile_V[burst_mask].sum()
+    n_burst = np.count_nonzero(burst_mask)
     snr     = I_sum / np.sqrt(n_burst) / rms if (rms > 0 and n_burst > 0) else 1.0
     snr     = max(snr, 1.0)
 
@@ -543,9 +538,8 @@ def plot_polarization(
 ):
     """三面板偏振图: PA、Stokes 轮廓、动态谱。
 
-    fmt='png' 用于单 burst 输出; fmt='pdf' 用于跨爆发合并 (复刻老代码
-    plot_spec(..., comb=True)), PAV / PAE 传入合并后的全时段数组即可 —
-    布局完全一样, 只是输出格式不同.
+    ``fmt='png'`` 输出单个爆发图；``fmt='pdf'`` 输出跨爆发合并图。
+    合并时传入覆盖完整时段的 PAV / PAE 数组，面板布局保持一致。
     """
     nsamp, nchan = stokes_I_2d.shape
 

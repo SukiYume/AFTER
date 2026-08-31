@@ -4,7 +4,7 @@
 
 这个入口只负责“原始观测 -> burst FITS”，不做流量、偏振或噪声管定标。
 它复用 :mod:`after.cut_burst_data` 中已经过测试的跨文件读取和消色散逻辑，
-并把结果写回历史流程使用的短 PSRFITS 格式。
+并把结果写成短 PSRFITS 格式。
 
 典型用法::
 
@@ -14,7 +14,7 @@
 
 清单通常包含 ``base project name date beam dm time`` 七列。其中 ``base``
 写成 ``data31`` 或 ``data32`` 时，原始目录会解释为
-``/<base>/<project>/<name>/<date>``。旧清单若没有 ``base`` 列，必须额外传入
+``/<base>/<project>/<name>/<date>``。没有 ``base`` 列的清单必须额外传入
 ``--raw-root``，避免程序猜测数据位置。
 """
 
@@ -25,9 +25,9 @@ import csv
 import os
 import shutil
 import sys
+from collections.abc import Iterable
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Iterable
 
 import numpy as np
 from astropy.io import fits
@@ -99,8 +99,8 @@ def read_burst_txt(path: Path, raw_root: Path | None = None) -> list[BurstRow]:
     ]
     if not text_lines:
         raise ValueError(f"空清单: {path}")
-    # 精确重建索引是 TSV，必须保留 blocked 行中的空 manifest 列；普通
-    # Burst.txt 仍允许任意空白分隔，以兼容历史清单。
+    # TSV 精确索引需要保留 blocked 行中的空 manifest 列；普通 Burst.txt
+    # 使用任意空白分隔。
     if "\t" in text_lines[0]:
         lines = list(csv.reader(text_lines, delimiter="\t"))
     else:
@@ -120,7 +120,7 @@ def read_burst_txt(path: Path, raw_root: Path | None = None) -> list[BurstRow]:
             raise ValueError(
                 f"{path}:{line_number} 列数为 {len(fields)}，表头为 {len(header)}"
             )
-        record   = dict(zip(header, fields))
+        record   = dict(zip(header, fields, strict=True))
         project  = record["project"]
         raw_name = record["name"]
         date     = record["date"]
@@ -414,8 +414,8 @@ def cut_group(
     template_path = first.raw_dir / template_name
     total_samples = int(info["file_nsamp"]) * len(file_list)
     for row in rows:
-        # 旧 Burst 表中的 time 常只保留两位小数，可能偏离几十个采样点。
-        # 精确重建索引若提供 start_sample，应以它为准；time 只保留作科学记录。
+        # 两位小数的 time 可能偏离几十个采样点；提供 start_sample 时以精确
+        # 采样位置切片，time 只用于科学记录。
         center_sample = (
             row.start_sample + effective_segment_length // 2
             if row.start_sample is not None

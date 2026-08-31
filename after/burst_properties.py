@@ -96,7 +96,7 @@ def _fit_gaussian(x, y, snr_min=3.0):
     except (RuntimeError, ValueError):
         return nan_result
 
-    amp_fit, mu_fit, sigma_fit, offset_fit = popt
+    amp_fit, mu_fit, sigma_fit, _ = popt
 
     # 拟合质量检验: 拟合的振幅应该是正数，且 sigma 合理
     if amp_fit <= 0 or sigma_fit <= 0:
@@ -204,8 +204,8 @@ def calc_burst_properties(
     data           = stokes_I.copy()
     data[rfi_mask] = np.nan
 
-    # 时间轮廓：只在爆发频率范围内做通道平均（与老代码
-    # cal_energy_burstbw 对齐），避免全带宽里的 RFI 或无信号通道稀释窄带爆发。
+    # 时间轮廓只在爆发频率范围内做通道平均，避免全带宽里的 RFI 或无信号
+    # 通道稀释窄带爆发。
     # 动态谱像素若为 Jy，沿频率取平均只是用通道数归一化，因此轮廓每个时间点
     # 的单位仍为 Jy；这里不是频率积分，所以不会额外带上 MHz。
     if freq_index is not None and np.any(freq_index):
@@ -247,7 +247,7 @@ def calc_burst_properties(
     n_burst      = te - ts
     finite_noise = noise_profile[np.isfinite(noise_profile)]
     rng          = np.random.default_rng() if rng is None else rng
-    if finite_noise.size >= n_burst and n_burst > 0:
+    if 0 < n_burst <= finite_noise.size:
         boot_peaks    = np.zeros(n_boot)
         boot_fluences = np.zeros(n_boot)
         for b in range(n_boot):
@@ -262,9 +262,8 @@ def calc_burst_properties(
         fluence_err = noise_std * np.sqrt(max(n_burst, 1)) * (time_reso * 1e3)
 
     # ---- 增益系统误差 -> flux / fluence 的系统误差 ----
-    # 老代码: burst_flux * mean_gain * (1/mean_gain - 1/(mean_gain+mean_gain_err))
-    # 取爆发频率范围内的增益均值, 排除 RFI 通道 (全时段都是 NaN 的频道).
-    # 必须在 width_err 之前计算, width_err 公式同时叠加测量与系统误差.
+    # 在爆发频率范围内对增益求均值，并排除全时段均为 NaN 的 RFI 通道。
+    # 系统误差因子为 gain * (1/gain - 1/(gain + gain_err))。
     if gain is not None and gain_err is not None and np.any(freq_index):
         rfi_chan_1d = (
             np.all(rfi_mask, axis=0) if rfi_mask.ndim == 2 else rfi_mask.astype(bool)
@@ -287,9 +286,7 @@ def calc_burst_properties(
         fluence_err_sys = 0.0
 
     # ---- 等效宽度 (ms) ----
-    # width_err 公式与老代码 cal_energy_burstbw 对齐，系统误差与测量误差线性叠加：
-    # 下式中的变量名与返回字典字段一致。
-    # 计算式：width_err = width * sqrt(((flu_sys+flu_mea)/flu)^2 + ((flux_sys+flux_mea)/flux)^2)
+    # 测量误差与系统误差分别线性合并，再传播到 fluence / flux_peak。
     width = fluence / flux_peak if flux_peak > 0 else 0.0
     if flux_peak > 0 and fluence > 0:
         total_flu_err  = fluence_err + fluence_err_sys

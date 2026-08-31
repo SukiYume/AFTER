@@ -108,7 +108,7 @@ def extract_segment(data_path, file_list, info, start_sample, total_length):
             with fits.open(fpath) as f:
                 subint_hdu = cast(Any, f[1])
                 if subint_hdu.data is None:
-                    raise ValueError(f"FITS SUBINT table has no data: {fpath}")
+                    raise ValueError(f"FITS SUBINT table has no data: {fpath}") from None
                 h         = subint_hdu.header
                 fdata_raw = subint_hdu.data
         fdata = fdata_raw["DATA"].reshape(
@@ -245,10 +245,8 @@ def cut_one_burst(
     print(f"  [完成] {h5_name}")
 
 
-def save_obs_json(output_dir, info, dm):
+def save_obs_json(output_dir):
     """扫描每个 burst H5 的属性，生成可表达混合配置的 obs_info.json。"""
-    # 保留旧调用签名；汇总值必须来自每个 H5，不能来自最后处理的一组。
-    del info, dm
     json_path = write_obs_info_json(output_dir)
     if json_path is not None:
         print(f"  [JSON] {json_path}")
@@ -274,7 +272,7 @@ if __name__ == "__main__":
     # ============================================================
 
     # 1. 文件列表：仅保留指定 beam 的 FITS，按文件名排序
-    pattern = "M{:0>2d}".format(BEAM)
+    pattern = f"M{BEAM:02d}"
     file_list = sorted(
         f for f in os.listdir(DATA_PATH) if pattern in f and f.endswith(".fits")
     )
@@ -336,7 +334,7 @@ if __name__ == "__main__":
             cut_one_burst(*args)
 
     # 7. 汇总 obs_info.json
-    save_obs_json(SAVE_PATH, info, DM)
+    save_obs_json(SAVE_PATH)
 
     print("全部完成")
 

@@ -10,7 +10,7 @@
   2. 用非 burst 时段作为 noise_mask, 先按通道减噪声区中值基线。
   3. 在减完基线的有效 Stokes 上调用 after.rfi.cal_rfi, 再叠加局部鲁棒通道
      统计和 H5 已保存的 calibration/detection 通道 mask。默认只应用通道级 RFI,
-     不把逐像素 mask 用到信号上；需要复现旧行为时才显式启用 pixel mask。
+     设置 rfi_channel_only=False 时同时应用逐像素 mask。
   4. 在每个检测框内用 Stokes I 自动选取超过主峰分数阈值且超过噪声阈值的
      强时间采样点，RM/偏振只使用这些采样点，基本物理量和 DM 仍使用完整框。
   5. 画一张总览动态谱 + burst 区域高亮。
@@ -243,7 +243,7 @@ def _true_runs(mask):
     edges  = np.diff(padded)
     starts = np.flatnonzero(edges == 1)
     ends   = np.flatnonzero(edges == -1)
-    return list(zip(starts, ends))
+    return list(zip(starts, ends, strict=True))
 
 
 def plot_rm_selection(
@@ -349,7 +349,7 @@ def analyze_one_file(
         分析时希望使用的 "相对原始 raw 数据" 的下采样倍率。整除 _cal.h5
         里 attrs['down_time/freq'] 的余数必须为 0; 不允许小于已存的倍率
         (那种情况要求重新跑 calibration 阶段降低保存倍率)。两个参数都
-        默认 None, 即沿用 _cal.h5 已有分辨率不再额外下采样。
+        默认 None，即直接使用 _cal.h5 的已有分辨率。
     """
     basename  = os.path.splitext(os.path.basename(cal_h5_path))[0]
     burst_dir = os.path.join(output_dir, basename)
@@ -485,11 +485,11 @@ def analyze_one_file(
     # 先减基线再找 RFI, 避免通道间固定基线结构影响通道级 RFI 判定。
     baseline = np.nanmedian(iquv[:, noise_mask, :], axis=1, keepdims=True)
     iquv     = iquv - baseline
-    I, V     = iquv[0], iquv[3]
 
     # ---- 4. 精细 RFI 标记: 在减完基线、target-down 后的数据上重新计算 mask ----
     # 四路产品用全部 Stokes；两路产品只用唯一有效的 I。只要参与分析的任一
-    # Stokes 显示持续污染，就整频道屏蔽。逐像素结果仅在旧模式时应用。
+    # Stokes 显示持续污染，就整频道屏蔽。仅在 rfi_channel_only=False 时应用
+    # 逐像素掩码。
     rfi_stokes   = iquv if polarization_available else iquv[:1]
     cal_channels = []
     pixel_masks  = []
@@ -584,8 +584,7 @@ def analyze_one_file(
         )
 
     results           = []
-    # 跨爆发合并 PA: 每个爆发只在自己时间窗口内有 PAV/PAE, 窗口外为 NaN.
-    # 复刻老代码 plot_spec(..., comb=True) 的 PDF 输出.
+    # 合并 PA 图中，每个爆发只在自己的时间窗口内提供 PAV/PAE，窗口外为 NaN。
     PAV_ALL, PAE_ALL  = [], []
     last_pol_profiles = None  # (prof_I, prof_L, prof_V) 取最后一个成功的爆发
     for bi, region in indexed_regions:
@@ -750,11 +749,11 @@ def analyze_one_file(
         row.update(pol_out)
         results.append(row)
 
-    # ---- 7. 跨爆发合并 PA 的 PDF (复刻 plot_spec(..., comb=True)) ----
+    # ---- 7. 跨爆发合并 PA 的 PDF ----
     if PAV_ALL and last_pol_profiles is not None:
         PAV_comb = np.full_like(PAV_ALL[0], np.nan)
         PAE_comb = np.full_like(PAE_ALL[0], np.nan)
-        for pav_i, pae_i in zip(PAV_ALL, PAE_ALL):
+        for pav_i, pae_i in zip(PAV_ALL, PAE_ALL, strict=True):
             ok           = ~np.isnan(pav_i)
             PAV_comb[ok] = pav_i[ok]
             PAE_comb[ok] = pae_i[ok]

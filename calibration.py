@@ -1,13 +1,12 @@
 # fmt: off
 
-"""Backward-compatible launcher and import shim for :mod:`after.calibration`.
+"""仓库根目录下的定标启动与导入入口。
 
-Run this file from the repository root to keep the historical command:
+直接运行时启动 :mod:`after.calibration`：
 
     python calibration.py
 
-Edit the observation-specific constants in ``after/calibration.py``.  Imports
-such as ``from calibration import process_one_burst`` remain supported.
+作为模块导入时公开 :mod:`after.calibration` 的接口。
 """
 
 if __name__ == "__main__":

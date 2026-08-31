@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 # fmt: off
 
 """
@@ -347,25 +346,6 @@ def stat_range(df, col, digits=2, suffix=""):
     if col not in df.columns or not df[col].notna().any():
         return "—"
     return f"{fmt_value(df[col].min(), digits, suffix)} – {fmt_value(df[col].max(), digits, suffix)}"
-
-
-# 用 unicode 上标拼科学计数法，避免在 HTML 里写 <sup>。
-_SUPERSCRIPT = str.maketrans("0123456789-", "⁰¹²³⁴⁵⁶⁷⁸⁹⁻")
-
-
-def fmt_sci(value, sig=2, suffix=""):
-    """把数字格式化成 'm×10ⁿ'（用 unicode 上标，无需 HTML 标签）。"""
-    if value is None:
-        return "—"
-    try:
-        v = float(value)
-    except (TypeError, ValueError):
-        return "—"
-    if not math.isfinite(v) or v == 0:
-        return "—"
-    exp  = int(math.floor(math.log10(abs(v))))
-    mant = v / 10.0**exp
-    return f"{mant:.{sig - 1}f}×10{str(exp).translate(_SUPERSCRIPT)}{suffix}"
 
 
 def fluence_bandwidth_jy_ms_ghz(df):
@@ -941,7 +921,7 @@ def build_hero_strip(df):
         f'<line class="strip-axis" x1="{pad_l:.1f}" y1="{base_y:.1f}" '
         f'x2="{W - pad_r:.1f}" y2="{base_y:.1f}"/>'
     ]
-    for x, h, sv in zip(xs, hs, s):
+    for x, h, sv in zip(xs, hs, s, strict=True):
         opacity = 0.32 + 0.68 * (sv / smax)  # S/N 越高越不透明
         parts.append(
             f'<line class="strip-mark" x1="{x:.1f}" y1="{base_y:.1f}" '
@@ -1088,9 +1068,8 @@ def build_cards(df, overview, snr_threshold, dm_err_threshold):
 def build_detail_table(df, show_pol, print_cap=200):
     """burst 明细表。无可靠 RM 时隐去偏振相关列。
 
-    大目录处理：网页版始终渲染全部行（可滚动浏览）；但当行数超过 print_cap 时，打印
-    版只保留 S/N 最高的 print_cap 行——靠给其余行打上 print-hide 类、在 @media print
-    里隐藏实现，所以网页体验完全不受影响。
+    网页版始终渲染全部行并允许滚动浏览。行数超过 print_cap 时，打印版只显示
+    S/N 最高的 print_cap 行，其余行通过 print-hide 类隐藏。
     """
     columns = [c for c in DETAIL_COLUMNS if c in df.columns]
     if not show_pol:
@@ -1591,7 +1570,7 @@ def build_html(df, csv_path, output_path, analysis_dir, metadata, args):
         seam_class = "seam caution"
         pol_note = (
             f"本次观测没有 RM 显著性达到阈值（≥ {args.rm_significance_threshold:g}）的 burst，"
-            "因此不展示偏振 / RM 图。linear_frac、circular_frac 仅作为流水线字段保留。"
+            "因此不展示偏振 / RM 图；结果表仍包含 linear_frac 和 circular_frac 字段。"
         )
 
     css = build_css()

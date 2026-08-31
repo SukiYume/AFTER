@@ -41,10 +41,11 @@ import math
 import multiprocessing
 import re
 import warnings as py_warnings
+from collections.abc import Iterable
 from concurrent.futures import ProcessPoolExecutor
 from dataclasses import dataclass, replace
 from pathlib import Path
-from typing import Any, Iterable, TypedDict, cast
+from typing import Any, TypedDict, cast
 
 import h5py
 import matplotlib
@@ -339,9 +340,8 @@ def validate_args(args: argparse.Namespace) -> None:
         raise ValueError("--max-bursts must be positive")
     if args.min_channels < 2:
         raise ValueError("--min-channels must be at least 2")
-    if args.freq_min is not None and args.freq_max is not None:
-        if args.freq_max <= args.freq_min:
-            raise ValueError("--freq-max must be greater than --freq-min")
+    if args.freq_min is not None and args.freq_max is not None and args.freq_max <= args.freq_min:
+        raise ValueError("--freq-max must be greater than --freq-min")
     if args.max_weight_ratio < 1:
         raise ValueError("--max-weight-ratio must be at least 1")
     if args.transform_chunk_size < 1:
@@ -465,7 +465,7 @@ def discover_h5_files(
         iterator = cal_dir.rglob("*_cal.h5") if recursive else cal_dir.glob("*_cal.h5")
         files    = [path.resolve() for path in iterator]
 
-    unique  = sorted(set(files), key=lambda path: str(path))
+    unique  = sorted(set(files), key=str)
     missing = [path for path in unique if not path.is_file()]
     if missing:
         preview = "\n".join(f"  {path}" for path in missing[:10])
@@ -579,8 +579,8 @@ def i_only_time_candidates(
 
     先在有效频率通道上平均成时间轮廓，用脉冲外样本的中位数和 MAD 估计基线与
     噪声，再采用与单爆发分析相同的三点三角核 ``[0.25, 0.5, 0.25]`` 轻度平滑。
-    与旧的逐爆发门控不同，这里不使用“本爆发峰值的某个比例”作为门限；区域内
-    所有高于绝对 ``min_snr`` 的点都交给后续全观测联合优化。
+    候选点只使用绝对 ``min_snr`` 门限，不使用相对本爆发峰值的门限；区域内
+    所有达标点都交给后续全观测联合优化。
 
     返回全时间轴布尔掩码、峰值/噪声/数量摘要，以及完整的平滑 SNR 轮廓。
     """
@@ -807,7 +807,7 @@ def complex_faraday_transform(
     wave2_m2: np.ndarray,
     rm_grid: np.ndarray,
     chunk_size: int = 256,
-    output_dtype: np.dtype = np.dtype(np.complex128),
+    output_dtype=np.complex128,
 ) -> np.ndarray:
     """在中心化的波长平方坐标上去旋转 ``Q+iU``，返回 ``F(时间, RM)``。
 
@@ -1123,7 +1123,7 @@ def individual_rm_curves(
         burst.wave2_m2,
         rm_grid,
         chunk_size   = chunk_size,
-        output_dtype = np.dtype(np.complex128),
+        output_dtype = np.complex128,
     )
     variance = max(burst.noise_variance_one_time, np.finfo(float).tiny)
     linear_degree = np.sum(np.abs(faraday), axis=0) / max(
@@ -1249,7 +1249,7 @@ def precompute_noise_transforms(
             burst.wave2_m2,
             rm_grid,
             chunk_size   = chunk_size,
-            output_dtype = np.dtype(np.complex64),
+            output_dtype = np.complex64,
         )
         print(
             f"  null pool {burst.component_id}: {requested}/{available} "
@@ -1373,8 +1373,7 @@ def run_empirical_null(
                     "observed_null_grid_peak_robust_z": observed_z,
                     "raw_null_exceedances": raw_exceedances,
                     "contrast_null_exceedances": contrast_exceedances,
-                    # 为兼容旧读取程序保留通用字段，但现在统一指向科学上更合适的
-                    # RM 曲线对比度零分布，而不是未经标准化的原始功率零分布。
+                    # 通用显著性字段使用 RM 曲线对比度零分布。
                     "null_exceedances": contrast_exceedances,
                     "n_null": n_null,
                     "empirical_p_raw_power": float(
@@ -1401,8 +1400,7 @@ def run_empirical_null(
         null_archive[f"raw__{method}__{window_name}"] = values
     for (method, window_name), values in contrast_maxima.items():
         null_archive[f"contrast__{method}__{window_name}"] = values
-        # 保留历史归档键名，但令其指向 ``empirical_p`` 实际使用的、已修正的
-        # 最大稳健 z 分布，避免旧工具读到与摘要显著性不一致的数据。
+        # 标准归档键与 ``empirical_p`` 使用相同的最大稳健 z 分布。
         null_archive[f"{method}__{window_name}"]           = values
     return pd.DataFrame(rows), null_archive, pool_archive
 
@@ -2460,8 +2458,8 @@ def main(argv: list[str] | None = None) -> int:
     files   = discover_h5_files(cal_dir, args.file_list, args.recursive)
 
     # ---- 2. 读取 H5、减脉冲外基线并构造候选分量 ----
-    # 输出目录在输入全部通过基础校验后才创建，并且从不复用旧目录，避免新旧
-    # 运行产物混杂。多进程只负责互相独立的逐文件加载，汇总顺序仍与输入一致。
+    # 输入通过基础校验后再创建全新的输出目录。多进程只负责互相独立的
+    # 逐文件加载，汇总顺序与输入一致。
     output_dir.mkdir(parents=True)
     print(f"Found {len(files)} calibrated H5 files in {cal_dir}", flush=True)
     bursts: list[BurstRMData] = []

@@ -7,9 +7,8 @@
   2. analysis 阶段：已通过 burst_detect 得到信号位置，噪声区域是非 burst 时段，
      噪声统计不受信号污染，结果更干净。
 
-两处本质上是同一套算法（熵或 FFT + 像素异常），差异只在传入的 noise_mask。
-因此统一抽到本模块。核心逻辑沿用 processing_old/data_process_rfi.cal_rfi 的
-熵方法（在旧流程中经过大量观测验证）。
+两处使用同一套算法（熵或 FFT + 像素异常），差异只在传入的 noise_mask。
+通道级默认使用熵统计，像素级使用中值和 MAD 标记离群点。
 """
 
 import numpy as np

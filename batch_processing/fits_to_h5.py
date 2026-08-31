@@ -103,11 +103,12 @@ def is_date_dir(path: Path) -> bool:
 
 
 def is_source_frb_dir(path: Path, prefix: str) -> bool:
-    if not path.is_dir() or not path.name.startswith(prefix):
-        return False
-    if path.name.endswith("_H5") or path.name == "H5_Cut":
-        return False
-    return True
+    return (
+        path.is_dir()
+        and path.name.startswith(prefix)
+        and not path.name.endswith("_H5")
+        and path.name != "H5_Cut"
+    )
 
 
 def parse_burst_catalog(catalog_dir: Path, prefix: str):
@@ -131,7 +132,7 @@ def parse_burst_catalog(catalog_dir: Path, prefix: str):
                 if len(parts) >= 7:
                     base, project, raw_name, date, beam, dm, toa = parts[:7]
                 elif len(parts) >= 6:
-                    # FRB190520 使用旧六列格式：name beam project dm date time。
+                    # 六列清单按 name beam project dm date time 解析。
                     raw_name, beam, project, dm, date, toa = parts[:6]
                     base = ""
                 else:

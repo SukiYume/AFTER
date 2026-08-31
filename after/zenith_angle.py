@@ -61,7 +61,7 @@ def get_gain(ZA, beam, freq_reso):
 
     data      = pd.read_csv(DEFAULT_GAIN_CSV, header=[0, 1])
     gain_zero = 25.6
-    beam      = "M{:0>2d}".format(beam)
+    beam      = f"M{beam:02d}"
 
     a, b, c = (
         data.loc[(data.beam.beam == beam), "freq"]

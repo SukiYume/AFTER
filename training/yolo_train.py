@@ -130,7 +130,8 @@ def make_loaders(args):
     )
     print(f"[Data] train={len(train_df)} rows  |  val={len(val_df)} rows")
     print(
-        f"[Data] train repeat policy: empty={empty_repeat}, single={single_repeat}, multi={multi_repeat}"
+        f"[Data] train repeat policy: empty={empty_repeat}, single={single_repeat}, "
+        f"multi={multi_repeat}"
     )
 
     train_data = H5YOLODataset(train_df, val=False, mosaic_prob=args.mosaic_prob)
@@ -166,23 +167,23 @@ def run_epoch(model, loader, device, optimizer=None, ema=None):
     is_train = optimizer is not None
     model.train(is_train)
 
-    totals        = {k: 0.0 for k in LOSS_KEYS}
+    totals        = dict.fromkeys(LOSS_KEYS, 0.0)
     total_samples = 0
     tag           = "Train" if is_train else "Valid"
     pbar          = tqdm(loader, dynamic_ncols=True, ascii=True)
 
     with torch.set_grad_enabled(is_train):
-        for idx, batch in enumerate(pbar, start=1):
-            batch = {
+        for batch in pbar:
+            device_batch       = {
                 k: v.to(device) if isinstance(v, torch.Tensor) else v
                 for k, v in batch.items()
             }
-            current_batch_size = batch["img"].shape[0]
+            current_batch_size = device_batch["img"].shape[0]
             total_samples += current_batch_size
 
             if is_train:
                 optimizer.zero_grad()
-            loss, loss_items = model(batch)
+            loss, loss_items = model(device_batch)
             if loss.ndim > 0:
                 loss = loss.sum()
             if is_train:
@@ -340,7 +341,8 @@ def main(args):
             best_val = val_m["loss"]
             save_model_pair(log_dir, model, ema, "best_loss_model")
             print(
-                f"  val_loss new best = {best_val:.5f}, saved best_loss_model.pth / best_loss_model_ema.pth"
+                f"  val_loss new best = {best_val:.5f}, saved "
+                "best_loss_model.pth / best_loss_model_ema.pth"
             )
 
         if metrics["map50_95"] > best_map:
@@ -348,7 +350,8 @@ def main(args):
             early_stop_counter = 0
             save_model_pair(log_dir, model, ema, "best_model")
             print(
-                f"  ★ EMA mAP50-95 new best = {best_map:.5f}, saved best_model.pth / best_model_ema.pth"
+                f"  ★ EMA mAP50-95 new best = {best_map:.5f}, saved "
+                "best_model.pth / best_model_ema.pth"
             )
         else:
             early_stop_counter += 1

@@ -99,7 +99,7 @@ def coherent_power_spectrum(waterfall):
 
 
 def _get_f_threshold(power_spectra, mean, std):
-    """复刻 processing_old/DM_phase.py 的自动 fluctuation-frequency 截断。"""
+    """根据功率谱峰值的信噪比确定涨落频率截断范围。"""
     peak_power = np.max(power_spectra, axis=1)
     snr        = (peak_power - mean) / std
     kern       = np.round(_get_window(snr) / 2).astype(int)
@@ -159,13 +159,11 @@ def _get_dm_curve(power_spectra, dpower_spectra, nchan):
     idx_f             = np.argmin(var_sm[:-10, :], axis=0)
     idx_c             = np.convolve(idx_f, np.ones(3) / 3.0, mode="same").astype(int)
     idx_c[idx_c == 0] = 1
-    idx_c             = np.ones(np.shape(idx_c)) * idx_c
 
     # 矩量计算（解析噪声期望值和方差）
     cutoff = np.ones([n, 1]) * idx_c
     I2_sum = np.multiply(np.multiply(idx_c, idx_c + 1), 2 * idx_c + 1) / 6
-    # 按旧 DM_phase.py 原式保留。这里不是标准平方和闭式的常见写法,
-    # 但为了复刻历史结果, 不做数学化简或修正。
+    # I4_sum 使用当前 DM 相位搜索的经验矩量定义，不按标准四次幂和闭式化简。
     I4_sum = (
         np.multiply(
             np.multiply(np.multiply(idx_c, idx_c + 1), 2 * idx_c + 1),
@@ -266,8 +264,7 @@ def _get_window(profile):
     """用轮廓自相关函数估计 DM 曲线拟合所需的时间窗口。
 
     先去除轮廓的线性趋势，再计算同长度自相关；相邻负值区间的最大间隔
-    被用作窗口宽度。该算法沿用 ``processing_old/DM_phase.py``，以保证新旧
-    流程对同一数据给出可比结果。
+    作为窗口宽度。
     """
     smooth_profile   = scipy.signal.detrend(profile)
     autocorrelation  = np.correlate(smooth_profile, smooth_profile, "same")
@@ -277,7 +274,7 @@ def _get_window(profile):
 
 
 def _check_window(profile, window):
-    """复刻旧代码的拟合窗口检查。"""
+    """校正拟合窗口中心，并把起止索引限制在轮廓范围内。"""
     convolved  = np.convolve(1.0 * profile, 1.0 * np.ones(int(window)), "same")
     peak_value = float(np.mean(np.flatnonzero(convolved == np.max(convolved))))
     peak       = int(np.argmax(profile))
@@ -306,9 +303,9 @@ def _dm_calculation(
     dm_curve=None,
     weight=None,
     dstd=None,
-    SN=None,
+    snr=None,
 ):
-    """复刻 processing_old/DM_phase.py::_dm_calculation 的非绘图路径。"""
+    """在 DM 曲线峰值附近做加权多项式拟合。"""
     if dm_curve is None:
         dm_curve = dpower_spectra[low_idx:up_idx].sum(axis=0)
 
@@ -329,17 +326,12 @@ def _dm_calculation(
         weight   = np.multiply(dm_curve, dstd1**-1.0)
         dstd     = np.max(dstd1)
 
-    snr = SN
-
     if weight is None:
         peak        = dm_curve.argmax()
         width       = _get_window(dm_curve) / 2
         start, stop = _check_window(dm_curve, width)
     else:
-        w_dm_curve    = np.multiply(weight, dm_curve)
         peak          = dm_curve.argmax()
-        curve         = power_spectra[low_idx + 1 : low_idx + 2].sum(axis=0)
-        width         = int(_get_window(curve) / 4)
         heavy_weights = np.argwhere(dm_curve > 0.5 * dm_curve[peak])
         if len(heavy_weights) < 5:
             heavy_weights = np.argwhere(dm_curve > 0.25 * dm_curve[peak])
@@ -350,12 +342,8 @@ def _dm_calculation(
         start = heavy_weights[np.argmin(np.absolute((peak - width) - heavy_weights))]
         stop  = heavy_weights[np.argmin(np.absolute((peak + width) - heavy_weights))]
 
-        start = int(np.asarray(start).squeeze())
-        stop  = int(np.asarray(stop).squeeze())
-        if start < 0:
-            start = 0
-        if stop > np.size(w_dm_curve):
-            stop = np.size(w_dm_curve)
+        start = max(int(np.asarray(start).squeeze()), 0)
+        stop  = min(int(np.asarray(stop).squeeze()), dm_curve.size)
 
     plot_range = np.arange(start, stop)
     y          = dm_curve[plot_range]
@@ -421,7 +409,7 @@ def dm_phase_search(
     nbin             = nbin_full // 2
 
     # 试验 DM 增量（相对于 dm_zero）
-    # 旧 DM_phase.py 使用 np.arange(dm_s, dm_e, dm_step), 不包含右端点。
+    # DM 增量网格使用左闭右开区间，不包含右端点。
     delta_list = np.arange(-dm_range, dm_range, dm_step)
     dm_list    = dm_zero + delta_list
 
@@ -435,7 +423,7 @@ def dm_phase_search(
     ff_idx         = np.arange(0, nbin)
     dpower_spectra = power_spectra * ff_idx[:, np.newaxis] ** 2
 
-    # 下面完全复刻 processing_old/DM_phase.py::get_dm 的自动 cutoff 分支。
+    # 根据相干功率谱自动确定涨落频率截断，并构造 DM 拟合权重。
     mean            = nchan
     std             = nchan / np.sqrt(2)
     low_idx, up_idx = _get_f_threshold(power_spectra, mean, std)
@@ -460,7 +448,7 @@ def dm_phase_search(
         dm_curve = dm_curve,
         weight   = w,
         dstd     = dstd,
-        SN       = snr_peak,
+        snr      = snr_peak,
     )
 
     if dm_snr is None:

@@ -62,9 +62,8 @@ class _ReviewState(TypedDict):
 def _find_reference_jpg(h5_path):
     """查找与定标 H5 配套、位于同一目录的 quicklook JPG。
 
-    calibration.py 的约定是 ``name_cal.h5`` 对应 ``name.jpg``；同时兼容
-    ``name.h5`` 对应 ``name.jpg`` 和少数保留 ``_cal`` 后缀的 JPG。找不到时
-    返回 None，让交互窗口保持原来的双面板布局。
+    ``name_cal.h5`` 和 ``name.h5`` 默认对应 ``name.jpg``，也接受带 ``_cal``
+    后缀的 JPG。找不到时返回 None，交互窗口使用双面板布局。
     """
     stem, _    = os.path.splitext(os.fspath(h5_path))
     plain_stem = stem[:-4] if stem.lower().endswith("_cal") else stem
@@ -622,9 +621,9 @@ def _render_two_panel(
     输入是 prepare_calibration_display 准备好的显示数据。本函数只负责共享
     绘图样式，不画 burst box。
     ``subplot_spec`` 不为 None 时把两面板嵌入指定区域，供交互窗口在右侧并排
-    放置定标 JPG；默认值维持原来的整幅画布布局。
-    ``interpolation=None`` 时沿用 Matplotlib 默认值；人工交互窗口可显式传入
-    ``bilinear`` 减轻屏幕显示的颗粒感，而自动保存图继续保持原有渲染方式。
+    放置定标 JPG；默认在整幅画布中绘制。
+    ``interpolation=None`` 时使用 Matplotlib 默认值；人工交互窗口可传入
+    ``bilinear`` 减轻屏幕显示的颗粒感，自动保存图使用默认插值。
     """
     nsamp, _ = stokes_I.shape
     image    = np.asarray(stokes_I, dtype=np.float32).T
@@ -766,8 +765,8 @@ def review_interactive(
         except (OSError, ValueError) as exc:
             print(f"  [警告] 无法读取参考图 {reference_image_path}: {exc}")
 
-    # 有参考图时只横向扩展窗口：左侧交互面板仍保留约 6×6 英寸，右侧 JPG
-    # 作为只读参照。缺图或读图失败时保持原来的窗口大小和布局。
+    # 有参考图时只横向扩展窗口：左侧交互面板保持约 6×6 英寸，右侧显示
+    # 只读 JPG。缺少参考图时使用 6×6 英寸双面板布局。
     if reference_image is None:
         fig = plt.figure(figsize=(6, 6), dpi=110)
         ax_prof, ax_spec = _render_two_panel(
@@ -900,7 +899,6 @@ def review_interactive(
 
     def on_close(_event):
         """把直接关闭窗口视为接受当前结果，避免误关导致整批任务中断。"""
-        # 关掉窗口等价于按 Enter, 这样误关窗口不会中断整批流程.
         if state["command"] is None:
             state["command"] = "accept"
             fig.canvas.stop_event_loop()
@@ -920,7 +918,7 @@ def review_interactive(
     cid_mouse = fig.canvas.mpl_connect("button_press_event", on_mouse_press)
 
     if reference_image is None:
-        # 无参考图时继续沿用原来的两面板排版，避免改变已有交互窗口外观。
+        # 双面板共用紧凑间距。
         fig.tight_layout(pad=0.8)
         fig.subplots_adjust(hspace=0)
     plt.show(block=False)
@@ -1048,7 +1046,7 @@ def detect_one_file(
             )
 
         tile_results = []
-        for tile, offset in zip(tiles, offsets):
+        for tile, offset in zip(tiles, offsets, strict=True):
             scores, boxes = predict_single(
                 model, tile, conf=conf, max_horizontal_aspect=max_horizontal_aspect
             )

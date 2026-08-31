@@ -125,7 +125,7 @@ def run_group(args):
         for cut_arg in cut_args:
             cut_one_burst(*cut_arg)
 
-    save_obs_json(str(save_path), info, dm)
+    save_obs_json(str(save_path))
     return date, len(rows)
 
 

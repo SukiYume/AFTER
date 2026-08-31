@@ -30,13 +30,13 @@ RFI; rfi_mask 与 rfi_channel 作为辅助信息一并保存。下游 burst_anal
   · target_time_reso 可根据每个文件的原始时间分辨率自动选择
     down_time；目标必须是原始时间分辨率的整数倍。
   · 指定 time_crop_samples 时，先在原始时间轴上做中心裁剪；若没有显式指定
-    down_time，则默认保留原始时间分辨率。此时图像直接使用保存分辨率，不再
-    额外下采样，保证 JPG 与 _cal.h5 中的数据逐像素对应。
+    down_time，则默认保留原始时间分辨率。图像直接使用保存分辨率，保证 JPG
+    与 _cal.h5 中的数据逐像素对应。
   · 指定 output_time_samples 时，顺序严格为“完整数据定标 → 下采样
     → 中心裁剪”。它与原始数据上先裁的 time_crop_samples 互斥。
 
-保存 time_reso_raw(原始) 和 time_reso(下采样后的有效值), 供后续计算流量/能量时
-直接用 time_reso, 不再把 down_time 乘进去。
+文件同时保存 time_reso_raw（原始值）和 time_reso（下采样后的有效值）；下游
+直接使用 time_reso 计算流量和能量。
 """
 
 # Stokes I 是领域标准符号，保留其大写单字母写法。
@@ -110,8 +110,7 @@ def calibrate_to_iquv(data, noise_cal, t_cal, gain, cal_threshold=0.05):
     偏振定标: 用 noise_cal 归一化两个 feed 的增益差异, 并用 arctan2 校正
     交叉项相位;
     流量缩放: 每个偏振独立乘 t_cal[pol]/(2*gain) 再合成 I/Q, 交叉项 U/V 使用
-    sqrt(t_cal[0]*t_cal[1])/(2*gain) 作为等效尺度。与 processing_old 的
-    `burst_data * intensity_cal / gain * t_cal` 再按偏振平均一致。
+    sqrt(t_cal[0]*t_cal[1])/(2*gain) 作为等效尺度。
 
     参数
     ----------
@@ -192,8 +191,7 @@ def process_one_burst(
         可行的整数倍额外下采样。
     time_crop_samples : int or None
         在任何时间下采样之前，从输入数据的时间轴中心裁出多少个原始采样点。
-        None 表示不裁剪。指定后，down_time 默认为 1，且画图不再对保存数据
-        做额外时间或频率下采样。
+        None 表示不裁剪。指定后，down_time 默认为 1，画图直接使用保存数据。
     target_time_reso : float or None
         保存数据的目标时间分辨率（秒）。函数会针对每个输入文件
         自动计算整数 down_time。与显式 down_time 互斥。
@@ -349,7 +347,7 @@ def process_one_burst(
         raise ValueError(f"down_freq={save_df} 超过当前频率通道数 {raw_data.shape[2]}")
 
     if time_crop_samples is not None:
-        # 裁剪产品的 JPG 直接画保存数据；不再为了显示而做第二次下采样。
+        # 原始时间轴裁剪产品的 JPG 与保存数据使用相同分辨率。
         plot_dt, plot_df = save_dt, save_df
         extra_dt         = extra_df = 1
     else:
@@ -382,9 +380,8 @@ def process_one_burst(
         gain_ds, gain_err_ds = gain, gain_err
     time_reso_save = time_reso_raw * save_dt
 
-    # 后裁剪路径：到这里完整数据已经做完偏振/流量定标和保存倍率
-    # 下采样。然后才在下采样后的时间轴上中心裁剪，因此不会把
-    # 定标或下采样的边界提前改变。奇数差值时，多出的一个点留在右侧。
+    # output_time_samples 在定标和下采样后执行中心裁剪。奇数差值时，
+    # 多出的一个采样点留在右侧。
     nsamp_before_output_crop = nsamp
     output_crop_start        = 0
     if output_time_samples is not None:

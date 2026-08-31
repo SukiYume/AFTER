@@ -72,8 +72,7 @@ def _beam_from_filename(filename):
 def _normalize_beam(value, filename):
     """把 H5 中可能是 ``1``、``1.0`` 或 ``M01`` 的波束值统一成整数。
 
-    旧文件没有 ``beam`` 属性时，再退回到文件名解析；无法安全解释的值原样保留，
-    避免静默猜错。
+    缺少 ``beam`` 属性时从文件名解析；无法安全解释的值原样返回。
     """
     value = _json_scalar(value)
     if value is None:
