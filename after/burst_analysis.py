@@ -8,13 +8,13 @@
 
   1. 加载 IQUV + freq + bursts。
   2. 用非 burst 时段作为 noise_mask, 先按通道减噪声区中值基线。
-  3. 在减完基线的全部 Stokes 上调用 after.rfi.cal_rfi, 再叠加局部鲁棒通道
+  3. 在减完基线的有效 Stokes 上调用 after.rfi.cal_rfi, 再叠加局部鲁棒通道
      统计和 H5 已保存的 calibration/detection 通道 mask。默认只应用通道级 RFI,
      不把逐像素 mask 用到信号上；需要复现旧行为时才显式启用 pixel mask。
   4. 在每个检测框内用 Stokes I 自动选取超过主峰分数阈值且超过噪声阈值的
      强时间采样点，RM/偏振只使用这些采样点，基本物理量和 DM 仍使用完整框。
   5. 画一张总览动态谱 + burst 区域高亮。
-  6. 对每个 burst: calc_burst_properties + analyze_dm + analyze_pol, 汇总为行。
+  6. 对每个 burst 计算流量性质和 DM；只有 IQUV 产品才继续分析 RM/偏振。
   7. 批量写 CSV。
 
 time_reso 在 calibration.py 阶段已经是 raw × down_time 的有效分辨率, 下游计算
@@ -46,8 +46,8 @@ from .burst_properties import calc_burst_properties
 from .rfi import cal_rfi, robust_channel_mask
 
 
-def _pol_failure_result(freq, error):
-    """构造偏振分析失败时的结果行，避免用有物理含义的零值冒充测量结果。
+def _empty_pol_result(freq, status, reason):
+    """构造偏振失败/不可用结果，避免用有物理含义的零值冒充测量结果。
 
     数值测量字段统一填入 NaN，同时保留中心频率和错误信息。这样 CSV 仍可
     保持固定列结构，而下游程序也能明确区分“分析失败”和“真实测得为零”。
@@ -67,8 +67,8 @@ def _pol_failure_result(freq, error):
         "circular_frac": np.nan,
         "circular_frac_err": np.nan,
         "center_freq": center_freq,
-        "pol_status": "failed",
-        "pol_error_reason": f"{type(error).__name__}: {error}",
+        "pol_status": status,
+        "pol_error_reason": str(reason),
     }
 
 
@@ -403,10 +403,19 @@ def analyze_one_file(
         attrs = cast(dict[str, Any], dict(f.attrs))
     # 只读取已有的一维通道 mask，不读取 calibration/detection 的逐像素 mask。
 
+    if iquv.ndim != 3 or iquv.shape[0] != 4:
+        raise ValueError(f"定标 data 必须是 (4,nsamp,nchan)，实际形状为 {iquv.shape}")
+    npol = int(np.asarray(attrs.get("npol", 4)).item())
+    if npol not in (2, 4):
+        raise ValueError(f"定标 H5 的 npol 必须为 2 或 4，实际为 {npol}")
+    polarization_available = npol == 4
+
     burst_regions = json.loads(attrs["bursts"]) if "bursts" in attrs else []
     if not burst_regions:
         print(f"  [{basename}] 无爆发可分析")
         return []
+    if not polarization_available:
+        print(f"  [{basename}] npol=2：保留流量/DM 分析，跳过 RM/偏振分析")
 
     os.makedirs(burst_dir, exist_ok=True)
 
@@ -479,11 +488,12 @@ def analyze_one_file(
     I, V     = iquv[0], iquv[3]
 
     # ---- 4. 精细 RFI 标记: 在减完基线、target-down 后的数据上重新计算 mask ----
-    # RM 直接使用 Q/U，因此四个 Stokes 都参与通道判定；只要任一 Stokes
-    # 显示持续污染，就整频道屏蔽。逐像素结果仅在显式请求旧模式时应用。
+    # 四路产品用全部 Stokes；两路产品只用唯一有效的 I。只要参与分析的任一
+    # Stokes 显示持续污染，就整频道屏蔽。逐像素结果仅在旧模式时应用。
+    rfi_stokes   = iquv if polarization_available else iquv[:1]
     cal_channels = []
     pixel_masks  = []
-    for plane in iquv:
+    for plane in rfi_stokes:
         channel_i, pixel_i = cal_rfi(
             plane, noise_mask, down_time=1, down_freq=1, fft=rfi_fft
         )
@@ -491,7 +501,7 @@ def analyze_one_file(
         pixel_masks.append(pixel_i)
     recalculated_channel = np.logical_or.reduce(cal_channels)
     robust_channel = robust_channel_mask(
-        iquv,
+        rfi_stokes,
         noise_mask,
         sigma        = rfi_channel_sigma,
         local_window = rfi_channel_window,
@@ -588,37 +598,43 @@ def analyze_one_file(
         freq_index[fs:fe]    = True
         freq_index[rfi_chan] = False
 
-        # RM/偏振可以进一步限制频率范围，但不改变能量和 DM 的频率口径。
-        rm_freq_index = freq_index.copy()
-        if rm_freq_min is not None:
-            rm_freq_index &= freq >= float(rm_freq_min)
-        if rm_freq_max is not None:
-            rm_freq_index &= freq <= float(rm_freq_max)
+        if polarization_available:
+            # RM/偏振可以进一步限制频率范围，但不改变能量和 DM 的频率口径。
+            rm_freq_index = freq_index.copy()
+            if rm_freq_min is not None:
+                rm_freq_index &= freq >= float(rm_freq_min)
+            if rm_freq_max is not None:
+                rm_freq_index &= freq <= float(rm_freq_max)
 
-        # 只用 I 轮廓中的强时间采样点测 RM；允许多峰产生不连续布尔门。
-        rm_time_mask, rm_time_info = _select_strong_time_samples(
-            I,
-            rm_freq_index,
-            noise_mask,
-            region,
-            peak_fraction = rm_peak_fraction,
-            min_snr       = rm_min_time_snr,
-        )
-        rm_indices = np.flatnonzero(rm_time_mask)
-        print(
-            f"    RM 时间采样: {rm_indices.tolist()} "
-            f"({rm_indices.size} 点, peak S/N={rm_time_info['peak_snr']:.1f}); "
-            f"有效频率通道 {np.count_nonzero(rm_freq_index)}"
-        )
-        plot_rm_selection(
-            I,
-            freq,
-            time_reso,
-            region,
-            rm_time_mask,
-            rm_freq_index,
-            os.path.join(burst_dir, f"burst{bi}_rm_window.png"),
-        )
+            # 只用 I 轮廓中的强时间采样点测 RM；允许多峰产生不连续布尔门。
+            rm_time_mask, rm_time_info = _select_strong_time_samples(
+                I,
+                rm_freq_index,
+                noise_mask,
+                region,
+                peak_fraction = rm_peak_fraction,
+                min_snr       = rm_min_time_snr,
+            )
+            rm_indices = np.flatnonzero(rm_time_mask)
+            print(
+                f"    RM 时间采样: {rm_indices.tolist()} "
+                f"({rm_indices.size} 点, peak S/N={rm_time_info['peak_snr']:.1f}); "
+                f"有效频率通道 {np.count_nonzero(rm_freq_index)}"
+            )
+            plot_rm_selection(
+                I,
+                freq,
+                time_reso,
+                region,
+                rm_time_mask,
+                rm_freq_index,
+                os.path.join(burst_dir, f"burst{bi}_rm_window.png"),
+            )
+        else:
+            rm_freq_index = np.zeros(nchan, dtype=bool)
+            rm_time_mask  = np.zeros(nsamp, dtype=bool)
+            rm_time_info  = {"peak_snr": np.nan}
+            rm_indices    = np.array([], dtype=int)
 
         # Stokes I 物理量(TOA, flux, fluence, width, 带宽)
         # 传入 freq_index 使 TOA 峰值在爆发频段内搜索;
@@ -653,31 +669,43 @@ def analyze_one_file(
         )
 
         # 偏振 (analyze_pol 返回 (标量 dict, PA 数组 dict))
-        try:
-            pol_out, pa_arrays = analyze_pol(
-                I,
-                Q,
-                U,
-                V,
+        if polarization_available:
+            try:
+                pol_out, pa_arrays = analyze_pol(
+                    I,
+                    Q,
+                    U,
+                    V,
+                    freq,
+                    time_reso,
+                    rm_time_mask,
+                    rm_freq_index,
+                    noise_mask,
+                    burst_dir,
+                    bi,
+                    rm_min = rm_min,
+                    rm_max = rm_max,
+                )
+                pol_out.update(
+                    {
+                        "pol_status": "ok",
+                        "pol_error_reason": "",
+                    }
+                )
+            except Exception as e:
+                print(f"    偏振分析失败: {e}")
+                pol_out   = _empty_pol_result(
+                    freq,
+                    status = "failed",
+                    reason = f"{type(e).__name__}: {e}",
+                )
+                pa_arrays = None
+        else:
+            pol_out = _empty_pol_result(
                 freq,
-                time_reso,
-                rm_time_mask,
-                rm_freq_index,
-                noise_mask,
-                burst_dir,
-                bi,
-                rm_min = rm_min,
-                rm_max = rm_max,
+                status = "unavailable",
+                reason = "输入观测只有 AA/BB 两路，RM 和偏振不可用",
             )
-            pol_out.update(
-                {
-                    "pol_status": "ok",
-                    "pol_error_reason": "",
-                }
-            )
-        except Exception as e:
-            print(f"    偏振分析失败: {e}")
-            pol_out   = _pol_failure_result(freq, e)
             pa_arrays = None
 
         # 跨爆发合并 PDF 所需的 PA 数组 + 最后一个 burst 的轮廓

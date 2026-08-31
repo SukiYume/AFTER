@@ -1,14 +1,12 @@
 # fmt: off
 
 import sys
-import tempfile
 import types
-import unittest
-from pathlib import Path
 from unittest import mock
 
 import h5py
 import numpy as np
+import pytest
 
 # 这里测试检测阶段的 RFI 数据流。用最小模块桩隔离未参与测试、且在
 # Windows 上加载较慢的 Torch/Ultralytics GPU 栈。
@@ -108,7 +106,7 @@ for _module_name, _original_module in _ORIGINAL_MODULES.items():
         sys.modules[_module_name] = _original_module
 
 
-class FilterInferenceBoxesTest(unittest.TestCase):
+class TestFilterInferenceBoxes:
     def test_removes_horizontal_box_and_keeps_largest_overlap(self):
         scores = np.array([0.99, 0.4, 0.95, 0.8], dtype=np.float32)
         boxes = np.array(
@@ -176,28 +174,23 @@ class FilterInferenceBoxesTest(unittest.TestCase):
                 overlap_height = min(xyxy[first, 3], xyxy[second, 3]) - max(
                     xyxy[first, 1], xyxy[second, 1]
                 )
-                self.assertFalse(overlap_width > 0 and overlap_height > 0)
+                assert not (overlap_width > 0 and overlap_height > 0)
 
 
-class DetectionDisplayTest(unittest.TestCase):
-    def test_finds_same_directory_calibration_jpg(self):
-        with tempfile.TemporaryDirectory() as directory:
-            h5_path        = Path(directory) / "sample_cal.h5"
-            reference_path = Path(directory) / "sample.jpg"
-            h5_path.touch()
-            reference_path.touch()
+class TestDetectionDisplay:
+    def test_finds_same_directory_calibration_jpg(self, tmp_path):
+        h5_path        = tmp_path / "sample_cal.h5"
+        reference_path = tmp_path / "sample.jpg"
+        h5_path.touch()
+        reference_path.touch()
 
-            self.assertEqual(
-                burst_detect._find_reference_jpg(str(h5_path)),
-                str(reference_path),
-            )
+        assert burst_detect._find_reference_jpg(str(h5_path)) == str(reference_path)
 
-    def test_missing_reference_jpg_returns_none(self):
-        with tempfile.TemporaryDirectory() as directory:
-            h5_path = Path(directory) / "sample_cal.h5"
-            h5_path.touch()
+    def test_missing_reference_jpg_returns_none(self, tmp_path):
+        h5_path = tmp_path / "sample_cal.h5"
+        h5_path.touch()
 
-            self.assertIsNone(burst_detect._find_reference_jpg(str(h5_path)))
+        assert burst_detect._find_reference_jpg(str(h5_path)) is None
 
     def test_calibration_display_normalizes_and_downsamples_copy(self):
         data = np.array(
@@ -224,7 +217,7 @@ class DetectionDisplayTest(unittest.TestCase):
         )
         np.testing.assert_allclose(display, expected)
         np.testing.assert_allclose(display_freq, [1050, 1250])
-        self.assertEqual(display_time_reso, 0.002)
+        assert display_time_reso == 0.002
 
     def test_two_panel_matches_calibration_quicklook_layout(self):
         data = np.arange(16, dtype=np.float32).reshape(4, 4)
@@ -234,12 +227,10 @@ class DetectionDisplayTest(unittest.TestCase):
             with mock.patch("matplotlib.axes.Axes.imshow") as imshow_mock:
                 burst_detect._render_two_panel(fig, data, freq, time_reso=0.001)
             kwargs = imshow_mock.call_args.kwargs
-            self.assertNotIn("interpolation", kwargs)
-            self.assertNotIn("resample", kwargs)
-            self.assertEqual(kwargs["extent"], [0, 4, 1000, 1500])
-            self.assertEqual(
-                tuple(fig.get_size_inches()), burst_detect.TWO_PANEL_FIGSIZE
-            )
+            assert "interpolation" not in kwargs
+            assert "resample" not in kwargs
+            assert kwargs["extent"] == [0, 4, 1000, 1500]
+            assert tuple(fig.get_size_inches()) == burst_detect.TWO_PANEL_FIGSIZE
         finally:
             burst_detect.plt.close(fig)
 
@@ -266,7 +257,7 @@ class DetectionDisplayTest(unittest.TestCase):
         ):
             result = burst_detect.review_interactive(data, freq, time_reso=0.001)
 
-        self.assertEqual(result, [])
+        assert result == []
         fig = figures[0]
         try:
             ax_prof, ax_spec = fig.axes
@@ -281,11 +272,11 @@ class DetectionDisplayTest(unittest.TestCase):
                 ax_spec.xaxis.label,
             ):
                 bounds = artist.get_window_extent(renderer)
-                self.assertGreaterEqual(bounds.x0, 0)
-                self.assertGreaterEqual(bounds.y0, 0)
-                self.assertLessEqual(bounds.x1, fig.bbox.x1)
-                self.assertLessEqual(bounds.y1, fig.bbox.y1)
-            self.assertIn("\n", title.get_text())
+                assert bounds.x0 >= 0
+                assert bounds.y0 >= 0
+                assert bounds.x1 <= fig.bbox.x1
+                assert bounds.y1 <= fig.bbox.y1
+            assert "\n" in title.get_text()
         finally:
             real_close(fig)
 
@@ -332,123 +323,145 @@ class DetectionDisplayTest(unittest.TestCase):
                 reference_image_path = "sample.jpg",
             )
 
-        self.assertEqual(result, [])
+        assert result == []
         fig = figures[0]
         try:
-            self.assertEqual(len(fig.axes), 3)
+            assert len(fig.axes) == 3
             reference_axis = fig.axes[2]
-            self.assertEqual(len(reference_axis.images), 1)
-            self.assertFalse(reference_axis.axison)
-            self.assertIn("sample.jpg", reference_axis.get_title())
-            self.assertEqual(
-                tuple(fig.get_size_inches()),
-                burst_detect.REFERENCE_REVIEW_FIGSIZE,
+            assert len(reference_axis.images) == 1
+            assert not reference_axis.axison
+            assert "sample.jpg" in reference_axis.get_title()
+            assert (
+                tuple(fig.get_size_inches())
+                == burst_detect.REFERENCE_REVIEW_FIGSIZE
             )
         finally:
             real_close(fig)
 
 
-class DetectionRfiTest(unittest.TestCase):
-    def setUp(self):
+class TestDetectionRfi:
+    @pytest.fixture(autouse=True)
+    def _reset_rfi_calls(self):
         RFI_CALLS.clear()
 
-    def test_write_results_uses_nonburst_noise_and_unions_i_v_masks(self):
-        with tempfile.TemporaryDirectory() as directory:
-            path    = Path(directory) / "sample_cal.h5"
-            iquv    = np.arange(4 * 6 * 4, dtype=np.float32).reshape(4, 6, 4)
-            regions = [{"time_start": 2, "time_end": 4}]
-            with h5py.File(path, "w"):
-                pass
+    def test_write_results_uses_nonburst_noise_and_unions_i_v_masks(self, tmp_path):
+        path    = tmp_path / "sample_cal.h5"
+        iquv    = np.arange(4 * 6 * 4, dtype=np.float32).reshape(4, 6, 4)
+        regions = [{"time_start": 2, "time_end": 4}]
+        with h5py.File(path, "w"):
+            pass
 
-            channel, _, plot_i = write_detection_results(str(path), iquv, regions)
+        channel, _, plot_i = write_detection_results(str(path), iquv, regions)
 
-            expected_noise = np.array([True, True, False, False, True, True])
-            self.assertEqual(len(RFI_CALLS), 2)
-            np.testing.assert_array_equal(RFI_CALLS[0], expected_noise)
-            np.testing.assert_array_equal(RFI_CALLS[1], expected_noise)
-            np.testing.assert_array_equal(channel, [False, True, True, False])
-            self.assertTrue(np.isnan(plot_i[:, 1:3]).all())
-            with h5py.File(path, "r") as h5:
-                self.assertEqual(h5.attrs["burst_rfi_noise_sample_count"], 4)
-                self.assertTrue(np.all(h5["burst_rfi_mask"][:, 1:3]))
+        expected_noise = np.array([True, True, False, False, True, True])
+        assert len(RFI_CALLS) == 2
+        np.testing.assert_array_equal(RFI_CALLS[0], expected_noise)
+        np.testing.assert_array_equal(RFI_CALLS[1], expected_noise)
+        np.testing.assert_array_equal(channel, [False, True, True, False])
+        assert np.isnan(plot_i[:, 1:3]).all()
+        with h5py.File(path, "r") as h5:
+            assert h5.attrs["burst_rfi_noise_sample_count"] == 4
+            assert np.all(h5["burst_rfi_mask"][:, 1:3])
 
-    def test_detect_uses_original_stokes_i_for_model_input(self):
-        with tempfile.TemporaryDirectory() as directory:
-            path                    = Path(directory) / "sample_cal.h5"
-            data                    = np.ones((4, 512, 512), dtype=np.float32)
-            calibration_mask        = np.zeros((512, 512), dtype=bool)
-            calibration_mask[:, 0]  = True
-            calibration_mask[10, 5] = True
-            with h5py.File(path, "w") as h5:
-                h5.create_dataset("data", data=data)
-                h5.create_dataset("freq", data=np.linspace(1000, 1500, 512))
-                h5.create_dataset("rfi_mask", data=calibration_mask)
-                h5.attrs["time_reso"]      = 0.000393216
-                h5.attrs["down_time"]      = 8
-                h5.attrs["plot_down_time"] = 8
+    def test_write_results_uses_only_i_for_two_pol_product(self, tmp_path):
+        path    = tmp_path / "sample_two_pol_cal.h5"
+        iquv    = np.arange(4 * 6 * 4, dtype=np.float32).reshape(4, 6, 4)
+        regions = [{"time_start": 2, "time_end": 4}]
+        with h5py.File(path, "w"):
+            pass
 
-            with (
-                mock.patch.object(
-                    burst_detect, "predict_single", return_value=(None, None)
-                ),
-                mock.patch.object(
-                    burst_detect, "prepare_image_tiles", wraps=prepare_image_tiles
-                ) as prepare_mock,
-            ):
-                result = detect_one_file(str(path), object(), mode="auto")
+        channel, _, _ = write_detection_results(
+            str(path),
+            iquv,
+            regions,
+            npol = 2,
+        )
 
-            self.assertFalse(result["has_burst"])
-            self.assertEqual(prepare_mock.call_count, 1)
-            model_input = prepare_mock.call_args.args[0]
-            np.testing.assert_array_equal(model_input, data[0])
-            self.assertEqual(prepare_mock.call_args.kwargs["time_factor"], 1)
-            with h5py.File(path, "r") as h5:
-                self.assertIn("burst_rfi_mask", h5)
-                self.assertIn("burst_rfi_channel", h5)
-                self.assertEqual(h5.attrs["bursts"], "[]")
+        assert len(RFI_CALLS) == 1
+        np.testing.assert_array_equal(channel, [False, True, False, False])
 
-    def test_quit_returns_normally_without_marking_current_file(self):
-        with tempfile.TemporaryDirectory() as directory:
-            path           = Path(directory) / "sample_cal.h5"
-            reference_path = Path(directory) / "sample.jpg"
-            reference_path.touch()
-            with h5py.File(path, "w") as h5:
-                h5.create_dataset("data", data=np.ones((4, 512, 512), dtype=np.float32))
-                h5.create_dataset("freq", data=np.linspace(1000, 1500, 512))
-                h5.create_dataset("rfi_mask", data=np.zeros((512, 512), dtype=bool))
-                h5.attrs["time_reso"]      = 0.000393216
-                h5.attrs["down_time"]      = 8
-                h5.attrs["plot_down_time"] = 16
-                h5.attrs["down_freq"]      = 4
-                h5.attrs["plot_down_freq"] = 8
+    def test_write_results_rejects_non_four_plane_product(self, tmp_path):
+        path = tmp_path / "malformed_cal.h5"
 
-            with (
-                mock.patch.object(
-                    burst_detect, "predict_single", return_value=(None, None)
-                ),
-                mock.patch.object(
-                    burst_detect, "review_interactive", return_value=None
-                ) as review_mock,
-            ):
-                result = detect_one_file(str(path), object(), mode="semi-auto")
-
-            self.assertIsNone(result)
-            np.testing.assert_array_equal(
-                review_mock.call_args.args[0],
-                np.ones((512, 512), dtype=np.float32),
+        with pytest.raises(ValueError, match="iquv 必须是"):
+            write_detection_results(
+                str(path),
+                np.zeros((2, 6, 4), dtype=np.float32),
+                [],
+                npol = 4,
             )
-            self.assertEqual(review_mock.call_args.kwargs["time_factor"], 2)
-            self.assertEqual(review_mock.call_args.kwargs["freq_factor"], 2)
-            self.assertEqual(
-                review_mock.call_args.kwargs["reference_image_path"],
-                str(reference_path),
-            )
-            with h5py.File(path, "r") as h5:
-                self.assertNotIn("bursts", h5.attrs)
-                self.assertNotIn("burst_rfi_mask", h5)
 
+    def test_detect_uses_original_stokes_i_for_model_input(self, tmp_path):
+        path                    = tmp_path / "sample_cal.h5"
+        data                    = np.ones((4, 512, 512), dtype=np.float32)
+        calibration_mask        = np.zeros((512, 512), dtype=bool)
+        calibration_mask[:, 0]  = True
+        calibration_mask[10, 5] = True
+        with h5py.File(path, "w") as h5:
+            h5.create_dataset("data", data=data)
+            h5.create_dataset("freq", data=np.linspace(1000, 1500, 512))
+            h5.create_dataset("rfi_mask", data=calibration_mask)
+            h5.attrs["time_reso"]      = 0.000393216
+            h5.attrs["down_time"]      = 8
+            h5.attrs["plot_down_time"] = 8
 
-if __name__ == "__main__":
-    unittest.main()
+        with (
+            mock.patch.object(
+                burst_detect, "predict_single", return_value=(None, None)
+            ),
+            mock.patch.object(
+                burst_detect, "prepare_image_tiles", wraps=prepare_image_tiles
+            ) as prepare_mock,
+        ):
+            result = detect_one_file(str(path), object(), mode="auto")
+
+        assert not result["has_burst"]
+        assert prepare_mock.call_count == 1
+        model_input = prepare_mock.call_args.args[0]
+        np.testing.assert_array_equal(model_input, data[0])
+        assert prepare_mock.call_args.kwargs["time_factor"] == 1
+        with h5py.File(path, "r") as h5:
+            assert "burst_rfi_mask" in h5
+            assert "burst_rfi_channel" in h5
+            assert h5.attrs["bursts"] == "[]"
+
+    def test_quit_returns_normally_without_marking_current_file(self, tmp_path):
+        path           = tmp_path / "sample_cal.h5"
+        reference_path = tmp_path / "sample.jpg"
+        reference_path.touch()
+        with h5py.File(path, "w") as h5:
+            h5.create_dataset("data", data=np.ones((4, 512, 512), dtype=np.float32))
+            h5.create_dataset("freq", data=np.linspace(1000, 1500, 512))
+            h5.create_dataset("rfi_mask", data=np.zeros((512, 512), dtype=bool))
+            h5.attrs["time_reso"]      = 0.000393216
+            h5.attrs["down_time"]      = 8
+            h5.attrs["plot_down_time"] = 16
+            h5.attrs["down_freq"]      = 4
+            h5.attrs["plot_down_freq"] = 8
+
+        with (
+            mock.patch.object(
+                burst_detect, "predict_single", return_value=(None, None)
+            ),
+            mock.patch.object(
+                burst_detect, "review_interactive", return_value=None
+            ) as review_mock,
+        ):
+            result = detect_one_file(str(path), object(), mode="semi-auto")
+
+        assert result is None
+        np.testing.assert_array_equal(
+            review_mock.call_args.args[0],
+            np.ones((512, 512), dtype=np.float32),
+        )
+        assert review_mock.call_args.kwargs["time_factor"] == 2
+        assert review_mock.call_args.kwargs["freq_factor"] == 2
+        assert (
+            review_mock.call_args.kwargs["reference_image_path"]
+            == str(reference_path)
+        )
+        with h5py.File(path, "r") as h5:
+            assert "bursts" not in h5.attrs
+            assert "burst_rfi_mask" not in h5
 
 # fmt: on

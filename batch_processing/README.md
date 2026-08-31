@@ -245,6 +245,17 @@ file. If its noise-diode diagnostic fails, the batch may fall back to a valid
 same-beam calibration file from another segment of that same date; it never
 falls back across dates. Processing stops when no same-day candidate is
 available. The selected file is recorded in each H5's `calibration_fits` attr.
+For `NPOL=2`, AA/BB still provide the flux calibration and the diagnostic that
+requires cross-hands is skipped automatically. The existing `NPOL=4`
+diagnostic and polarization path is unchanged.
+
+The noise-diode period is explicit: the default is `--noise-period-s 0.2`.
+Pass the nominal observation setting, for example `0.1`, `0.4`, `1`, or `2`.
+Any period is supported when it spans at least two samples and the calibration
+FITS contains at least one complete cycle. Only the total period is supplied;
+the folded profile automatically determines the On/Off phase, duration, and
+duty cycle. The selected nominal value is recorded as the `noise_period_s` H5
+attribute.
 
 ### Run
 
@@ -254,6 +265,7 @@ python batch_processing/batch_calibration.py \
   --cal-root /path/to/after_runs/calibrated \
   --dm-file /path/to/catalogs/h5_calibration_dm_file.txt \
   --cal-npz highcal_20201014_psr_tny.npz \
+  --noise-period-s 0.2 \
   --workers 8
 ```
 
@@ -294,9 +306,9 @@ Output layout:
   *.jpg
 ```
 
-Each H5 records `calibration_beam`, `calibration_fits`, and `calibration_npz`
-attrs. Use a separate `--cal-root` when comparing calibration or downsampling
-settings.
+Each H5 records `calibration_beam`, `calibration_fits`, `calibration_npz`, and
+`noise_period_s` attrs. Use a separate `--cal-root` when comparing calibration
+or downsampling settings.
 
 ## Hand off to detection and analysis
 

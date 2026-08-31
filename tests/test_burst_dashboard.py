@@ -1,27 +1,14 @@
 # -*- coding: utf-8 -*-
 # fmt: off
 
-"""burst_dashboard 的最小冒烟测试：用合成数据跑通整条流水线并校验关键产物。
+"""用合成 catalog 验证 dashboard 的用户可见行为。"""
 
-直接运行即可（无需 pytest）：
-    python tests/test_burst_dashboard.py
-也兼容 pytest：
-    pytest tests/test_burst_dashboard.py
-"""
-
-import sys
-import tempfile
 from argparse import Namespace
-from pathlib import Path
 
 import numpy as np
 import pandas as pd
 
-REPOSITORY_ROOT = Path(__file__).resolve().parents[1]
-if str(REPOSITORY_ROOT) not in sys.path:
-    sys.path.insert(0, str(REPOSITORY_ROOT))
-
-from after import burst_dashboard as bd  # noqa: E402
+from after import burst_dashboard as bd
 
 
 def _make_csv(path, n=40, reliable_rm=True, seed=1):
@@ -75,47 +62,42 @@ def _build(tmp, n, reliable_rm):
     return df, bd.build_html(df, csv, out, tmp, meta, _args())
 
 
-def test_pipeline():
-    with tempfile.TemporaryDirectory() as d:
-        tmp = Path(d)
+def test_dashboard_renders_reliable_rm_catalog(tmp_path):
+    df, html = _build(tmp_path, n=40, reliable_rm=True)
 
-        # 1) 有可靠 RM：应包含偏振面板、两张累积图、目录。
-        df, html = _build(tmp, n=40, reliable_rm=True)
-        assert bool(df["rm_reliable"].any())
-        for marker in (
-            "BURST CATALOG",
-            "SIGNAL PROPERTIES",
-            "累积通量分布",
-            "累积计数",
-            "偏振与 RM",
-            "<!doctype html>",
-        ):
-            assert marker in html, f"缺少标记: {marker}"
-        expected_fluence_bw = bd.fmt_value(
-            bd.fluence_bandwidth_jy_ms_ghz(df), 2, " Jy ms GHz"
-        )
-        assert "FLUENCE × BW" in html
-        assert expected_fluence_bw in html
-        assert str(tmp.resolve()) not in html
-        assert "fonts.googleapis.com" in html
-        assert "ENERGY FLUENCE" not in html
-        # 40 行不触发打印截断（检查真实的行属性/提示文本，而非 CSS 选择器文本）。
-        assert 'class="print-hide"' not in html and "打印仅显示" not in html
-
-        # 2) 无可靠 RM：不应出现偏振面板，但累积图仍在。
-        _, html_nopol = _build(tmp, n=40, reliable_rm=False)
-        assert "偏振与 RM" not in html_nopol
-        assert "累积通量分布" in html_nopol
-
-        # 3) 大目录（>200 行）：打印截断的行属性与提示都应出现。
-        _, html_big = _build(tmp, n=260, reliable_rm=True)
-        assert 'class="print-hide"' in html_big
-        assert "打印仅显示" in html_big
-
-    print("[OK] all smoke tests passed")
+    assert bool(df["rm_reliable"].any())
+    for marker in (
+        "BURST CATALOG",
+        "SIGNAL PROPERTIES",
+        "累积通量分布",
+        "累积计数",
+        "偏振与 RM",
+        "<!doctype html>",
+    ):
+        assert marker in html, f"缺少标记: {marker}"
+    expected_fluence_bw = bd.fmt_value(
+        bd.fluence_bandwidth_jy_ms_ghz(df), 2, " Jy ms GHz"
+    )
+    assert "FLUENCE × BW" in html
+    assert expected_fluence_bw in html
+    assert str(tmp_path.resolve()) not in html
+    assert "fonts.googleapis.com" in html
+    assert "ENERGY FLUENCE" not in html
+    assert 'class="print-hide"' not in html
+    assert "打印仅显示" not in html
 
 
-if __name__ == "__main__":
-    test_pipeline()
+def test_dashboard_omits_polarization_without_reliable_rm(tmp_path):
+    _, html = _build(tmp_path, n=40, reliable_rm=False)
+
+    assert "偏振与 RM" not in html
+    assert "累积通量分布" in html
+
+
+def test_dashboard_marks_rows_above_print_limit(tmp_path):
+    _, html = _build(tmp_path, n=260, reliable_rm=True)
+
+    assert 'class="print-hide"' in html
+    assert "打印仅显示" in html
 
 # fmt: on

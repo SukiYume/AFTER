@@ -39,9 +39,12 @@ if str(PROJECT_DIR) not in sys.path:
 from after import DEFAULT_CAL_NPZ as DEFAULT_CAL_NPZ_PATH  # noqa: E402
 from after.calibration import (                            # noqa: E402
     find_cal_fits,
-    fold_noise_cal,
     load_t_cal,
     process_one_burst,
+)
+from after.calibration_noise import (                      # noqa: E402
+    DEFAULT_NOISE_PERIOD_S,
+    fold_noise_cal,
 )
 
 DEFAULT_ROOT_DIR = str(PROJECT_DIR / "H5_Cut")
@@ -108,6 +111,7 @@ def collect_calibration_groups(
     time_crop_samples=None,
     target_time_reso=None,
     output_time_samples=None,
+    noise_period_s=DEFAULT_NOISE_PERIOD_S,
 ):
     """Collect date/beam groups.
 
@@ -197,6 +201,7 @@ def collect_calibration_groups(
                         "time_crop_samples": time_crop_samples,
                         "target_time_reso": target_time_reso,
                         "output_time_samples": output_time_samples,
+                        "noise_period_s": noise_period_s,
                     }
                 )
 
@@ -206,13 +211,16 @@ def collect_calibration_groups(
 def process_group(group):
     """Calibrate all bursts in one source/date/beam group."""
     candidates         = group.get("cal_fits_candidates", [group["cal_fits_path"]])
+    noise_period_s     = group.get("noise_period_s", DEFAULT_NOISE_PERIOD_S)
     calibration_errors = []
     for cal_fits_path in candidates:
         try:
             with fits.open(cal_fits_path) as f:
                 nchan = f[1].header["NCHAN"]
             noise_cal = fold_noise_cal(
-                cal_fits_path, diagnostic_dir=group["output_dir"]
+                cal_fits_path,
+                diagnostic_dir = group["output_dir"],
+                noise_period_s  = noise_period_s,
             )
         except ValueError as exc:
             calibration_errors.append((cal_fits_path, exc))
@@ -259,6 +267,7 @@ def process_group(group):
             time_crop_samples   = group["time_crop_samples"],
             target_time_reso    = group["target_time_reso"],
             output_time_samples = group["output_time_samples"],
+            noise_period_s      = noise_period_s,
         )
     return group["source"], group["date"], group["beam"], len(group["h5_list"])
 
@@ -276,6 +285,7 @@ def batch_calibrate(
     time_crop_samples=None,
     target_time_reso=None,
     output_time_samples=None,
+    noise_period_s=DEFAULT_NOISE_PERIOD_S,
 ):
     sources = parse_dm_file(dm_file)
     print(f"[source table] {len(sources)} sources")
@@ -292,6 +302,7 @@ def batch_calibrate(
         time_crop_samples,
         target_time_reso,
         output_time_samples,
+        noise_period_s,
     )
     if not groups:
         print("No calibration groups to process")
@@ -299,7 +310,8 @@ def batch_calibrate(
 
     total_bursts = sum(len(g["h5_list"]) for g in groups)
     print(
-        f"Start calibration: {len(groups)} groups, {total_bursts} bursts, workers={num_workers}"
+        f"Start calibration: {len(groups)} groups, {total_bursts} bursts, "
+        f"workers={num_workers}, noise_period={noise_period_s:g}s"
     )
 
     if num_workers > 1 and len(groups) > 1:
@@ -358,6 +370,15 @@ def parse_args():
     )
     parser.add_argument("--workers", type=int, default=8)
     parser.add_argument(
+        "--noise-period-s",
+        type    = float,
+        default = DEFAULT_NOISE_PERIOD_S,
+        help    = (
+            "Nominal total noise-diode period in seconds; On/Off duty cycle "
+            "is inferred from the folded profile"
+        ),
+    )
+    parser.add_argument(
         "--only", nargs="*", default=None, help="Optional FRB names to process"
     )
     return parser.parse_args()
@@ -388,6 +409,7 @@ if __name__ == "__main__":
             else args.target_time_reso_ms * 1e-3
         ),
         output_time_samples = args.output_time_samples,
+        noise_period_s      = args.noise_period_s,
     )
 
 # fmt: on

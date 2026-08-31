@@ -312,12 +312,26 @@ python calibration.py
 
 默认 `CAL_NPZ` 已经指向仓库根目录的 `highcal_20201014_psr_tny.npz`。
 
+定标同时支持 `NPOL=2` 和 `NPOL=4`。两路数据按 `AA/BB` 计算 Stokes I，自动
+跳过需要交叉项的四路噪声管诊断；后续仍会完成 burst 检测、流量、fluence、DM
+等 Stokes-I 分析，并把 RM/偏振状态记为 `unavailable`。四路流程保持 I/Q/U/V
+定标和偏振分析不变。
+
+噪声管周期由用户显式指定，不从 FITS 头自动判断。批处理默认
+`--noise-period-s 0.2`；应传入观测采用的名义设置，例如 `0.1`、`0.4`、`1`
+或 `2`。只要周期至少覆盖两个采样点，并且定标 FITS 至少包含一个完整周期，
+代码就不限制具体的正周期值。直接运行 `python calibration.py` 时，把
+`after/calibration.py` 底部的
+`NOISE_PERIOD_S` 改成对应的 FAST 名义设置。只需提供总周期；折叠功率轮廓会
+自动识别 On/Off 相位、持续时间和占空比，也支持非 50% 占空比。
+
 ```bash
 python batch_processing/batch_calibration.py \
   --root-dir /path/to/after_runs/cut \
   --cal-root /path/to/after_runs/calibrated \
   --dm-file /path/to/catalogs/h5_calibration_dm_file.txt \
   --cal-npz highcal_20201014_psr_tny.npz \
+  --noise-period-s 0.2 \
   --workers 8
 ```
 
@@ -471,8 +485,12 @@ gain:        (nchan,), K/Jy
 gain_err:    (nchan,), K/Jy
 attrs: time_reso_raw, time_reso, down_time, down_freq,
        dm, beam, ra, dec, calibration_beam,
-       calibration_fits, calibration_npz
+       calibration_fits, calibration_npz, noise_period_s, npol
 ```
+
+为保持统一接口，两路和四路输入都保存四个平面，`npol` 记录原始观测产品数。
+`npol=2` 时只有第一个平面有效，Q 是兼容保留的两路功率差，U/V 是零值占位，
+不能用于 RM 或偏振测量；`npol=4` 时 I/Q/U/V 均参与分析。
 
 ### 已接受 burst 区域
 
@@ -498,7 +516,8 @@ rm, rm_err, ..., pol_status, pol_error_reason
 ```
 
 成功行使用 `ok` 和空原因；搜索失败则使用 `failed`、保存异常类型/消息，并把科学量
-写为 NaN。这样可以明确区分失败拟合、测得的零值和裁切时的名义 DM。
+写为 NaN。两路观测没有可用偏振时使用 `unavailable`。这样可以明确区分不可测、
+失败拟合、测得的零值和裁切时的名义 DM。
 
 ## 模型与运行结果
 

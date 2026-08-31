@@ -914,6 +914,14 @@ def load_file_components(
             raise ValueError(
                 f"{path}: freq shape {freq.shape} does not match data {iquv.shape}"
             )
+        npol = int(handle.attrs.get("npol", 4))
+        if npol not in (2, 4):
+            raise ValueError(f"{path}: npol must be 2 or 4, got {npol}")
+        if npol == 2:
+            warnings.append(
+                f"{path.name}: npol={npol}; synchronized RM requires four products and was skipped"
+            )
+            return [], warnings
         if "bursts" not in handle.attrs:
             warnings.append(
                 f"{path.name}: missing attrs['bursts']; run after.burst_detect "

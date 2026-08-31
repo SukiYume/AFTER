@@ -332,12 +332,30 @@ python calibration.py
 The default `CAL_NPZ` already points to the repository-root
 `highcal_20201014_psr_tny.npz`.
 
+Calibration accepts both `NPOL=2` and `NPOL=4`. Two-product `AA/BB` data are
+used to calibrate Stokes I, while the four-product diagnostic that requires
+cross-hands is skipped. Detection, flux, fluence, and DM analysis continue, and
+RM/polarization fields use status `unavailable`. The four-product I/Q/U/V path
+is unchanged.
+
+The noise-diode period is user configured rather than inferred from the FITS
+header. Batch calibration defaults to `--noise-period-s 0.2`; pass the nominal
+setting used by the observation, for example `0.1`, `0.4`, `1`, or `2`. Any
+period is supported when it spans at least two samples and the calibration
+FITS contains at least one complete cycle. For the direct
+`python calibration.py` launcher, set
+`NOISE_PERIOD_S` in `after/calibration.py` to the same nominal FAST setting.
+Only the total period is required: the folded power profile determines the
+On/Off phase, duration, and duty cycle automatically, including non-50%
+settings.
+
 ```bash
 python batch_processing/batch_calibration.py \
   --root-dir /path/to/after_runs/cut \
   --cal-root /path/to/after_runs/calibrated \
   --dm-file /path/to/catalogs/h5_calibration_dm_file.txt \
   --cal-npz highcal_20201014_psr_tny.npz \
+  --noise-period-s 0.2 \
   --workers 8
 ```
 
@@ -508,8 +526,14 @@ gain:        (nchan,), K/Jy
 gain_err:    (nchan,), K/Jy
 attrs: time_reso_raw, time_reso, down_time, down_freq,
        dm, beam, ra, dec, calibration_beam,
-       calibration_fits, calibration_npz
+       calibration_fits, calibration_npz, noise_period_s, npol
 ```
+
+Both input modes retain the four-plane storage contract, while `npol` records
+the number of original observation products. For `npol=2`, only the first plane
+is scientifically valid; Q is retained as the existing two-auto-power
+difference, and U/V are zero placeholders that must not be used for RM or
+polarization. For `npol=4`, all I/Q/U/V planes participate in analysis.
 
 ### Accepted burst region
 
@@ -537,8 +561,9 @@ rm, rm_err, ..., pol_status, pol_error_reason
 
 Successful rows use status `ok` and an empty reason. Failed searches use status
 `failed`, preserve the exception type/message, and store scientific outputs as
-NaN. This keeps failed fits distinct from a measured zero or the nominal cut
-DM.
+NaN. Two-product observations use `unavailable` for polarization. This keeps
+unavailable measurements and failed fits distinct from a measured zero or the
+nominal cut DM.
 
 ## Models and outputs
 

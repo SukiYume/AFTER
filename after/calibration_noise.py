@@ -14,6 +14,8 @@ Im(AB*)。本模块采用与 PSRCHIVE 一致的 Stokes 转换：
     phi      = atan2(V, U)
 
 这里只检查噪声管折叠和 SingleAxis 定标量，不拟合完整的仪器偏振泄漏。
+两路 ``AABB`` 数据仍可折叠 AA/BB 供流量定标使用，但会跳过依赖交叉项的诊断图。
+用户只需指定噪声管的名义总周期；On/Off 相位和占空比由折叠轮廓自动识别。
 """
 
 from __future__ import annotations
@@ -37,6 +39,7 @@ matplotlib.use("Agg")
 import matplotlib.pyplot as plt  # noqa: E402  # 必须在选择无界面后端后导入
 
 NOISE_CLOCK_PRODUCT       = 4096 * 4096 * 12
+DEFAULT_NOISE_PERIOD_S    = 0.2
 DEFAULT_SCIENCE_BAND_MHZ  = (1050.0, 1450.0)
 DEFAULT_DIAGNOSTIC_BLOCKS = 31
 DEFAULT_CHANNEL_CHUNK     = 256
@@ -64,6 +67,7 @@ class NoiseCalFold:
     noise_cal: np.ndarray
     folded_native: np.ndarray
     block_native: np.ndarray
+    on_mask: np.ndarray
     period_samples: int
     n_periods: int
 
@@ -143,10 +147,23 @@ def _frequency_axis(hdul: fits.HDUList, nchan: int) -> np.ndarray:
     )
 
 
+def _single_circular_interval(mask: np.ndarray) -> tuple[int, int]:
+    """返回单个圆周 True 区间的起止点，碎片化掩码视为无效。"""
+    mask = np.asarray(mask, dtype=bool)
+    if mask.ndim != 1 or mask.size < 2 or mask.all() or (~mask).all():
+        raise ValueError("噪声管 On/Off mask 无效")
+    starts = np.flatnonzero(mask & ~np.roll(mask, 1))
+    stops  = np.flatnonzero(~mask & np.roll(mask, 1))
+    if starts.size != 1 or stops.size != 1:
+        raise ValueError("折叠后的噪声管 On 区间不连续；请检查 noise_period_s")
+    return int(starts[0]), int(stops[0])
+
+
 def compute_noise_cal_fold(
     cal_fits_path: str | os.PathLike[str],
     diagnostic_blocks: int = DEFAULT_DIAGNOSTIC_BLOCKS,
     channel_chunk: int = DEFAULT_CHANNEL_CHUNK,
+    noise_period_s: float = DEFAULT_NOISE_PERIOD_S,
 ) -> NoiseCalFold:
     """折叠一个 FAST 噪声管 FITS，并保持旧定标算法的数值结果。
 
@@ -159,6 +176,9 @@ def compute_noise_cal_fold(
         raise ValueError("diagnostic_blocks 必须大于等于 1")
     if channel_chunk < 1:
         raise ValueError("channel_chunk 必须大于等于 1")
+    noise_period_s = float(noise_period_s)
+    if not np.isfinite(noise_period_s) or noise_period_s <= 0:
+        raise ValueError("noise_period_s 必须是正的有限数")
 
     with fits.open(path, memmap=True) as hdul:
         hdu = cast(Any, hdul[1])
@@ -170,16 +190,24 @@ def compute_noise_cal_fold(
         npol      = int(header["NPOL"])
         nchan     = int(header["NCHAN"])
         time_reso = float(header["TBIN"])
-        if npol < 2:
-            raise ValueError(f"噪声管 FITS 至少需要 2 路偏振，实际为 {npol}")
+        if npol not in (2, 4):
+            raise ValueError(f"噪声管 FITS 的 NPOL 必须为 2 或 4，实际为 {npol}")
 
         raw           = np.asarray(hdu.data["DATA"]).reshape(nsub * nsblk, npol, nchan)
         frequency_mhz = _frequency_axis(hdul, nchan)
 
-        period_samples = int(NOISE_CLOCK_PRODUCT / (time_reso * 1e9))
+        # 参数使用观测控制界面的名义总周期。FAST 的 0.2 s 档实际对应
+        # 4096 个 49.152 us 采样点；其他档位按同一硬件时钟比例换算，
+        # 例如 0.1/0.4/1/8/16 s 分别对应它的 0.5/2/5/40/80 倍。
+        period_samples = round(
+            NOISE_CLOCK_PRODUCT
+            * (noise_period_s / DEFAULT_NOISE_PERIOD_S)
+            / (time_reso * 1e9)
+        )
         if period_samples < 2:
             raise ValueError(
-                f"由 TBIN={time_reso} 得到的噪声管周期无效：{period_samples} 个采样点"
+                f"由 noise_period_s={noise_period_s}、TBIN={time_reso} "
+                f"得到的噪声管周期无效：{period_samples} 个采样点"
             )
         n_periods = raw.shape[0] // period_samples
         if n_periods < 1:
@@ -203,8 +231,7 @@ def compute_noise_cal_fold(
 
         power             = np.asarray(np.mean(folded_native[:, :2], axis=1), dtype=np.float64)
         threshold_on_mask = power > np.mean(power)
-        if threshold_on_mask.all() or (~threshold_on_mask).all():
-            raise ValueError("无法分离噪声管 on/off 状态")
+        _single_circular_interval(threshold_on_mask)
 
         nblocks      = min(diagnostic_blocks, n_periods)
         edges        = np.linspace(0, n_periods, nblocks + 1, dtype=int)
@@ -241,6 +268,7 @@ def compute_noise_cal_fold(
         noise_cal      = noise_cal,
         folded_native  = folded_native,
         block_native   = block_native,
+        on_mask        = threshold_on_mask,
         period_samples = period_samples,
         n_periods      = n_periods,
     )
@@ -251,21 +279,18 @@ def compute_noise_cal_fold(
 # ============================================================
 
 
-def _best_half_cycle_start(profile: np.ndarray) -> int:
-    """在圆周轮廓上寻找积分功率最大的半周期起点。"""
+def _best_circular_window_start(profile: np.ndarray, width: int) -> int:
+    """在圆周轮廓上寻找给定宽度的最大积分窗口起点。"""
     profile    = np.asarray(profile, dtype=float)
     nbin       = profile.size
-    half       = nbin // 2
+    width      = int(width)
+    if width < 1 or width >= nbin:
+        raise ValueError(f"圆周窗口宽度必须在 [1, {nbin - 1}] 内，实际为 {width}")
     doubled    = np.concatenate((profile, profile))
     cumulative = np.concatenate(([0.0], np.cumsum(doubled)))
     starts     = np.arange(nbin)
-    sums       = cumulative[starts + half] - cumulative[starts]
+    sums       = cumulative[starts + width] - cumulative[starts]
     return int(np.nanargmax(sums))
-
-
-def _circular_half_mask(nbin: int, start: int) -> np.ndarray:
-    """返回从 start 开始、覆盖半个周期的圆周布尔掩码。"""
-    return ((np.arange(nbin) - start) % nbin) < (nbin // 2)
 
 
 def _moving_nanmedian(
@@ -353,10 +378,15 @@ def _prepare_fold_diagnostic(folded: NoiseCalFold) -> _FoldDiagnostic:
     nblock, nbin, _ = block_stokes.shape
     phase           = np.arange(nbin, dtype=float) / nbin
 
-    # 噪声管占空比为 50%；在圆周相位上寻找 Stokes I 总功率最大的半周期。
-    start_bin = _best_half_cycle_start(stokes[:, 0])
-    stop_bin  = (start_bin + nbin // 2) % nbin
-    on_mask   = _circular_half_mask(nbin, start_bin)
+    # 核心折叠已经从平均功率轮廓自动分离 On/Off；诊断直接复用同一 mask，
+    # 因而同时支持 50% 占空比以及 1:7、1:15 等低占空比设置。
+    on_mask = np.asarray(folded.on_mask, dtype=bool)
+    if on_mask.shape != (nbin,):
+        raise ValueError(
+            f"噪声管 On/Off mask 形状应为 ({nbin},)，实际为 {on_mask.shape}"
+        )
+    start_bin, stop_bin = _single_circular_interval(on_mask)
+    on_width            = int(np.count_nonzero(on_mask))
 
     stokes_on  = np.nanmedian(stokes[on_mask], axis=0)
     stokes_off = np.nanmedian(stokes[~on_mask], axis=0)
@@ -377,7 +407,11 @@ def _prepare_fold_diagnostic(folded: NoiseCalFold) -> _FoldDiagnostic:
         raise ValueError("至少一个诊断时间块的 Stokes I 跳变量不是正数")
     normalized_block_i = (block_profiles - block_off[:, None]) / block_steps[:, None]
     block_starts = np.asarray(
-        [_best_half_cycle_start(profile) for profile in block_profiles], dtype=int
+        [
+            _best_circular_window_start(profile, on_width)
+            for profile in block_profiles
+        ],
+        dtype = int,
     )
     template = np.nanmedian(normalized_block_i, axis=0)
     correlations = np.asarray(
@@ -504,7 +538,8 @@ def _build_metrics(
     band_data: _BandDiagnostic,
 ) -> dict[str, float | int | str]:
     """汇总终端日志和后续质量检查需要的标量。"""
-    nbin = fold_data.phase.size
+    nbin       = fold_data.phase.size
+    on_samples = int(np.count_nonzero(folded.on_mask))
     return {
         "source": str(folded.source_path),
         "period_samples": int(folded.period_samples),
@@ -512,6 +547,9 @@ def _build_metrics(
         "diagnostic_blocks": int(fold_data.normalized_block_i.shape[0]),
         "on_start_bin": int(fold_data.on_start_bin),
         "on_stop_bin": int(fold_data.on_stop_bin),
+        "on_samples": on_samples,
+        "off_samples": int(nbin - on_samples),
+        "on_fraction": float(on_samples / nbin),
         "on_start_phase": float(fold_data.on_start_bin / nbin),
         "on_stop_phase": float(fold_data.on_stop_bin / nbin),
         "delta_i_cv_percent": fold_data.step_cv_percent,
@@ -909,6 +947,7 @@ def fold_noise_cal(
     diagnostic_path: str | os.PathLike[str] | None = None,
     make_diagnostic: bool = True,
     science_band_mhz: tuple[float, float] = DEFAULT_SCIENCE_BAND_MHZ,
+    noise_period_s: float = DEFAULT_NOISE_PERIOD_S,
 ) -> np.ndarray:
     """折叠噪声管、按需写诊断图，并返回定标使用的 on−off 数组。
 
@@ -919,8 +958,11 @@ def fold_noise_cal(
     if diagnostic_dir is not None and diagnostic_path is not None:
         raise ValueError("diagnostic_dir 和 diagnostic_path 不能同时指定")
 
-    folded = compute_noise_cal_fold(cal_fits_path)
-    if make_diagnostic:
+    folded = compute_noise_cal_fold(
+        cal_fits_path,
+        noise_period_s = noise_period_s,
+    )
+    if make_diagnostic and folded.noise_cal.shape[0] == 4:
         source = folded.source_path
         if diagnostic_path is None:
             output_dir = (
@@ -933,13 +975,20 @@ def fold_noise_cal(
         metrics = plot_noise_cal_diagnostic(
             folded,
             output,
-            science_band_mhz=science_band_mhz,
+            science_band_mhz = science_band_mhz,
         )
         print(
             f"  [noise-cal] diagnostic: {output} "
-            f"(periods={folded.n_periods}, phase={metrics['on_start_phase']:.4f}/"
+            f"(period={noise_period_s:g}s/{folded.period_samples} samples, "
+            f"periods={folded.n_periods}, phase={metrics['on_start_phase']:.4f}/"
             f"{metrics['on_stop_phase']:.4f}, "
+            f"duty={100.0 * metrics['on_fraction']:.2f}%, "
             f"ΔI CV={metrics['delta_i_cv_percent']:.3f}%)"
+        )
+    elif make_diagnostic:
+        print(
+            "  [noise-cal] diagnostic skipped: NPOL=2 只有 AA/BB，"
+            "流量定标可用，但四路偏振诊断不可用"
         )
     return folded.noise_cal
 
@@ -961,6 +1010,12 @@ def _parse_args() -> argparse.Namespace:
         type    = float,
         default = DEFAULT_SCIENCE_BAND_MHZ[1],
     )
+    parser.add_argument(
+        "--noise-period-s",
+        type    = float,
+        default = DEFAULT_NOISE_PERIOD_S,
+        help    = "噪声管名义总周期（秒）；On/Off 占空比由折叠轮廓自动识别",
+    )
     parser.add_argument("--no-diagnostic", action="store_true", help="只折叠，不画图")
     return parser.parse_args()
 
@@ -974,6 +1029,7 @@ def _main() -> None:
         diagnostic_path  = args.output,
         make_diagnostic  = not args.no_diagnostic,
         science_band_mhz = (args.science_min, args.science_max),
+        noise_period_s   = args.noise_period_s,
     )
     print(f"noise_cal shape={result.shape}, dtype={result.dtype}")
 

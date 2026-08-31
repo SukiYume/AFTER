@@ -7,8 +7,8 @@
   2. 每个波束找第一个 _0001.fits 作为定标文件, 折叠噪声管 → noise_cal。
   3. 从 npz 加载 t_cal (K)。
   4. 每个 burst:
-     · 用 noise_cal 做偏振定标得到归一化的 IQUV,
-     · 乘以 t_cal/(2*gain) 直接变成 Jy（偏振+流量一步完成, 不再分两份保存）,
+     · 用 noise_cal 定标：四路得到 IQUV，两路 AA/BB 只把 I 作为有效科学量,
+     · 乘以 t_cal/(2*gain) 直接变成 Jy（保持统一的四平面保存格式）,
      · 可选地围绕输入时间轴中心裁剪固定数量的原始采样点,
      · 时间+频率下采样 (保存倍率, 默认 = 画图倍率),
      · 可选地在下采样后再围绕时间轴中心裁出固定点数,
@@ -61,7 +61,7 @@ from astropy.utils import iers
 from matplotlib import gridspec
 
 from . import DEFAULT_CAL_NPZ
-from .calibration_noise import fold_noise_cal
+from .calibration_noise import DEFAULT_NOISE_PERIOD_S, fold_noise_cal
 from .rfi import cal_rfi
 from .zenith_angle import get_gain, get_za
 
@@ -105,7 +105,7 @@ def load_t_cal(cal_npz_path, beam, nchan):
 
 
 def calibrate_to_iquv(data, noise_cal, t_cal, gain, cal_threshold=0.05):
-    """偏振定标 + 流量缩放, 一步得到 Jy 单位的 IQUV。
+    """偏振定标 + 流量缩放, 一步得到 Jy 单位的四平面兼容数组。
 
     偏振定标: 用 noise_cal 归一化两个 feed 的增益差异, 并用 arctan2 校正
     交叉项相位;
@@ -123,8 +123,24 @@ def calibrate_to_iquv(data, noise_cal, t_cal, gain, cal_threshold=0.05):
     返回
     -------
     iquv : (4, nsamp, nchan) float32, 单位 Jy
+        ``npol=4`` 时四个 Stokes 都可用；``npol=2`` 时只有 Stokes I
+        可用于科学分析，Q 仅保留现有两路功率差，U/V 为兼容下游格式的零值。
     """
+    data      = np.asarray(data)
+    noise_cal = np.asarray(noise_cal)
+    t_cal     = np.asarray(t_cal)
+    if data.ndim != 3:
+        raise ValueError(f"data 必须是 (nsamp,npol,nchan)，实际形状为 {data.shape}")
+
     nsamp, npol, nchan = data.shape
+    if npol not in (2, 4):
+        raise ValueError(f"data 的 npol 必须为 2 或 4，实际为 {npol}")
+    if noise_cal.ndim != 2 or noise_cal.shape[1] != nchan or noise_cal.shape[0] < npol:
+        raise ValueError(
+            f"noise_cal 至少需要 ({npol},{nchan})，实际形状为 {noise_cal.shape}"
+        )
+    if t_cal.shape != (2, nchan):
+        raise ValueError(f"t_cal 必须是 (2,{nchan})，实际形状为 {t_cal.shape}")
 
     noise_a12 = np.where(noise_cal[0] > cal_threshold, 1.0 / noise_cal[0], 0.0)
     noise_a22 = np.where(noise_cal[1] > cal_threshold, 1.0 / noise_cal[1], 0.0)
@@ -165,6 +181,7 @@ def process_one_burst(
     time_crop_samples=None,
     target_time_reso=None,
     output_time_samples=None,
+    noise_period_s=DEFAULT_NOISE_PERIOD_S,
 ):
     """读一个 burst h5, 定标 + 中心裁剪/下采样 + RFI 检测, 写 _cal.h5。
 
@@ -197,6 +214,9 @@ def process_one_burst(
             raise ValueError("target_time_reso 必须是正的有限数")
     if output_time_samples is not None and int(output_time_samples) <= 0:
         raise ValueError("output_time_samples 必须是正整数")
+    noise_period_s = float(noise_period_s)
+    if not np.isfinite(noise_period_s) or noise_period_s <= 0:
+        raise ValueError("noise_period_s 必须是正的有限数")
 
     basename = os.path.splitext(os.path.basename(h5_input_path))[0]
     out_h5   = os.path.join(output_dir, basename + "_cal.h5")
@@ -204,7 +224,13 @@ def process_one_burst(
         try:
             with h5py.File(out_h5, "r") as existing:
                 required   = {"data", "freq", "rfi_mask", "gain", "gain_err"}
-                provenance = {"calibration_beam", "calibration_fits", "calibration_npz"}
+                provenance = {
+                    "calibration_beam",
+                    "calibration_fits",
+                    "calibration_npz",
+                    "noise_period_s",
+                    "npol",
+                }
                 requested_crop = (
                     0 if time_crop_samples is None else int(time_crop_samples)
                 )
@@ -227,6 +253,12 @@ def process_one_burst(
                 down_freq_matches = down_freq is None or int(
                     existing.attrs.get("down_freq", 0)
                 ) == int(down_freq)
+                noise_period_matches = np.isclose(
+                    float(existing.attrs.get("noise_period_s", np.nan)),
+                    noise_period_s,
+                    rtol = 0.0,
+                    atol = 1e-12,
+                )
                 if (
                     required.issubset(existing.keys())
                     and provenance.issubset(existing.attrs.keys())
@@ -235,6 +267,7 @@ def process_one_burst(
                     and target_matches
                     and down_time_matches
                     and down_freq_matches
+                    and noise_period_matches
                 ):
                     print(f"  [跳过] {out_h5} 已存在")
                     return
@@ -258,6 +291,12 @@ def process_one_burst(
     source_start_sample = int(np.asarray(attrs["start_sample"]).item())
     time_reso_raw       = float(np.asarray(attrs["time_reso"]).item())
     nchan_raw           = int(np.asarray(attrs["nchan"]).item())
+    input_npol          = int(raw_data.shape[1])
+    declared_npol       = int(np.asarray(attrs.get("npol", input_npol)).item())
+    if declared_npol != input_npol:
+        raise ValueError(
+            f"H5 npol 属性为 {declared_npol}，但 data 实际有 {input_npol} 路"
+        )
 
     # Cut H5 的信号位于时间轴中心。这里在定标和下采样之前直接裁原始数组，
     # 既避免无谓计算，也确保 time_crop_samples 指的是原始时间采样点而不是
@@ -463,6 +502,8 @@ def process_one_burst(
         "calibration_beam": beam,
         "calibration_fits": os.path.basename(cal_fits_path),
         "calibration_npz": os.path.basename(cal_npz_path),
+        "noise_period_s": noise_period_s,
+        "npol": input_npol,
         "ra": ra,
         "dec": dec,
         "rfi_fraction": rfi_frac,
@@ -529,6 +570,7 @@ if __name__ == "__main__":
     TARGET_TIME_RESO    = None  # 目标有效时间分辨率（秒）；与 DOWN_TIME 互斥
     OUTPUT_TIME_SAMPLES = None  # 下采样后中心保留的时间点数
     RFI_FFT             = True  # True=FFT 最大幅度; False=熵
+    NOISE_PERIOD_S      = DEFAULT_NOISE_PERIOD_S  # 噪声管名义总周期；On/Off 自动识别
     NUM_WORKERS         = 8
 
     # 1. 按波束分组 burst h5
@@ -564,7 +606,11 @@ if __name__ == "__main__":
         with fits.open(cal_fits_path) as f:
             nchan = int(cast(Any, f[1]).header["NCHAN"])
 
-        noise_cal = fold_noise_cal(cal_fits_path, diagnostic_dir=OUTPUT_DIR)
+        noise_cal = fold_noise_cal(
+            cal_fits_path,
+            diagnostic_dir = OUTPUT_DIR,
+            noise_period_s  = NOISE_PERIOD_S,
+        )
         t_cal     = load_t_cal(CAL_NPZ, beam, nchan)
 
         print(
@@ -590,6 +636,7 @@ if __name__ == "__main__":
                     TIME_CROP_SAMPLES,
                     TARGET_TIME_RESO,
                     OUTPUT_TIME_SAMPLES,
+                    NOISE_PERIOD_S,
                 )
             )
 

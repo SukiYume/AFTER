@@ -49,24 +49,41 @@ def _write_synthetic_cal_h5(path, rm, pa_offset_deg, seed):
         handle.attrs["down_freq"] = 1
 
 
+def _load_file_components(path):
+    return burst_sync_rm.load_file_components(
+        path,
+        freq_min           = None,
+        freq_max           = None,
+        min_time_snr       = 3.0,
+        min_channels       = 32,
+        stored_masks_only  = True,
+        rfi_fft            = False,
+        rfi_channel_sigma  = 6.0,
+        rfi_channel_window = 31,
+        rfi_channel_grow   = 1,
+    )
+
+
 def _load_synthetic_components(cal_dir):
     components = []
     for path in sorted(cal_dir.glob("*_cal.h5")):
-        loaded, warnings = burst_sync_rm.load_file_components(
-            path,
-            freq_min           = None,
-            freq_max           = None,
-            min_time_snr       = 3.0,
-            min_channels       = 32,
-            stored_masks_only  = True,
-            rfi_fft            = False,
-            rfi_channel_sigma  = 6.0,
-            rfi_channel_window = 31,
-            rfi_channel_grow   = 1,
-        )
+        loaded, warnings = _load_file_components(path)
         assert not warnings
         components.extend(loaded)
     return components
+
+
+def test_joint_rm_skips_i_only_calibrated_product(tmp_path):
+    path = tmp_path / "two_pol_cal.h5"
+    _write_synthetic_cal_h5(path, rm=100.0, pa_offset_deg=0.0, seed=1)
+    with h5py.File(path, "a") as handle:
+        handle.attrs["npol"] = 2
+
+    components, warnings = _load_file_components(path)
+
+    assert components == []
+    assert len(warnings) == 1
+    assert "npol=2" in warnings[0]
 
 
 def test_two_pa_independent_methods_recover_common_rm(tmp_path):
@@ -282,18 +299,7 @@ def test_nonfinite_iqu_samples_mask_whole_channels_before_rm(tmp_path):
         data[1, 37, 10] = np.inf
         data[2, 0, 11]  = -np.inf
 
-    components, warnings = burst_sync_rm.load_file_components(
-        path,
-        freq_min           = None,
-        freq_max           = None,
-        min_time_snr       = 3.0,
-        min_channels       = 32,
-        stored_masks_only  = True,
-        rfi_fft            = False,
-        rfi_channel_sigma  = 6.0,
-        rfi_channel_window = 31,
-        rfi_channel_grow   = 1,
-    )
+    components, warnings = _load_file_components(path)
 
     assert not warnings
     assert len(components) == 1

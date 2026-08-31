@@ -229,6 +229,14 @@ H5 自身也应保存对应 DM。
 批处理可改用同一天其他分段中同波束的有效定标文件，但不会跨日期回退。
 同日候选全部不可用时停止该组；实际采用的文件会写入每个 H5 的
 `calibration_fits` 属性。
+`NPOL=2` 的噪声管文件会继续用 AA/BB 做流量定标，并自动跳过需要交叉项的四路
+诊断图；`NPOL=4` 的现有诊断和偏振流程不变。
+
+噪声管周期需要显式指定：默认是 `--noise-period-s 0.2`；应传入观测采用的名义
+设置，例如 `0.1`、`0.4`、`1` 或 `2`。只要周期至少覆盖两个采样点，并且定标
+FITS 至少包含一个完整周期，代码就不限制具体的正周期值。用户只需提供总周期，
+折叠轮廓会自动识别 On/Off 相位、持续时间和占空比。所用名义周期会写入 H5 的
+`noise_period_s` 属性。
 
 ### 运行
 
@@ -238,6 +246,7 @@ python batch_processing/batch_calibration.py \
   --cal-root /path/to/after_runs/calibrated \
   --dm-file /path/to/catalogs/h5_calibration_dm_file.txt \
   --cal-npz highcal_20201014_psr_tny.npz \
+  --noise-period-s 0.2 \
   --workers 8
 ```
 
@@ -275,7 +284,8 @@ python batch_processing/batch_calibration.py \
   *.jpg
 ```
 
-每个 H5 保存 `calibration_beam`、`calibration_fits` 和 `calibration_npz` attrs。
+每个 H5 保存 `calibration_beam`、`calibration_fits`、`calibration_npz` 和
+`noise_period_s` attrs。
 比较不同定标或降采样设置时，使用独立的 `--cal-root`。
 
 ## 输出交接

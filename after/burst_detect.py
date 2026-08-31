@@ -213,14 +213,19 @@ def prepare_calibration_display(
     return plot_I, plot_freq, float(time_reso) * time_factor
 
 
-def write_detection_results(h5_path, iquv, burst_regions, rfi_fft=False):
+def write_detection_results(h5_path, iquv, burst_regions, rfi_fft=False, npol=4):
     """写入已确认的 burst 区域, 并据此计算/保存检测后 RFI。
 
     这段逻辑刻意跟 burst_analysis.py 保持一致: 非 burst 采样作为
-    noise_mask, 先按噪声段中值减基线, 再分别在 Stokes I / V 上找 RFI,
-    最后取二者并集。不覆盖 calibration 阶段的 rfi_mask / rfi_channel。
+    noise_mask, 先按噪声段中值减基线；四路产品分别在 Stokes I / V 上找 RFI，
+    两路产品只使用有效的 Stokes I。不覆盖 calibration 阶段的 mask。
     """
-    work  = np.asarray(iquv, dtype=np.float32).copy()
+    npol = int(npol)
+    if npol not in (2, 4):
+        raise ValueError(f"npol 必须为 2 或 4，实际为 {npol}")
+    work = np.asarray(iquv, dtype=np.float32).copy()
+    if work.ndim != 3 or work.shape[0] != 4:
+        raise ValueError(f"iquv 必须是 (4,nsamp,nchan)，实际形状为 {work.shape}")
     nsamp = work.shape[1]
     nchan = work.shape[2]
 
@@ -239,7 +244,7 @@ def write_detection_results(h5_path, iquv, burst_regions, rfi_fft=False):
     rfi_channel_i, rfi_pixel_i = cal_rfi(
         work[0], noise_mask, down_time=1, down_freq=1, fft=rfi_fft
     )
-    if work.shape[0] > 3:
+    if npol == 4:
         rfi_channel_v, rfi_pixel_v = cal_rfi(
             work[3], noise_mask, down_time=1, down_freq=1, fft=rfi_fft
         )
@@ -1010,6 +1015,7 @@ def detect_one_file(
         plot_dt   = int(f.attrs.get("plot_down_time", save_dt))
         save_df   = int(f.attrs.get("down_freq", 1))
         plot_df   = int(f.attrs.get("plot_down_freq", save_df))
+        npol      = int(f.attrs.get("npol", 4))
 
     stokes_I         = iquv[0]  # Stokes I，轴顺序为（时间采样点，频率通道）
     nsamp, nchan     = stokes_I.shape
@@ -1069,7 +1075,11 @@ def detect_one_file(
     print(f"  [{fname}] 检测到 {len(burst_regions)} 个爆发")
 
     rfi_channel, rfi_fraction, plot_I = write_detection_results(
-        h5_path, iquv, burst_regions, rfi_fft=rfi_fft
+        h5_path,
+        iquv,
+        burst_regions,
+        rfi_fft = rfi_fft,
+        npol    = npol,
     )
     print(
         f"  [{fname}] 检测后 RFI: "
